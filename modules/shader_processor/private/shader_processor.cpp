@@ -343,3 +343,305 @@ bool compile_shader(const char* path, ShaderModule* outModule)
 
 	return false;
 }
+struct ShaderDescriptorBindings {
+    std::vector<VkDescriptorSetLayoutBinding> descriptorBindings;
+};
+
+struct ShaderEffectPrivateData {
+    std::vector< glslang::TShader*> Shaders;
+    std::vector< VkPipelineShaderStageCreateInfo> ShaderStages;
+
+    std::array<ShaderDescriptorBindings,4> bindingSets;
+    std::vector< VkPushConstantRange> pushConstantRanges;
+
+    glslang::TProgram Program;
+    VkDevice device;
+};
+
+bool ShaderEffect::add_shader_from_file(const char* path)
+{
+    ShaderModule mod;
+
+    if (!glslangInitialized)
+    {
+        glslang::InitializeProcess();
+        glslangInitialized = true;
+    }
+
+    std::string filename = path;
+    std::string shader_str;
+    if (load_file_to_string(path, shader_str)) {
+
+        const char* InputCString = shader_str.c_str();
+        EShLanguage ShaderType = get_shader_stage(get_suffix(path));
+        std::string IncludePath = get_file_path(path);
+
+        glslang::TShader* PtrShader = new glslang::TShader(ShaderType);
+
+        glslang::TShader &Shader = *PtrShader;
+
+        Shader.setStrings(&InputCString, 1);
+
+        int ClientInputSemanticsVersion = 100; // maps to, say, #define VULKAN 100
+        glslang::EShTargetClientVersion VulkanClientVersion = glslang::EShTargetVulkan_1_0;
+        glslang::EShTargetLanguageVersion TargetVersion = glslang::EShTargetSpv_1_0;
+
+        Shader.setEnvInput(glslang::EShSourceGlsl, ShaderType, glslang::EShClientVulkan, ClientInputSemanticsVersion);
+        Shader.setEnvClient(glslang::EShClientVulkan, VulkanClientVersion);
+        Shader.setEnvTarget(glslang::EShTargetSpv, TargetVersion);
+
+        TBuiltInResource Resources;
+        Resources = DefaultTBuiltInResource;
+        EShMessages messages = (EShMessages)(EShMsgSpvRules | EShMsgVulkanRules);
+
+        const int DefaultVersion = 100;
+
+        DirStackFileIncluder Includer;
+
+        Includer.pushExternalLocalDirectory(IncludePath);
+
+        //preprocess
+        std::string PreprocessedGLSL;
+
+        if (!Shader.preprocess(&Resources, DefaultVersion, ENoProfile, false, false, messages, &PreprocessedGLSL, Includer))
+        {
+            std::cout << "GLSL Preprocessing Failed for: " << std::endl;// << filename << std::endl;
+            std::cout << Shader.getInfoLog() << std::endl;
+            std::cout << Shader.getInfoDebugLog() << std::endl;
+            delete PtrShader;
+            return false;
+        }
+
+        const char* PreprocessedCStr = PreprocessedGLSL.c_str();
+        Shader.setStrings(&PreprocessedCStr, 1);
+
+        if (!Shader.parse(&Resources, 100, false, messages))
+        {
+            std::cout << "GLSL Parsing Failed for: " << std::endl;// << filename << std::endl;
+            std::cout << Shader.getInfoLog() << std::endl;
+            std::cout << Shader.getInfoDebugLog() << std::endl;
+            delete PtrShader;
+            return false;
+        }
+        
+       
+        privData->Shaders.push_back(PtrShader);
+        privData->Program.addShader(PtrShader);
+
+        return true;
+    }
+
+    return false;
+}
+
+VkShaderStageFlagBits ShaderTypeToVulkanFlag(ShaderType type) {
+    switch (type) {
+
+    case ShaderType::Vertex:
+        return VK_SHADER_STAGE_VERTEX_BIT;
+    case ShaderType::Fragment:
+        return VK_SHADER_STAGE_FRAGMENT_BIT;
+    default:
+        return VK_SHADER_STAGE_ALL;
+    }
+    return VK_SHADER_STAGE_ALL;
+}
+
+VkDescriptorSetLayoutBinding createLayoutBinding(int bindNumber, VkShaderStageFlags stages) {
+    VkDescriptorSetLayoutBinding binding;
+    binding.binding = bindNumber;
+    binding.descriptorCount = 1;
+    binding.stageFlags = stages;
+    binding.pImmutableSamplers = nullptr;
+    return binding;
+}
+
+
+bool ShaderEffect::build_effect(VkDevice device)
+{
+    privData->device = device;
+    glslang::TProgram &Program = privData->Program;
+
+    EShMessages messages = (EShMessages)(EShMsgSpvRules | EShMsgVulkanRules);
+
+    if (!Program.link(messages))
+    {
+        std::cout << "GLSL Linking Failed for: " << std::endl;// << filename << std::endl;
+        std::cout << Program.getInfoLog() << std::endl;
+        std::cout << Program.getInfoDebugLog() << std::endl;
+        return false;
+    }
+
+    spv::SpvBuildLogger logger;
+    glslang::SpvOptions spvOptions;
+
+    
+
+    for (int i = 0; i < (char)ShaderType::Count; i++) {
+
+        glslang::TIntermediate* shader_stage = Program.getIntermediate((EShLanguage)i);
+        if (shader_stage) {
+            ShaderModule newModule;
+            newModule.type = (ShaderType)i;
+            //finalize shader compilation
+            glslang::GlslangToSpv(*shader_stage, newModule.SpirV, &logger, &spvOptions);
+           
+
+
+            VkShaderModuleCreateInfo createInfo;
+            createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+            createInfo.pNext = nullptr;
+            createInfo.flags = 0;
+            createInfo.codeSize = newModule.SpirV.size()*4;
+            createInfo.pCode = reinterpret_cast<const uint32_t*>(newModule.SpirV.data());
+
+            VkShaderModule VkModule;
+
+            vkCreateShaderModule(device, &createInfo, nullptr, &VkModule);           
+            
+            VkPipelineShaderStageCreateInfo shaderCreateInfo;
+            shaderCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+            shaderCreateInfo.pNext = nullptr;
+            shaderCreateInfo.flags = 0;
+           
+            shaderCreateInfo.module = VkModule;
+            shaderCreateInfo.pName = "main";
+            shaderCreateInfo.pSpecializationInfo = nullptr;
+            shaderCreateInfo.stage = ShaderTypeToVulkanFlag(newModule.type);
+
+
+            privData->ShaderStages.push_back(shaderCreateInfo);
+
+            modules.push_back(std::move(newModule));
+        }       
+    }
+
+    for (ShaderModule &ShaderMod : modules)
+    {
+        //read spirv
+        spirv_cross::Compiler comp(ShaderMod.SpirV);
+
+        //reflect resources
+        spirv_cross::ShaderResources res = comp.get_shader_resources();
+
+        using namespace spirv_cross;
+        for (const Resource& resource : res.uniform_buffers)
+        {
+            unsigned set = comp.get_decoration(resource.id, spv::DecorationDescriptorSet);
+            unsigned binding = comp.get_decoration(resource.id, spv::DecorationBinding);
+
+            VkDescriptorSetLayoutBinding vkbind = createLayoutBinding(binding, ShaderTypeToVulkanFlag(ShaderMod.type));
+            vkbind.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+
+            privData->bindingSets[set].descriptorBindings.push_back(vkbind);
+        }
+
+        for (const Resource& resource : res.storage_buffers)
+        {
+
+            unsigned set = comp.get_decoration(resource.id, spv::DecorationDescriptorSet);
+            unsigned binding = comp.get_decoration(resource.id, spv::DecorationBinding);
+
+
+            VkDescriptorSetLayoutBinding vkbind = createLayoutBinding(binding, ShaderTypeToVulkanFlag(ShaderMod.type));
+            vkbind.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+
+            privData->bindingSets[set].descriptorBindings.push_back(vkbind);
+        }
+
+        for (const Resource& resource : res.sampled_images)
+        {
+
+            unsigned set = comp.get_decoration(resource.id, spv::DecorationDescriptorSet);
+            unsigned binding = comp.get_decoration(resource.id, spv::DecorationBinding);
+
+
+            VkDescriptorSetLayoutBinding vkbind = createLayoutBinding(binding, ShaderTypeToVulkanFlag(ShaderMod.type));
+            vkbind.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            
+            privData->bindingSets[set].descriptorBindings.push_back(vkbind);
+        }
+
+
+        for (const Resource& resource : res.push_constant_buffers)
+        {
+            const SPIRType& type = comp.get_type(resource.base_type_id);
+            size_t size = comp.get_declared_struct_size(type);
+
+            VkPushConstantRange pushConstantRange;
+
+            pushConstantRange.size = size;
+            pushConstantRange.offset = 0;
+            pushConstantRange.stageFlags = ShaderTypeToVulkanFlag(ShaderMod.type);
+
+            privData->pushConstantRanges.push_back(pushConstantRange);
+        }
+
+    }
+
+    
+    return true;
+}
+
+
+
+VkPipelineLayout ShaderEffect::build_pipeline_layout(VkDevice device)
+{
+    std::array< VkDescriptorSetLayout,4> descriptorSetLayouts;
+
+  
+    for (int i = 0; i < 4; i++) {
+        VkDescriptorSetLayoutCreateInfo layoutInfo;
+
+        layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        layoutInfo.flags = 0;
+        layoutInfo.pNext = nullptr;
+        layoutInfo.pBindings = privData->bindingSets[i].descriptorBindings.data();
+        layoutInfo.bindingCount = privData->bindingSets[i].descriptorBindings.size();
+        
+        VkDescriptorSetLayout descriptorSetLayout;
+
+        auto result = vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout);
+
+        if (result == VK_SUCCESS) {
+            descriptorSetLayouts[i] = descriptorSetLayout;
+        }        
+    }
+
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo;
+    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutInfo.pNext = nullptr;
+    pipelineLayoutInfo.setLayoutCount = 4;
+    pipelineLayoutInfo.pSetLayouts = &descriptorSetLayouts[0];
+    pipelineLayoutInfo.pushConstantRangeCount = privData->pushConstantRanges.size();
+    pipelineLayoutInfo.pPushConstantRanges = privData->pushConstantRanges.data();
+
+    VkPipelineLayout pipelineLayout;
+    vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout);
+
+    return pipelineLayout;
+}
+
+std::vector<VkPipelineShaderStageCreateInfo> ShaderEffect::get_stage_infos()
+{
+    return privData->ShaderStages;
+}
+
+
+ShaderEffect::ShaderEffect()
+{
+    privData = new ShaderEffectPrivateData;
+}
+
+ShaderEffect::~ShaderEffect()
+{
+    for (auto shader : privData->Shaders)
+    {
+        delete shader;
+    }
+    for (auto shaderinfo : privData->ShaderStages)
+    {
+        vkDestroyShaderModule(privData->device, shaderinfo.module, nullptr);
+    }
+    delete privData;
+}

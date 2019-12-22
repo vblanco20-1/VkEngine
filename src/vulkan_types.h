@@ -41,6 +41,18 @@ struct Vertex {
 
 		return attributeDescriptions;
 	}
+
+	static vk::PipelineVertexInputStateCreateInfo getPipelineCreateInfo() {
+		static auto bindingDescription = Vertex::getBindingDescription();
+		static auto attributeDescriptions = Vertex::getAttributeDescriptions();
+
+		vk::PipelineVertexInputStateCreateInfo vertexInputInfo;
+		vertexInputInfo.vertexBindingDescriptionCount = 1;
+		vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
+		vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
+		vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
+		return vertexInputInfo;
+	}
 };
 
 struct UniformBufferObject {

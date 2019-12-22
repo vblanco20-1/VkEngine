@@ -186,7 +186,14 @@ struct VulkanEngine {
 	template<typename C>
 	EntityID createResource(const char* resource_name,C& resource);
 
+	template<typename C>
+	C& getResource(EntityID Id);
 
+	template<typename C>
+	C& getResource(const char* resource_name);
+
+	template<typename C>
+	bool doesResourceExist(const char* resource_name);
 	entt::registry render_registry;
 
 	std::unordered_map<std::string, EntityID> resourceMap;
@@ -211,5 +218,24 @@ inline EntityID VulkanEngine::createResource(const char* resource_name, C& resou
 
 	return resource_id;
 	
+}
+template<typename C>
+inline C& VulkanEngine::getResource(EntityID Id)
+{
+	return render_registry.get<C>(Id);
+}
+template<typename C>
+inline C& VulkanEngine::getResource(const char* resource_name)
+{
+	return render_registry.get<C>(resourceMap[resource_name]);
+}
+template<typename C>
+inline bool VulkanEngine::doesResourceExist(const char* resource_name)
+{
+	auto find = resourceMap.find(resource_name);
+	if (find != resourceMap.end()) {
+		return render_registry.valid( (*find).second ) && render_registry.has<C>((*find).second);
+	}
+	return false;
 }
 static VKAPI_ATTR VkBool32 VKAPI_CALL vulkanValidationErrorCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData);

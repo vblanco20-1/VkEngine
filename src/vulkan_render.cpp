@@ -310,9 +310,6 @@ void VulkanEngine::create_descriptor_set_layout()
 		bindings.push_back(samplerLayoutBinding);
 	}
 	
-
-	//std::array<vk::DescriptorSetLayoutBinding, 4> bindings = { uboLayoutBinding,globalUboLayoutBinding,globalObjectsLayoutBinding, samplerLayoutBinding };
-
 	vk::DescriptorSetLayoutCreateInfo layoutInfo;
 	layoutInfo.bindingCount = bindings.size();
 	layoutInfo.pBindings = bindings.data();
@@ -568,49 +565,43 @@ vk::ShaderModule VulkanEngine::createShaderModule(const std::vector<unsigned int
 	return device.createShaderModule(createInfo);
 }
 
+struct ShaderEffectHandle:public ResourceComponent {
+	ShaderEffect* handle;
+};
+
 void VulkanEngine::create_gfx_pipeline()
 {
-	//auto vertShaderCode = readFile(MAKE_ASSET_PATH("shaders/basiclit.vert.spv"));
-	//auto fragShaderCode = readFile(MAKE_ASSET_PATH("shaders/basiclit.frag.spv"));
 
-	ShaderModule vertShader;
-	ShaderModule fragShader;
+	std::vector<VkPipelineShaderStageCreateInfo> shaderStages;
+	ShaderEffect* pipelineEffect;
+	if (!doesResourceExist<ShaderEffectHandle>("basiclit") ){
 
-	compile_shader(MAKE_ASSET_PATH("shaders/basiclit.vert"), &vertShader);
-	compile_shader(MAKE_ASSET_PATH("shaders/basiclit.frag"), &fragShader);
+		ShaderEffectHandle newShader;
+		newShader.handle = new ShaderEffect();
 
-	//auto vertShaderCode = readFile(MAKE_ASSET_PATH("shaders/basiclit.vert"));
-	//auto fragShaderCode = readFile(MAKE_ASSET_PATH("shaders/basiclit.frag"));
+		newShader.handle->add_shader_from_file(MAKE_ASSET_PATH("shaders/basiclit.vert"));
+		newShader.handle->add_shader_from_file(MAKE_ASSET_PATH("shaders/basiclit.frag"));
 
-	vk::ShaderModule vertShaderModule = createShaderModule(vertShader.SpirV);
-	vk::ShaderModule fragShaderModule = createShaderModule(fragShader.SpirV);
+		newShader.handle->build_effect(device);
 
-	//vk::ShaderModule vertShaderModule = createShaderModule(vertShaderCode);
-	//vk::ShaderModule fragShaderModule = createShaderModule(fragShaderCode);
+		pipelineEffect = newShader.handle;
 
-	vk::PipelineShaderStageCreateInfo vertShaderStageInfo = {};	
-	vertShaderStageInfo.stage = vk::ShaderStageFlagBits::eVertex;
-	vertShaderStageInfo.module = vertShaderModule;
-	vertShaderStageInfo.pName = "main";
+		createResource<ShaderEffectHandle>("basiclit", newShader);
+	}
+	else
+	{
+		pipelineEffect = getResource<ShaderEffectHandle>("basiclit").handle;
+		
+	}
 
-	vk::PipelineShaderStageCreateInfo fragShaderStageInfo = {};
+	shaderStages = pipelineEffect->get_stage_infos();
+	
+	VkPipelineLayout vklayout = pipelineEffect->build_pipeline_layout(device);
 
-	fragShaderStageInfo.stage = vk::ShaderStageFlagBits::eFragment;
-	fragShaderStageInfo.module = fragShaderModule;
-	fragShaderStageInfo.pName = "main";
-
-	vk::PipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
-
-	auto bindingDescription = Vertex::getBindingDescription();
-	auto attributeDescriptions = Vertex::getAttributeDescriptions();
-
-	vk::PipelineVertexInputStateCreateInfo vertexInputInfo;
-	vertexInputInfo.vertexBindingDescriptionCount = 1;
-	vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
-	vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
-	vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
+	vk::PipelineLayout newLayout = vk::PipelineLayout(vklayout);
 
 
+	vk::PipelineVertexInputStateCreateInfo vertexInputInfo = Vertex::getPipelineCreateInfo();
 
 	vk::PipelineInputAssemblyStateCreateInfo inputAssembly;	
 	inputAssembly.topology = vk::PrimitiveTopology::eTriangleList;
@@ -697,22 +688,9 @@ void VulkanEngine::create_gfx_pipeline()
 	dynamicState.dynamicStateCount = 2;
 	dynamicState.pDynamicStates = dynamicStates;
 
-	vk::PushConstantRange pushConstantRange;
-	pushConstantRange.size = sizeof(int);
-	pushConstantRange.offset = 0;
-	pushConstantRange.stageFlags = vk::ShaderStageFlagBits::eVertex;
-
-	vk::PipelineLayoutCreateInfo pipelineLayoutInfo;	
-	pipelineLayoutInfo.setLayoutCount = 1;
-	pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;
-	pipelineLayoutInfo.pushConstantRangeCount = 1; // Optional
-	pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange; // Optional
-	
-	pipelineLayout = device.createPipelineLayout(pipelineLayoutInfo);
-
 	vk::GraphicsPipelineCreateInfo pipelineInfo;
-	pipelineInfo.stageCount = 2;
-	pipelineInfo.pStages = shaderStages;
+	pipelineInfo.stageCount = shaderStages.size();
+	pipelineInfo.pStages = reinterpret_cast<vk::PipelineShaderStageCreateInfo*>( shaderStages.data());
 	pipelineInfo.pVertexInputState = &vertexInputInfo;
 	pipelineInfo.pInputAssemblyState = &inputAssembly;
 	pipelineInfo.pViewportState = &viewportState;
@@ -721,14 +699,13 @@ void VulkanEngine::create_gfx_pipeline()
 	pipelineInfo.pDepthStencilState = &depthStencil;
 	pipelineInfo.pColorBlendState = &colorBlending;
 	pipelineInfo.pDynamicState = nullptr; // Optional
-	pipelineInfo.layout = pipelineLayout;
+	pipelineInfo.layout = newLayout;//pipelineLayout;
 	pipelineInfo.renderPass = renderPass;
 	pipelineInfo.subpass = 0;
 
-	graphicsPipeline = device.createGraphicsPipelines(nullptr,pipelineInfo)[0];
+	pipelineLayout = newLayout;
 
-	device.destroyShaderModule(vertShaderModule);
-	device.destroyShaderModule(fragShaderModule);
+	graphicsPipeline = device.createGraphicsPipelines(nullptr,pipelineInfo)[0];
 }
 
 void VulkanEngine::create_render_pass()
