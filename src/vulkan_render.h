@@ -177,6 +177,7 @@ struct VulkanEngine {
 	vk::CommandBuffer beginSingleTimeCommands();
 	void endSingleTimeCommands(vk::CommandBuffer commandBuffer);
 	vk::ShaderModule createShaderModule(const std::vector<char>& code);
+	vk::ShaderModule createShaderModule(const std::vector<unsigned int>& code);
 	bool isDeviceSuitable(vk::PhysicalDevice device);
 
 

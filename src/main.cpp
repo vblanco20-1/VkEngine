@@ -13,9 +13,13 @@
 #include "imgui_impl_vulkan.h"
 
 #include "engine_ui.h"
+#include "shader_processor.h"
 
 int main(int argc, char *argv[])
 {
+	//compile_shader("C:/Programming/vkEngine/assets/shaders/basiclit.vert",nullptr);
+	//return 0;
+
 	auto main_registry = entt::registry{};
 	
 	bool quit = false;

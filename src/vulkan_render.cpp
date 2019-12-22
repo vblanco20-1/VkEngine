@@ -13,6 +13,8 @@
 #include "imgui_impl_sdl.h"
 #include "imgui_impl_vulkan.h"
 
+#include "shader_processor.h"
+
 #define STB_IMAGE_IMPLEMENTATION
 #define TINYGLTF_IMPLEMENTATION
 #define STB_IMAGE_WRITE_IMPLEMENTATION
@@ -558,16 +560,33 @@ vk::ShaderModule VulkanEngine::createShaderModule(const std::vector<char>& code)
 	return device.createShaderModule(createInfo);
 }
 
+vk::ShaderModule VulkanEngine::createShaderModule(const std::vector<unsigned int>& code) {
+	vk::ShaderModuleCreateInfo createInfo = {};
+	createInfo.codeSize = code.size()*4;
+	createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data());
+
+	return device.createShaderModule(createInfo);
+}
+
 void VulkanEngine::create_gfx_pipeline()
 {
-	auto vertShaderCode = readFile(MAKE_ASSET_PATH("shaders/basiclit.vert.spv"));
-	auto fragShaderCode = readFile(MAKE_ASSET_PATH("shaders/basiclit.frag.spv"));
+	//auto vertShaderCode = readFile(MAKE_ASSET_PATH("shaders/basiclit.vert.spv"));
+	//auto fragShaderCode = readFile(MAKE_ASSET_PATH("shaders/basiclit.frag.spv"));
+
+	ShaderModule vertShader;
+	ShaderModule fragShader;
+
+	compile_shader(MAKE_ASSET_PATH("shaders/basiclit.vert"), &vertShader);
+	compile_shader(MAKE_ASSET_PATH("shaders/basiclit.frag"), &fragShader);
 
 	//auto vertShaderCode = readFile(MAKE_ASSET_PATH("shaders/basiclit.vert"));
 	//auto fragShaderCode = readFile(MAKE_ASSET_PATH("shaders/basiclit.frag"));
 
-	vk::ShaderModule vertShaderModule = createShaderModule(vertShaderCode);
-	vk::ShaderModule fragShaderModule = createShaderModule(fragShaderCode);
+	vk::ShaderModule vertShaderModule = createShaderModule(vertShader.SpirV);
+	vk::ShaderModule fragShaderModule = createShaderModule(fragShader.SpirV);
+
+	//vk::ShaderModule vertShaderModule = createShaderModule(vertShaderCode);
+	//vk::ShaderModule fragShaderModule = createShaderModule(fragShaderCode);
 
 	vk::PipelineShaderStageCreateInfo vertShaderStageInfo = {};	
 	vertShaderStageInfo.stage = vk::ShaderStageFlagBits::eVertex;

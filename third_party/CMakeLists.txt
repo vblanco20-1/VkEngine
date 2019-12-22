@@ -12,8 +12,8 @@ add_library(assimp INTERFACE)
 add_library(sdl2 INTERFACE)
 add_library(vma INTERFACE)
 
-add_library(glslang INTERFACE)
-add_library(spirv INTERFACE)
+#add_library(glslang INTERFACE)
+#add_library(spirv INTERFACE)
 
 find_package(Vulkan REQUIRED)
 
@@ -152,15 +152,12 @@ ExternalProject_Add(ext_glslang
 		  SOURCE_DIR        "${CMAKE_CURRENT_SOURCE_DIR}/glslang"
 		  BINARY_DIR        "${CMAKE_CURRENT_SOURCE_DIR}/glslang_build"
 		  CONFIGURE_COMMAND ""
-		  BUILD_COMMAND    ${CMAKE_COMMAND} -E echo "Starting $<CONFIG> build"
-		  COMMAND          ${CMAKE_COMMAND} -S <SOURCE_DIR> -B <BINARY_DIR>
-		  COMMAND      ${CMAKE_COMMAND}    -E echo "glslang cmake projects generated"
-		  COMMAND       ${CMAKE_COMMAND} --build <BINARY_DIR> --config Release
-		  INSTALL_COMMAND   ""
-		  TEST_COMMAND      ""
+		  BUILD_COMMAND    ""
 )
 
-#GLSLANG -----------------------------------
+add_subdirectory(glslang EXCLUDE_FROM_ALL)
+
+#SPIRV -----------------------------------
 ExternalProject_Add(ext_spirv
 		  GIT_REPOSITORY    https://github.com/KhronosGroup/SPIRV-Cross
 		  GIT_TAG           f912c32898dbf558635c9d5a2d50ff887c1402ae
@@ -168,21 +165,32 @@ ExternalProject_Add(ext_spirv
 		  SOURCE_DIR        "${CMAKE_CURRENT_SOURCE_DIR}/spirv_cross"
 		  BINARY_DIR        "${CMAKE_CURRENT_SOURCE_DIR}/spirv_cross_build"
 		  CONFIGURE_COMMAND ""
-		  BUILD_COMMAND    ${CMAKE_COMMAND} -E echo "Starting $<CONFIG> build"
-		  COMMAND          ${CMAKE_COMMAND} -S <SOURCE_DIR> -B <BINARY_DIR>
-		  COMMAND      ${CMAKE_COMMAND}    -E echo "spirv cmake projects generated"
-		  COMMAND       ${CMAKE_COMMAND} --build <BINARY_DIR> --config Release
+		  BUILD_COMMAND     ""
+		  #BUILD_COMMAND    ${CMAKE_COMMAND} -E echo "Starting $<CONFIG> build"
+		  #COMMAND          ${CMAKE_COMMAND} -S <SOURCE_DIR> -B <BINARY_DIR>
+		  #COMMAND      ${CMAKE_COMMAND}    -E echo "spirv cmake projects generated"
+		  #COMMAND       ${CMAKE_COMMAND} --build <BINARY_DIR> --config Release
 		  INSTALL_COMMAND   ""
 		  TEST_COMMAND      ""
 )
 
-set(glslang_lib "${CMAKE_CURRENT_SOURCE_DIR}/glslang_build/glslang/Release/glslang.lib")
 
-set(glslang_include "${CMAKE_CURRENT_SOURCE_DIR}/glslang_build/glslang/glslang/Public")
+add_subdirectory(spirv_cross EXCLUDE_FROM_ALL)
 
-add_dependencies(glslang ext_glslang)
-target_include_directories(glslang INTERFACE "${glslang_include}")
-target_link_libraries(glslang INTERFACE "${glslang_lib}" )
+#target_include_directories(spirv INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/spirv_cross")
+
+#file(GLOB_RECURSE spirv_libs
+#	"${CMAKE_CURRENT_SOURCE_DIR}/spirv_cross_build/Release/*.lib"  
+#    )
+
+#target_link_libraries(spirv INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/spirv_cross_build/Release/spirv-cross-c.lib" )
+
+#target_link_libraries(spirv INTERFACE "${spirv_libs}" )
+#set(glslang_include "${CMAKE_CURRENT_SOURCE_DIR}/glslang")
+#
+#add_dependencies(glslang ext_glslang)
+#target_include_directories(glslang INTERFACE "${glslang_include}")
+
 
 #ASSIMP -----------------------------------
 #ExternalProject_Add(ext_assimp
