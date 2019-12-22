@@ -104,6 +104,9 @@ void VulkanEngine::init_vulkan()
 	pick_physical_device();
 
 	create_device();
+
+	descriptorMegapool.device = device;
+
 	VmaAllocatorCreateInfo allocatorInfo = {};
 	allocatorInfo.physicalDevice = physicalDevice;
 	allocatorInfo.device = device;
@@ -116,13 +119,13 @@ void VulkanEngine::init_vulkan()
 
 	create_render_pass();
 
-	create_descriptor_set_layout();
+	create_gfx_pipeline();	
 
 	create_descriptor_pool();
 
 	create_command_pool();
 
-	create_gfx_pipeline();
+	
 
 	create_depth_resources();
 
@@ -269,73 +272,9 @@ void VulkanEngine::create_depth_resources()
 	transitionImageLayout(depthImage.image, depthFormat, vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthStencilAttachmentOptimal);
 }
 
-void VulkanEngine::create_descriptor_set_layout()
-{
-	std::vector<vk::DescriptorSetLayoutBinding> bindings;
-
-	vk::DescriptorSetLayoutBinding uboLayoutBinding;
-	uboLayoutBinding.binding = 0;
-	uboLayoutBinding.descriptorType = vk::DescriptorType::eUniformBuffer;
-	uboLayoutBinding.descriptorCount = 1;
-	uboLayoutBinding.stageFlags = vk::ShaderStageFlagBits::eVertex;
-	uboLayoutBinding.pImmutableSamplers = nullptr; // Optional
-
-	bindings.push_back(uboLayoutBinding);
-
-	vk::DescriptorSetLayoutBinding globalUboLayoutBinding;
-	globalUboLayoutBinding.binding = 1;
-	globalUboLayoutBinding.descriptorType = vk::DescriptorType::eUniformBuffer;
-	globalUboLayoutBinding.descriptorCount = 1;
-	globalUboLayoutBinding.stageFlags = vk::ShaderStageFlagBits::eVertex;
-	globalUboLayoutBinding.pImmutableSamplers = nullptr; // Optional
-
-	bindings.push_back(globalUboLayoutBinding);
-
-	vk::DescriptorSetLayoutBinding globalObjectsLayoutBinding;
-	globalObjectsLayoutBinding.binding = 2;
-	globalObjectsLayoutBinding.descriptorType = vk::DescriptorType::eStorageBuffer;
-	globalObjectsLayoutBinding.descriptorCount = 1;
-	globalObjectsLayoutBinding.stageFlags = vk::ShaderStageFlagBits::eVertex;
-	globalObjectsLayoutBinding.pImmutableSamplers = nullptr; // Optional
-	bindings.push_back(globalObjectsLayoutBinding);
-
-	for (int i = 0; i < 8; i++) {
-		vk::DescriptorSetLayoutBinding samplerLayoutBinding;
-		samplerLayoutBinding.binding = 6 + i;
-		samplerLayoutBinding.descriptorCount = 1;
-		samplerLayoutBinding.descriptorType = vk::DescriptorType::eCombinedImageSampler;
-		samplerLayoutBinding.pImmutableSamplers = nullptr;
-		samplerLayoutBinding.stageFlags = vk::ShaderStageFlagBits::eFragment;
-
-		bindings.push_back(samplerLayoutBinding);
-	}
-	
-	vk::DescriptorSetLayoutCreateInfo layoutInfo;
-	layoutInfo.bindingCount = bindings.size();
-	layoutInfo.pBindings = bindings.data();
-
-	descriptorSetLayout = device.createDescriptorSetLayout(layoutInfo);
-}
 
 void VulkanEngine::create_descriptor_pool()
 {
-	std::array<vk::DescriptorPoolSize, 3> poolSizes = {};
-	poolSizes[0].type = vk::DescriptorType::eUniformBuffer;
-	poolSizes[0].descriptorCount = 10000;//static_cast<uint32_t>(swapChainImages.size());
-	poolSizes[1].type = vk::DescriptorType::eCombinedImageSampler;
-	poolSizes[1].descriptorCount = 10000;//static_cast<uint32_t>(swapChainImages.size());
-	poolSizes[2].type = vk::DescriptorType::eUniformBuffer;
-	poolSizes[2].descriptorCount = static_cast<uint32_t>(swapChainImages.size());
-	poolSizes[2].type = vk::DescriptorType::eStorageBuffer;
-	poolSizes[2].descriptorCount = static_cast<uint32_t>(swapChainImages.size());
-
-	vk::DescriptorPoolCreateInfo poolInfo;	
-	poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
-	poolInfo.pPoolSizes = poolSizes.data();
-	poolInfo.maxSets = 10000; //static_cast<uint32_t>(swapChainImages.size());
-
-	descriptorPool = device.createDescriptorPool(poolInfo);
-
 	VkDescriptorPoolSize pool_sizes[] =
 	{
 		{ VK_DESCRIPTOR_TYPE_SAMPLER, 1000 },
@@ -361,16 +300,10 @@ void VulkanEngine::create_descriptor_pool()
 
 void VulkanEngine::create_descriptor_sets()
 {
-	std::vector<vk::DescriptorSetLayout> layouts(swapChainImages.size(), descriptorSetLayout);
-	vk::DescriptorSetAllocateInfo allocInfo ;
-	allocInfo.descriptorPool = descriptorPool;
-	allocInfo.descriptorSetCount = static_cast<uint32_t>(swapChainImages.size());
-	allocInfo.pSetLayouts = layouts.data();
-
-	test_descriptorSets = device.allocateDescriptorSets(allocInfo);
-	
-
 	for (size_t i = 0; i < swapChainImages.size(); i++) {
+
+		test_descriptorSets.push_back(descriptorMegapool.allocate_descriptor(descriptorSetLayout, DescriptorLifetime::Static));
+
 		vk::DescriptorBufferInfo bufferInfo;
 		bufferInfo.buffer = test_uniformBuffers[i].buffer;
 		bufferInfo.offset = 0;
@@ -439,13 +372,10 @@ EntityID VulkanEngine::create_basic_descriptor_sets(EntityID pipelineID, std::ar
 	//create buffers to hold the matrices
 	vk::DeviceSize bufferSize = sizeof(UniformBufferObject);
 
-	std::vector<vk::DescriptorSetLayout> layouts(swapChainImages.size(), descriptorSetLayout);
-	vk::DescriptorSetAllocateInfo allocInfo;
-	allocInfo.descriptorPool = descriptorPool;
-	allocInfo.descriptorSetCount = static_cast<uint32_t>(swapChainImages.size());
-	allocInfo.pSetLayouts = layouts.data();
+	for (size_t i = 0; i < swapChainImages.size(); i++) {
 
-	descriptors.descriptorSets = device.allocateDescriptorSets(allocInfo);
+		descriptors.descriptorSets.push_back(descriptorMegapool.allocate_descriptor(descriptorSetLayout, DescriptorLifetime::Static));
+	}
 
 	static std::vector<vk::WriteDescriptorSet> descriptorWrites;
 	
@@ -596,9 +526,9 @@ void VulkanEngine::create_gfx_pipeline()
 
 	shaderStages = pipelineEffect->get_stage_infos();
 	
-	VkPipelineLayout vklayout = pipelineEffect->build_pipeline_layout(device);
+	descriptorSetLayout = pipelineEffect->build_descriptor_layouts(device)[0];
 
-	vk::PipelineLayout newLayout = vk::PipelineLayout(vklayout);
+	vk::PipelineLayout newLayout = vk::PipelineLayout(pipelineEffect->build_pipeline_layout(device));
 
 
 	vk::PipelineVertexInputStateCreateInfo vertexInputInfo = Vertex::getPipelineCreateInfo();
@@ -1122,17 +1052,16 @@ void VulkanEngine::draw_frame()
 		
 		if (bShouldBindPipeline) {
 			cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline.pipeline);
-			last_pipeline = graphicsPipeline;//pipeline.pipeline;
-		}
-		
+			last_pipeline = graphicsPipeline;
+		}		
 	
 		vk::Buffer meshbuffers[] = { mesh.vertexBuffer.buffer };
 		vk::DeviceSize offsets[] = { 0 };
 		cmd.bindVertexBuffers(0, 1, meshbuffers, offsets);
 	
 		cmd.bindIndexBuffer(mesh.indexBuffer.buffer, 0, vk::IndexType::eUint32);
-		uint32_t dynamicOffset = renderable.ubo_descriptor_offset;// * sizeof(UniformBufferObject);
-		cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, 1, &descriptor.descriptorSets[currentFrameIndex], 0, nullptr);// 1, &dynamicOffset);
+
+		cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, 1, &descriptor.descriptorSets[currentFrameIndex], 0, nullptr);
 	
 		cmd.pushConstants(pipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(int), &renderable.object_idx);
 		cmd.drawIndexed(static_cast<uint32_t>(mesh.indices.size()), 1, 0, 0, 0);

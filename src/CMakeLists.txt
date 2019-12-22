@@ -3,9 +3,12 @@ set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
 find_package(Vulkan REQUIRED)
 
+file(GLOB PROJ_HEADERS *.h)
+file(GLOB PROJ_SOURCES *.cpp)
+
 add_compile_definitions(ASSET_PATH="${PROJECT_SOURCE_DIR}/assets/")
 
-set(SOURCE_FILES main.cpp  sdl_render.cpp vmath.cpp vulkan_render.cpp pcheader.cpp vulkan_textures.cpp engine_ui.cpp vulkan_init.cpp vulkan_descriptors.cpp)
+set(SOURCE_FILES ${PROJ_SOURCES} ${PROJ_HEADERS})
 
 
 add_executable(vkEngine ${SOURCE_FILES})

@@ -49,6 +49,7 @@ struct ShaderEffect {
 	//returns a vkPipelineLayout
 	VkPipelineLayout build_pipeline_layout(VkDevice device);
 
+	std::array< VkDescriptorSetLayout, 4> build_descriptor_layouts(VkDevice device);
 	std::vector<VkPipelineShaderStageCreateInfo> get_stage_infos();
 
 

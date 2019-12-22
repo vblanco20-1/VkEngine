@@ -23,6 +23,27 @@ struct DescriptorSetBuilder {
 
 };
 
+enum class DescriptorLifetime {
+	Static,
+	PerFrame
+};
+
+struct DescriptorAllocator {
+	int max_descriptors;
+	int current_descriptors;
+	vk::DescriptorPool pool;
+};
+struct DescriptorMegaPool {
+
+	using PoolStorage = std::vector<DescriptorAllocator*>;
+
+	vk::DescriptorSet allocate_descriptor(vk::DescriptorSetLayout layout, DescriptorLifetime lifetime);
+
+	PoolStorage static_pools;
+	PoolStorage dynamic_pools;
+	vk::Device device;
+};
+
 
 
 

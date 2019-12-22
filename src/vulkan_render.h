@@ -1,6 +1,6 @@
 
 #include "vulkan_types.h"
- 
+#include "vulkan_descriptors.h"
 
 constexpr int MAX_FRAMES_IN_FLIGHT = 3;
 constexpr int MAX_UNIFORM_BUFFER = 5000;
@@ -51,6 +51,7 @@ struct VulkanEngine {
 	VkDescriptorPool imgui_descriptorPool;
 	std::vector<vk::DescriptorSet> test_descriptorSets;
 
+	DescriptorMegaPool descriptorMegapool;
 
 	vk::PipelineLayout pipelineLayout;
 	vk::Pipeline graphicsPipeline;
@@ -103,7 +104,6 @@ struct VulkanEngine {
 	void createImageViews();
 	void create_depth_resources();
 
-	void create_descriptor_set_layout();
 	void create_descriptor_pool();
 	void create_descriptor_sets();
 

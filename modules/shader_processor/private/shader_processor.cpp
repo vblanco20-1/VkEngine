@@ -587,26 +587,7 @@ bool ShaderEffect::build_effect(VkDevice device)
 
 VkPipelineLayout ShaderEffect::build_pipeline_layout(VkDevice device)
 {
-    std::array< VkDescriptorSetLayout,4> descriptorSetLayouts;
-
-  
-    for (int i = 0; i < 4; i++) {
-        VkDescriptorSetLayoutCreateInfo layoutInfo;
-
-        layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        layoutInfo.flags = 0;
-        layoutInfo.pNext = nullptr;
-        layoutInfo.pBindings = privData->bindingSets[i].descriptorBindings.data();
-        layoutInfo.bindingCount = privData->bindingSets[i].descriptorBindings.size();
-        
-        VkDescriptorSetLayout descriptorSetLayout;
-
-        auto result = vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout);
-
-        if (result == VK_SUCCESS) {
-            descriptorSetLayouts[i] = descriptorSetLayout;
-        }        
-    }
+    std::array< VkDescriptorSetLayout,4> descriptorSetLayouts = build_descriptor_layouts(device);
 
     VkPipelineLayoutCreateInfo pipelineLayoutInfo;
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -620,6 +601,31 @@ VkPipelineLayout ShaderEffect::build_pipeline_layout(VkDevice device)
     vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout);
 
     return pipelineLayout;
+}
+
+std::array<VkDescriptorSetLayout, 4> ShaderEffect::build_descriptor_layouts(VkDevice device)
+{
+    std::array< VkDescriptorSetLayout, 4> descriptorSetLayouts ;
+
+    for (int i = 0; i < 4; i++) {
+        VkDescriptorSetLayoutCreateInfo layoutInfo;
+
+        layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        layoutInfo.flags = 0;
+        layoutInfo.pNext = nullptr;
+        layoutInfo.pBindings = privData->bindingSets[i].descriptorBindings.data();
+        layoutInfo.bindingCount = privData->bindingSets[i].descriptorBindings.size();
+
+        VkDescriptorSetLayout descriptorSetLayout;
+
+        auto result = vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout);
+
+        if (result == VK_SUCCESS) {
+            descriptorSetLayouts[i] = descriptorSetLayout;
+        }
+    }
+
+    return descriptorSetLayouts;
 }
 
 std::vector<VkPipelineShaderStageCreateInfo> ShaderEffect::get_stage_infos()
