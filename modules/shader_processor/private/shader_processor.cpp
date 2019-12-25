@@ -343,6 +343,11 @@ bool compile_shader(const char* path, ShaderModule* outModule)
 
 	return false;
 }
+
+
+
+
+
 struct ShaderDescriptorBindings {
     std::vector<VkDescriptorSetLayoutBinding> descriptorBindings;
 };
@@ -353,6 +358,8 @@ struct ShaderEffectPrivateData {
 
     std::array<ShaderDescriptorBindings,4> bindingSets;
     std::vector< VkPushConstantRange> pushConstantRanges;
+
+    BindReflection reflectionData;
 
     glslang::TProgram Program;
     VkDevice device;
@@ -457,6 +464,7 @@ VkDescriptorSetLayoutBinding createLayoutBinding(int bindNumber, VkShaderStageFl
 }
 
 
+
 bool ShaderEffect::build_effect(VkDevice device)
 {
     privData->device = device;
@@ -527,6 +535,8 @@ bool ShaderEffect::build_effect(VkDevice device)
         using namespace spirv_cross;
         for (const Resource& resource : res.uniform_buffers)
         {
+            const SPIRType& type = comp.get_type(resource.base_type_id);
+            size_t size = comp.get_declared_struct_size(type);
             unsigned set = comp.get_decoration(resource.id, spv::DecorationDescriptorSet);
             unsigned binding = comp.get_decoration(resource.id, spv::DecorationBinding);
 
@@ -534,11 +544,20 @@ bool ShaderEffect::build_effect(VkDevice device)
             vkbind.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 
             privData->bindingSets[set].descriptorBindings.push_back(vkbind);
+
+            BindInfo newinfo;
+            newinfo.set = set;
+            newinfo.binding = binding;
+            newinfo.range = size;;
+            newinfo.type = vkbind.descriptorType;
+
+            privData->reflectionData.DataBindings[comp.get_name(resource.id)] = newinfo;
         }
 
         for (const Resource& resource : res.storage_buffers)
         {
-
+            const SPIRType& type = comp.get_type(resource.base_type_id);
+            size_t size = comp.get_declared_struct_size(type);
             unsigned set = comp.get_decoration(resource.id, spv::DecorationDescriptorSet);
             unsigned binding = comp.get_decoration(resource.id, spv::DecorationBinding);
 
@@ -547,11 +566,20 @@ bool ShaderEffect::build_effect(VkDevice device)
             vkbind.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 
             privData->bindingSets[set].descriptorBindings.push_back(vkbind);
+
+            BindInfo newinfo;
+            newinfo.set = set;
+            newinfo.binding = binding;
+            newinfo.range = size;
+            newinfo.type = vkbind.descriptorType;
+
+            privData->reflectionData.DataBindings[comp.get_name(resource.id)] = newinfo;
         }
 
         for (const Resource& resource : res.sampled_images)
         {
-
+            //const SPIRType& type = comp.get_type(resource.base_type_id);
+            //size_t size = comp.get_declared_struct_size(type);
             unsigned set = comp.get_decoration(resource.id, spv::DecorationDescriptorSet);
             unsigned binding = comp.get_decoration(resource.id, spv::DecorationBinding);
 
@@ -560,6 +588,14 @@ bool ShaderEffect::build_effect(VkDevice device)
             vkbind.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
             
             privData->bindingSets[set].descriptorBindings.push_back(vkbind);
+
+            BindInfo newinfo;
+            newinfo.set = set;
+            newinfo.binding = binding;
+            newinfo.range = 0;//size;
+            newinfo.type = vkbind.descriptorType;
+
+            privData->reflectionData.DataBindings[comp.get_name(resource.id)] = newinfo;
         }
 
 
@@ -574,11 +610,14 @@ bool ShaderEffect::build_effect(VkDevice device)
             pushConstantRange.offset = 0;
             pushConstantRange.stageFlags = ShaderTypeToVulkanFlag(ShaderMod.type);
 
+
+            BindInfoPushConstants newinfo;
+            newinfo.size = size;
+
             privData->pushConstantRanges.push_back(pushConstantRange);
+            privData->reflectionData.PushConstants.push_back(newinfo);
         }
-
     }
-
     
     return true;
 }
@@ -631,6 +670,11 @@ std::array<VkDescriptorSetLayout, 4> ShaderEffect::build_descriptor_layouts(VkDe
 std::vector<VkPipelineShaderStageCreateInfo> ShaderEffect::get_stage_infos()
 {
     return privData->ShaderStages;
+}
+
+BindReflection* ShaderEffect::get_reflection()
+{
+    return &privData->reflectionData;
 }
 
 

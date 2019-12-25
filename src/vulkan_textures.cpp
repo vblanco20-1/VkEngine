@@ -107,6 +107,8 @@ EntityID VulkanEngine::load_texture(const char* image_path, std::string textureN
 
 void VulkanEngine::load_textures_bulk(TextureLoadRequest* requests, size_t count)
 {
+	ZoneScopedN("Loading Bulk Textures");
+
 	struct ImageData {
 		bool bLoaded = false;
 		int texWidth, texHeight, texChannels;
@@ -216,15 +218,21 @@ void VulkanEngine::load_textures_bulk(TextureLoadRequest* requests, size_t count
 
 		auto cmd = beginSingleTimeCommands();
 
-		for (int i = 0; i < max_tex_upload; i++) {
+		{
+			tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(cmd);
+			TracyVkZone(profilercontext, VkCommandBuffer(cmd), "Upload Image");
 
-			int index = batch * batches + i;
-			if (index >= count) break;
-			cmd_transitionImageLayout(cmd,AllData[index].texture.image.image, AllData[index].image_format, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal);
+			ZoneScopedN("Copying images to GPU");
+			for (int i = 0; i < max_tex_upload; i++) {
 
-			cmd_copyBufferToImage(cmd, AllData[index].stagingBuffer.buffer, AllData[index].texture.image.image, static_cast<uint32_t>(AllData[index].texWidth), static_cast<uint32_t>(AllData[index].texHeight));
+				int index = batch * batches + i;
+				if (index >= count) break;
+				cmd_transitionImageLayout(cmd, AllData[index].texture.image.image, AllData[index].image_format, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal);
 
-			cmd_transitionImageLayout(cmd, AllData[index].texture.image.image, AllData[index].image_format, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
+				cmd_copyBufferToImage(cmd, AllData[index].stagingBuffer.buffer, AllData[index].texture.image.image, static_cast<uint32_t>(AllData[index].texWidth), static_cast<uint32_t>(AllData[index].texHeight));
+
+				cmd_transitionImageLayout(cmd, AllData[index].texture.image.image, AllData[index].image_format, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
+			}
 		}
 		endSingleTimeCommands(cmd);
 
@@ -327,16 +335,15 @@ vk::ImageView VulkanEngine::createImageView(vk::Image image, vk::Format format, 
 
 void VulkanEngine::copyBufferToImage(vk::Buffer buffer, vk::Image image, uint32_t width, uint32_t height)
 {
-	auto commandBuffer = beginSingleTimeCommands();
+	auto cmd = beginSingleTimeCommands();
+	{
+		tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(cmd);
+		TracyVkZone(profilercontext, VkCommandBuffer(cmd), "Upload Image");
 
+		cmd_copyBufferToImage(cmd, buffer, image, width, height);
+	}
 
-
-	cmd_copyBufferToImage(commandBuffer, buffer, image, width, height);
-
-	endSingleTimeCommands(commandBuffer);
-
-
-
+	endSingleTimeCommands(cmd);
 }
 
 void VulkanEngine::cmd_copyBufferToImage(vk::CommandBuffer& cmd, vk::Buffer buffer, vk::Image image, uint32_t width, uint32_t height)

@@ -22,3 +22,7 @@
 #include <assimp/postprocess.h>
 
 #include <chrono>
+
+#define TRACY_ENABLE
+#include <Tracy.hpp>
+#include <TracyVulkan.hpp>

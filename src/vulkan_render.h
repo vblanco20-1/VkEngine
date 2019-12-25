@@ -74,6 +74,8 @@ struct VulkanEngine {
 	vk::CommandPool commandPool;
 	std::vector<vk::CommandBuffer> commandBuffers;
 
+	std::unordered_map< uint64_t, void*> ProfilerContexts;
+	void* MainProfilerContext{nullptr};
 	AllocatedImage test_textureImage;
 	//vk::DeviceMemory textureImageMemory;
 	vk::ImageView tset_textureImageView;
@@ -108,7 +110,7 @@ struct VulkanEngine {
 	void create_descriptor_sets();
 
 	
-
+	void* get_profiler_context(vk::CommandBuffer cmd);
 	void create_gfx_pipeline();
 	void create_render_pass();
 	void create_framebuffers();
@@ -144,6 +146,7 @@ struct VulkanEngine {
 	size_t align_dynamic_descriptor(size_t initial_alignement);
 
 	void draw_frame();
+	void RenderMainPass(const vk::CommandBuffer& cmd);
 	void update_uniform_buffer(uint32_t currentImage);
 
 	void clear_vulkan();

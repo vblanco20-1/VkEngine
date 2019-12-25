@@ -12,6 +12,7 @@ add_library(assimp INTERFACE)
 add_library(sdl2 INTERFACE)
 add_library(vma INTERFACE)
 
+
 #add_library(glslang INTERFACE)
 #add_library(spirv INTERFACE)
 
@@ -177,6 +178,11 @@ ExternalProject_Add(ext_spirv
 
 add_subdirectory(spirv_cross EXCLUDE_FROM_ALL)
 
+
+
+set(TRACY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/tracy" CACHE FILEPATH "Path to Tracy")
+add_library(tracy OBJECT "${TRACY_DIR}/TracyClient.cpp")
+target_include_directories(tracy PUBLIC "${TRACY_DIR}")
 #target_include_directories(spirv INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/spirv_cross")
 
 #file(GLOB_RECURSE spirv_libs

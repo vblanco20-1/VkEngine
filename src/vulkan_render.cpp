@@ -137,6 +137,8 @@ void VulkanEngine::init_vulkan()
 
 	create_depth_resources();
 
+	create_command_buffers();
+
 	create_texture_image();
 	create_texture_image_view();
 	create_texture_sampler();
@@ -152,8 +154,10 @@ void VulkanEngine::init_vulkan()
 	//
 	//
 	create_descriptor_sets();
+	
+
 	blankTexture = load_texture(MAKE_ASSET_PATH("sprites/blank.png"), "blank");
-	create_command_buffers();
+	
 
 	
 	//load_scene("E:/Gamedev/tps-demo/level/geometry/demolevel.blend");
@@ -319,6 +323,16 @@ void VulkanEngine::create_descriptor_sets()
 		imageInfo.imageView = tset_textureImageView;
 		imageInfo.sampler = test_textureSampler;
 
+		//DescriptorSetBuilder setBuilder{nullptr,nullptr};
+		//
+		//setBuilder.bind_buffer(0, 0, bufferInfo, vk::DescriptorType::eUniformBuffer);
+		//setBuilder.bind_buffer(0, 1, bufferInfo, vk::DescriptorType::eUniformBuffer);
+		//setBuilder.bind_buffer(0, 2, bigbufferInfo, vk::DescriptorType::eStorageBuffer);
+		//
+		//setBuilder.bind_image(0,6, imageInfo);
+		//
+		//setBuilder.update_descriptor(0,test_descriptorSets[i],device);
+
 		std::array<vk::WriteDescriptorSet, 4> descriptorWrites = {};
 		descriptorWrites[0].dstSet = test_descriptorSets[i];
 		descriptorWrites[0].dstBinding = 0;
@@ -328,7 +342,7 @@ void VulkanEngine::create_descriptor_sets()
 		descriptorWrites[0].pBufferInfo = &bufferInfo;
 		descriptorWrites[0].pImageInfo = nullptr; // Optional
 		descriptorWrites[0].pTexelBufferView = nullptr; // Optional		
-
+		
 		descriptorWrites[2].dstSet = test_descriptorSets[i];
 		descriptorWrites[2].dstBinding = 1;
 		descriptorWrites[2].dstArrayElement = 0;
@@ -337,7 +351,7 @@ void VulkanEngine::create_descriptor_sets()
 		descriptorWrites[2].pBufferInfo = &bufferInfo;
 		descriptorWrites[2].pImageInfo = nullptr; // Optional
 		descriptorWrites[2].pTexelBufferView = nullptr; // Optional		
-
+		
 		descriptorWrites[1].dstSet = test_descriptorSets[i];
 		descriptorWrites[1].dstBinding = 6;
 		descriptorWrites[1].dstArrayElement = 0;
@@ -346,7 +360,7 @@ void VulkanEngine::create_descriptor_sets()
 		descriptorWrites[1].pBufferInfo = nullptr;
 		descriptorWrites[1].pImageInfo = &imageInfo; // Optional
 		descriptorWrites[1].pTexelBufferView = nullptr; // Optional		
-
+		
 		descriptorWrites[3].dstSet = test_descriptorSets[i];
 		descriptorWrites[3].dstBinding = 2;
 		descriptorWrites[3].dstArrayElement = 0;
@@ -355,7 +369,7 @@ void VulkanEngine::create_descriptor_sets()
 		descriptorWrites[3].pBufferInfo = &bigbufferInfo;
 		descriptorWrites[3].pImageInfo = nullptr; // Optional
 		descriptorWrites[3].pTexelBufferView = nullptr; // Optional		
-
+		
 		device.updateDescriptorSets(descriptorWrites, 0);
 	}
 }
@@ -498,6 +512,15 @@ vk::ShaderModule VulkanEngine::createShaderModule(const std::vector<unsigned int
 struct ShaderEffectHandle:public ResourceComponent {
 	ShaderEffect* handle;
 };
+
+void* VulkanEngine::get_profiler_context(vk::CommandBuffer cmd)
+{
+	if (!MainProfilerContext)
+	{
+		MainProfilerContext = TracyVkContext(physicalDevice, device, graphicsQueue, cmd);
+	}
+	return MainProfilerContext;//ProfilerContexts[reinterpret_cast<uint64_t>( VkCommandBuffer(cmd))];
+}
 
 void VulkanEngine::create_gfx_pipeline()
 {
@@ -936,6 +959,8 @@ void VulkanEngine::create_command_buffers()
 
 
 	commandBuffers = device.allocateCommandBuffers(allocInfo);
+
+	get_profiler_context(commandBuffers[0]);
 }
 
 void VulkanEngine::start_frame_command_buffer(vk::CommandBuffer buffer, vk::Framebuffer framebuffer)
@@ -963,25 +988,43 @@ void VulkanEngine::start_frame_command_buffer(vk::CommandBuffer buffer, vk::Fram
 
 	renderPassInfo.clearValueCount = clearValues.size();
 	renderPassInfo.pClearValues = clearValues.data();
-
+	tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(cmd);
+	//TracyVkCollect(profilercontext, cmd);
 	cmd.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
 }
-
+static int counter = 0;
 void VulkanEngine::end_frame_command_buffer(vk::CommandBuffer cmd)
 {
+	tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(cmd);
+
+	//cmd.pipelineBarrier(vk::PipelineStageFlagBits::eBottomOfPipe, vk::PipelineStageFlagBits::eTopOfPipe, vk::DependencyFlags{}, 0, nullptr, 0, nullptr, 0, nullptr);
 
 	cmd.endRenderPass();
 
+	counter++;
+	if (counter > 5) {
+		TracyVkCollect(profilercontext, cmd);
+		counter = 0;
+	}
+	
+	
 	cmd.end();
 }
 
 void VulkanEngine::draw_frame()
 {
-	
+	ZoneNamedNC(Framemark1, "Draw Frame 0", tracy::Color::Blue1, currentFrameIndex == 0);
+	ZoneNamedNC(Framemark2, "Draw Frame 1", tracy::Color::Blue2, currentFrameIndex == 1);
+	ZoneNamedNC(Framemark3, "Draw Frame 2 ", tracy::Color::Blue3, currentFrameIndex == 2);
+	//("Draw Frame", color);
+	{
+		
 
-	device.waitForFences( 1, &inFlightFences[currentFrameIndex], VK_TRUE, std::numeric_limits<uint64_t>::max());
+		ZoneScopedNC("WaitFences", tracy::Color::Red);
+		device.waitForFences(1, &inFlightFences[currentFrameIndex], VK_TRUE, std::numeric_limits<uint64_t>::max());
+	}
 
-	
+
 	vk::ResultValue<uint32_t> imageResult = device.acquireNextImageKHR(swapChain, std::numeric_limits<uint64_t>::max(), imageAvailableSemaphores[currentFrameIndex], nullptr);
 
 	if (imageResult.result == vk::Result::eErrorOutOfDateKHR) {
@@ -992,7 +1035,7 @@ void VulkanEngine::draw_frame()
 	uint32_t imageIndex = imageResult.value;
 
 	vk::SubmitInfo submitInfo;
-	
+
 
 	vk::Semaphore waitSemaphores[] = { imageAvailableSemaphores[currentFrameIndex] };
 	vk::PipelineStageFlags waitStages[] = { vk::PipelineStageFlagBits::eColorAttachmentOutput };
@@ -1001,11 +1044,10 @@ void VulkanEngine::draw_frame()
 	submitInfo.pWaitSemaphores = waitSemaphores;
 	submitInfo.pWaitDstStageMask = waitStages;
 
-	
+
 
 	vk::Semaphore signalSemaphores[] = { renderFinishedSemaphores[currentFrameIndex] };
-	submitInfo.signalSemaphoreCount = 1;
-	submitInfo.pSignalSemaphores = signalSemaphores;
+
 
 
 	device.resetFences(1, &inFlightFences[currentFrameIndex]);
@@ -1022,85 +1064,131 @@ void VulkanEngine::draw_frame()
 
 	eng_stats.drawcalls = 0;
 
-	vk::CommandBuffer& cmd = commandBuffers[currentFrameIndex];//bffs[0];
+	vk::CommandBuffer cmd = commandBuffers[currentFrameIndex];
 
 	start_frame_command_buffer(cmd, swapChainFramebuffers[currentFrameIndex]);
 
-	cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline);
+	{
+		tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(cmd);
+		VkCommandBuffer commandbuffer = VkCommandBuffer(cmd);
+		TracyVkZone(profilercontext, commandbuffer, "All Frame");
 
-	//vk::Buffer vertexBuffers[] = { vertexBuffer.buffer };
-	//vk::DeviceSize offsets[] = { 0 };
-	//cmd.bindVertexBuffers(0, 1, vertexBuffers, offsets);
-	//
-	//cmd.bindIndexBuffer(indexBuffer.buffer, 0, vk::IndexType::eUint32);
-	//uint32_t dynamicOffset = 0;//StagingCPUUBOArray.get_offset(3); //3 * sizeof(UniformBufferObject);
-	//
-	cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, 1, &test_descriptorSets[(currentFrameIndex +1)%3], 0, nullptr);//1, &dynamicOffset);//0, nullptr);
-	////vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffers, offsets);
-	//eng_stats.drawcalls++;
-	//cmd.drawIndexed(static_cast<uint32_t>(test_indices.size()), 1, 0, 0, 0);
-	vk::Pipeline last_pipeline = graphicsPipeline;
-	bool first_render = true;
+		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline);
 
-	render_registry.view<RenderMeshComponent>().each([&](RenderMeshComponent& renderable) {
+		cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, 1, &test_descriptorSets[(currentFrameIndex + 1) % 3], 0, nullptr);//1, &dynamicOffset);//0, nullptr);
+
+		{
+			ZoneScopedNC("RenderSort", tracy::Color::Violet);
+			render_registry.sort<RenderMeshComponent>([](const RenderMeshComponent& A, const RenderMeshComponent& B) {
+				return A.mesh_resource_entity < B.mesh_resource_entity;
+				}, entt::std_sort{});
+		}
+
+		if (currentFrameIndex == 0) {
+			TracyVkZoneC(profilercontext, commandbuffer, "Main pass 0",tracy::Color::Red1);
+			//for (int i = 5; i != 0; i--) {
+				RenderMainPass(cmd);
+			//}
+			
+		}
+		else if (currentFrameIndex == 1) {
+			TracyVkZoneC(profilercontext, commandbuffer, "Main pass 1", tracy::Color::Red2);
+			RenderMainPass(cmd);
+		}
+		else if (currentFrameIndex == 2) {
+			TracyVkZoneC(profilercontext, commandbuffer, "Main pass 2", tracy::Color::Red3);
+			RenderMainPass(cmd);
+		}
 		
-		const MeshResource& mesh = render_registry.get<MeshResource>(renderable.mesh_resource_entity);
-		const PipelineResource& pipeline = render_registry.get<PipelineResource>(renderable.pipeline_entity);
-		const DescriptorResource& descriptor = render_registry.get<DescriptorResource>(renderable.descriptor_entity);
-	
-		bool bShouldBindPipeline = first_render ? true : pipeline.pipeline == last_pipeline;
-		
-		if (bShouldBindPipeline) {
-			cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline.pipeline);
-			last_pipeline = graphicsPipeline;
-		}		
-	
-		vk::Buffer meshbuffers[] = { mesh.vertexBuffer.buffer };
-		vk::DeviceSize offsets[] = { 0 };
-		cmd.bindVertexBuffers(0, 1, meshbuffers, offsets);
-	
-		cmd.bindIndexBuffer(mesh.indexBuffer.buffer, 0, vk::IndexType::eUint32);
+		//TracyVkCollect(profilercontext, commandbuffer);
+		{
+			
+			ZoneScopedNC("Imgui Update", tracy::Color::Grey);
+			TracyVkZone(profilercontext, commandbuffer, "Imgui pass");
+			ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
+		}
 
-		cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, 1, &descriptor.descriptorSets[currentFrameIndex], 0, nullptr);
-	
-		cmd.pushConstants(pipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(int), &renderable.object_idx);
-		cmd.drawIndexed(static_cast<uint32_t>(mesh.indices.size()), 1, 0, 0, 0);
-
-		eng_stats.drawcalls++;
-	});
-	
-	ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
-
+	}
 	end_frame_command_buffer(cmd);
 	
+	{
+		ZoneScopedNC("Submit and present", tracy::Color::Red);
+		submitInfo.commandBufferCount = 1;
+		submitInfo.pCommandBuffers = &cmd;
+		submitInfo.signalSemaphoreCount = 1;
+		submitInfo.pSignalSemaphores = signalSemaphores;
+		graphicsQueue.submit(1, &submitInfo, inFlightFences[currentFrameIndex]);
 
 
-	submitInfo.commandBufferCount = 1;
-	submitInfo.pCommandBuffers = &cmd;// &commandBuffers[imageIndex];
-	graphicsQueue.submit(1, &submitInfo, inFlightFences[currentFrameIndex]);
+		vk::PresentInfoKHR presentInfo = {};
+		presentInfo.waitSemaphoreCount = 1;
+		presentInfo.pWaitSemaphores = signalSemaphores;
+
+		vk::SwapchainKHR swapChains[] = { swapChain };
+		presentInfo.swapchainCount = 1;
+		presentInfo.pSwapchains = swapChains;
+		presentInfo.pImageIndices = &imageIndex;
+
+		presentInfo.pResults = nullptr; // Optional
+
+		presentQueue.presentKHR(presentInfo);
+
+		currentFrameIndex = (currentFrameIndex + 1) % MAX_FRAMES_IN_FLIGHT;
+		globalFrameNumber++;
+	}
+}
+constexpr int MULTIDRAW = 1;
+void VulkanEngine::RenderMainPass(const vk::CommandBuffer& cmd)
+{
+	ZoneScopedNC("Main Pass", tracy::Color::BlueViolet);
+		EntityID LastMesh = entt::null;
+	
+		vk::Pipeline last_pipeline = graphicsPipeline;
+		bool first_render = true;
+		render_registry.view<RenderMeshComponent>().each([&](RenderMeshComponent& renderable) {
+
+			const MeshResource& mesh = render_registry.get<MeshResource>(renderable.mesh_resource_entity);
+			const PipelineResource& pipeline = render_registry.get<PipelineResource>(renderable.pipeline_entity);
+			const DescriptorResource& descriptor = render_registry.get<DescriptorResource>(renderable.descriptor_entity);
+
+			bool bShouldBindPipeline = first_render ? true : pipeline.pipeline == last_pipeline;
+
+			if (bShouldBindPipeline) {
+				cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline.pipeline);
+				last_pipeline = graphicsPipeline;
+			}
+
+			if (LastMesh != renderable.mesh_resource_entity) {
+				vk::Buffer meshbuffers[] = { mesh.vertexBuffer.buffer };
+				vk::DeviceSize offsets[] = { 0 };
+				cmd.bindVertexBuffers(0, 1, meshbuffers, offsets);
+
+				cmd.bindIndexBuffer(mesh.indexBuffer.buffer, 0, vk::IndexType::eUint32);
+
+				LastMesh = renderable.mesh_resource_entity;
+			}
 
 
-	vk::PresentInfoKHR presentInfo = {};
-	presentInfo.waitSemaphoreCount = 1;
-	presentInfo.pWaitSemaphores = signalSemaphores;
+			cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, 1, &descriptor.descriptorSets[currentFrameIndex], 0, nullptr);
 
-	vk::SwapchainKHR swapChains[] = { swapChain };
-	presentInfo.swapchainCount = 1;
-	presentInfo.pSwapchains = swapChains;
-	presentInfo.pImageIndices = &imageIndex;
+			cmd.pushConstants(pipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(int), &renderable.object_idx);
+			
+			for (int i = 0; i < MULTIDRAW; i++)
+			{
+				cmd.drawIndexed(static_cast<uint32_t>(mesh.indices.size()), 1, 0, 0, 0);
+				eng_stats.drawcalls++;
+			}
+			
 
-	presentInfo.pResults = nullptr; // Optional
-
-	presentQueue.presentKHR(presentInfo);
-
-	currentFrameIndex = (currentFrameIndex + 1) % MAX_FRAMES_IN_FLIGHT;
-	globalFrameNumber++;
-
-
+		
+			});
+	
 }
 //std::vector<UniformBufferObject> StagingCPUUBOArray;
 void VulkanEngine::update_uniform_buffer(uint32_t currentImage)
 {
+	ZoneScopedN("Update Uniforms");
+
 	static auto startTime = std::chrono::high_resolution_clock::now();
 	static auto lastTime = std::chrono::high_resolution_clock::now();
 
@@ -1177,6 +1265,7 @@ void VulkanEngine::update_uniform_buffer(uint32_t currentImage)
 			});
 
 		if (copyidx > 0) {
+			ZoneScopedN("Uniform copy");
 			void* data2 = mapBuffer(transformUniformBuffers[currentImage]);
 			memcpy(data2, StagingCPUUBOArray.get_raw(), StagingCPUUBOArray.get_offset(copyidx + 1));
 
@@ -1590,7 +1679,7 @@ bool VulkanEngine::load_scene(const char* scene_path)
 
 	std::filesystem::path sc_path{ std::string(scene_path) };
 	Assimp::Importer importer;
-	const aiScene* scene = importer.ReadFile(scene_path, aiProcess_Triangulate | aiProcess_FlipUVs | aiProcess_GenNormals);
+	const aiScene* scene = importer.ReadFile(scene_path, aiProcess_Triangulate | aiProcess_OptimizeMeshes | aiProcess_FlipUVs | aiProcess_GenNormals);
 	
 	auto end = std::chrono::system_clock::now();
 	auto elapsed = end - start1;

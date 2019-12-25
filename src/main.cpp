@@ -112,7 +112,7 @@ int main(int argc, char *argv[])
 			}
 		}
 		//start_frame();
-
+		FrameMark;
 		ImGui_ImplVulkan_NewFrame();
 		ImGui_ImplSDL2_NewFrame(sdl_get_window());
 		ImGui::NewFrame();

@@ -1,4 +1,5 @@
 #include "vulkan_descriptors.h"
+#include "shader_processor.h"
 
 #define IM_ARRAYSIZE(_ARR)          ((int)(sizeof(_ARR) / sizeof(*_ARR))) 
 vk::DescriptorPool create_descriptor_pool(vk::Device device, int count) {
@@ -88,4 +89,127 @@ vk::DescriptorSet DescriptorMegaPool::allocate_descriptor(vk::DescriptorSetLayou
 	device.allocateDescriptorSets(&allocInfo, &newSet);
 
 	return newSet;
+}
+
+DescriptorSetBuilder::DescriptorSetBuilder(ShaderEffect* _effect, DescriptorMegaPool* _parentPool)
+{
+	effect = _effect;
+	parentPool = _parentPool;
+}
+
+void DescriptorSetBuilder::bind_image(int set, int binding, const vk::DescriptorImageInfo& imageInfo)
+{
+	for (auto& write : imageWrites) {
+		if (write.dstBinding == binding
+			&& write.dstSet == set	)
+		{
+			write.imageInfo = imageInfo;
+			return;
+		}
+	}
+
+	ImageWriteDescriptor newWrite;
+	newWrite.dstSet = set;
+	newWrite.dstBinding = binding;
+	newWrite.descriptorType = vk::DescriptorType::eCombinedImageSampler;	
+	newWrite.imageInfo = imageInfo; 
+
+	imageWrites.push_back(newWrite);
+}
+
+void DescriptorSetBuilder::bind_image(const char* name, const vk::DescriptorImageInfo& imageInfo)
+{
+	if (effect) {
+		BindReflection* reflection = effect->get_reflection();
+
+		auto found = reflection->DataBindings.find(name);
+		if (found != reflection->DataBindings.end()) {
+			BindInfo info = (*found).second;
+			bind_image(info.set, info.binding, imageInfo);
+		}
+	}
+}
+
+void DescriptorSetBuilder::bind_buffer(int set, int binding, const vk::DescriptorBufferInfo& bufferInfo, vk::DescriptorType bufferType)
+{
+	for (auto& write : bufferWrites) {
+		if (write.dstBinding == binding
+			&& write.dstSet == set)
+		{
+			write.bufferInfo = bufferInfo;
+			return;
+		}
+	}
+	
+
+	BufferWriteDescriptor newWrite;
+	newWrite.dstSet = set;
+	newWrite.dstBinding = binding;
+	newWrite.descriptorType = bufferType;
+	newWrite.bufferInfo = bufferInfo;
+
+	bufferWrites.push_back(newWrite);
+}
+
+void DescriptorSetBuilder::bind_buffer(const char* name, const vk::DescriptorBufferInfo& bufferInfo)
+{	
+	if (effect) {
+		BindReflection* reflection = effect->get_reflection();
+
+		auto found = reflection->DataBindings.find(name);
+		if (found != reflection->DataBindings.end()) {
+
+			BindInfo info = (*found).second;
+			bind_buffer(info.set, info.binding, bufferInfo, vk::DescriptorType(info.type));
+		}
+	}	
+}
+
+void DescriptorSetBuilder::update_descriptor(int set, vk::DescriptorSet& descriptor, const vk::Device& device)
+{
+	std::vector<vk::WriteDescriptorSet> descriptorWrites;
+	descriptorWrites.reserve(20);
+
+	for (const ImageWriteDescriptor& imageWrite : imageWrites) {
+		if (imageWrite.dstSet == set) {
+			vk::WriteDescriptorSet newWrite;
+
+			newWrite.dstSet = descriptor;
+			newWrite.dstBinding = imageWrite.dstBinding;
+			newWrite.dstArrayElement = 0;
+			newWrite.descriptorType = imageWrite.descriptorType;
+			newWrite.descriptorCount = 1;
+			newWrite.pBufferInfo = nullptr;
+			newWrite.pImageInfo = &imageWrite.imageInfo; // Optional
+			newWrite.pTexelBufferView = nullptr; // Optional	
+
+
+			descriptorWrites.push_back(newWrite);
+		}
+	}
+
+	for (const BufferWriteDescriptor& bufferWrite : bufferWrites) {
+		if (bufferWrite.dstSet == set) {
+			vk::WriteDescriptorSet newWrite;
+
+			newWrite.dstSet = descriptor;
+			newWrite.dstBinding = bufferWrite.dstBinding;
+			newWrite.dstArrayElement = 0;
+			newWrite.descriptorType = bufferWrite.descriptorType;
+			newWrite.descriptorCount = 1;
+			newWrite.pBufferInfo = &bufferWrite.bufferInfo;
+			newWrite.pImageInfo = nullptr; // Optional
+			newWrite.pTexelBufferView = nullptr; // Optional	
+
+
+			descriptorWrites.push_back(newWrite);
+		}
+	}
+
+	device.updateDescriptorSets(descriptorWrites, 0);
+}
+
+vk::DescriptorSet DescriptorSetBuilder::build_descriptor(int set, DescriptorLifetime lifetime)
+{
+	return vk::DescriptorSet();
 }

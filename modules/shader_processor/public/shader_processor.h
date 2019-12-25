@@ -1,4 +1,5 @@
 #include <vector>
+#include <unordered_map>
 #include "vulkan/vulkan_core.h"
 
 enum class ShaderType : char{
@@ -34,6 +35,20 @@ struct VulkanProgramReflectionData {
 	VkPushConstantRange pushConstantRange;
 };
 
+struct BindInfo {
+	int set;
+	int binding;
+	int range;
+	VkDescriptorType type;
+};
+
+struct BindInfoPushConstants {
+	int size;
+};
+struct BindReflection {
+	std::unordered_map<std::string, BindInfo> DataBindings;
+	std::vector<BindInfoPushConstants> PushConstants;
+};
 //holds all information for a given shader set for pipeline
 struct ShaderEffect {
 
@@ -51,6 +66,8 @@ struct ShaderEffect {
 
 	std::array< VkDescriptorSetLayout, 4> build_descriptor_layouts(VkDevice device);
 	std::vector<VkPipelineShaderStageCreateInfo> get_stage_infos();
+
+	BindReflection* get_reflection();
 
 
 	ShaderEffect();

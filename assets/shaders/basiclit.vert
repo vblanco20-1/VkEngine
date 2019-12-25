@@ -28,7 +28,7 @@ layout(set = 0, binding = 1) uniform UniformBufferObject2 {
 layout(std140,set = 0, binding = 2) readonly buffer Pos 
 {
    PerObject objects[ ];
-};
+} MainObjectBuffer;
 
 layout(set = 1, binding = 0) uniform SceneParameters {
 	vec4 fog_a; //xyz color, w power
@@ -40,7 +40,7 @@ layout(set = 1, binding = 0) uniform SceneParameters {
 layout(std140,set = 1, binding = 3) readonly buffer Lights 
 {
    PointLight lights[ ];
-};
+} MainLights;
 
 
 layout(push_constant) uniform PushConsts {
@@ -66,10 +66,10 @@ void main() {
 
     //gl_Position = ubo2.proj * ubo2.view * ubo.model * vec4(inPosition, 1.0);
 	//gl_Position = ubo2.proj * ubo2.view * objects[object_id].model * vec4(inPosition, 1.0);
-	gl_Position = ubo.proj * ubo.view * objects[object_id].model * vec4(inPosition, 1.0);
+	gl_Position = ubo.proj * ubo.view * MainObjectBuffer.objects[object_id].model * vec4(inPosition, 1.0);
     fragColor = inColor;
     fragTexCoord = inTexCoord;
 	fragNormal = normalize(ubo.model * vec4(inNormal, 0.0)).xyz;
-	fragPos = (objects[object_id].model * vec4(inPosition, 1.0)).xyz;
+	fragPos = (MainObjectBuffer.objects[object_id].model * vec4(inPosition, 1.0)).xyz;
 
 }

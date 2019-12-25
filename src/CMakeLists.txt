@@ -15,7 +15,7 @@ add_executable(vkEngine ${SOURCE_FILES})
 
 
 
-target_link_libraries(vkEngine entt imgui glm gli assimp sdl2 vma Vulkan::Vulkan)
+target_link_libraries(vkEngine entt imgui glm gli assimp sdl2 vma Vulkan::Vulkan tracy)
 target_link_libraries(vkEngine shader_processor)
 set_target_properties(vkEngine PROPERTIES
             CXX_STANDARD 17
