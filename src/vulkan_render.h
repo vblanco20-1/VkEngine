@@ -67,9 +67,12 @@ struct VulkanEngine {
 	AllocatedBuffer indexBuffer;
 	//vk::DeviceMemory indexBufferMemory;
 
-	std::vector < AllocatedBuffer> test_uniformBuffers;
+	std::vector < AllocatedBuffer> cameraDataBuffers;
 	std::vector < AllocatedBuffer> object_buffers;
+	std::vector < AllocatedBuffer> sceneParamBuffers;
 	//std::vector<vk::DeviceMemory> uniformBuffersMemory;
+
+	GPUSceneParams sceneParameters;
 
 	VmaAllocator allocator;
 
@@ -132,13 +135,13 @@ struct VulkanEngine {
 
 	EntityID load_mesh(const char* model_path, std::string modelName);
 	EntityID load_assimp_mesh(aiMesh* mesh);
-	EntityID load_texture(const char* image_path, std::string textureName);
+	EntityID load_texture(const char* image_path, std::string textureName,bool bIsCubemap = false);
 
 	void load_textures_bulk(TextureLoadRequest* requests, size_t count);
 
 
-	bool load_scene(const char* scene_path);
-	EntityID create_basic_descriptor_sets(EntityID pipelineID, std::array<EntityID,8> textureID);
+	bool load_scene(const char* scene_path, glm::mat4 rootMatrix);
+	EntityID create_basic_descriptor_sets(EntityID pipelineID, std::string name, std::array<EntityID,8> textureID);
 
 	void start_frame_command_buffer(vk::CommandBuffer buffer, vk::Framebuffer framebuffer);
 	void end_frame_command_buffer(vk::CommandBuffer buffer);
@@ -160,10 +163,10 @@ struct VulkanEngine {
 	void copyBuffer(vk::Buffer srcBuffer, vk::Buffer dstBuffer, vk::DeviceSize size);
 
 	void createImage(uint32_t width, uint32_t height, vk::Format format, vk::ImageTiling tiling, 
-				vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties,AllocatedImage& image);
-	vk::ImageView createImageView(vk::Image image, vk::Format format, vk::ImageAspectFlags aspectFlags);
+				vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties,AllocatedImage& image, bool bIsCubemap = false);
+	vk::ImageView createImageView(vk::Image image, vk::Format format, vk::ImageAspectFlags aspectFlags, bool bIsCubemap = false);
 
-	void copyBufferToImage(vk::Buffer buffer, vk::Image image, uint32_t width, uint32_t height);
+	void copyBufferToImage(vk::Buffer buffer, vk::Image image, uint32_t width, uint32_t height, bool bIsCubemap = false);
 	void cmd_copyBufferToImage(vk::CommandBuffer& cmd,vk::Buffer buffer, vk::Image image, uint32_t width, uint32_t height);
 
 	void destroyImage(AllocatedImage img);
@@ -177,7 +180,7 @@ struct VulkanEngine {
 
 	void transitionImageLayout(vk::Image image, vk::Format format, vk::ImageLayout oldLayout, vk::ImageLayout newLayout);
 
-	void cmd_transitionImageLayout(vk::CommandBuffer &commandBuffer,vk::Image image, vk::Format format, vk::ImageLayout oldLayout, vk::ImageLayout newLayout);
+	void cmd_transitionImageLayout(vk::CommandBuffer& commandBuffer, vk::Image image, vk::Format format, vk::ImageLayout oldLayout, vk::ImageLayout newLayout, bool bIsCubemap = false);
 
 	vk::CommandBuffer beginSingleTimeCommands();
 	void endSingleTimeCommands(vk::CommandBuffer commandBuffer);
@@ -201,12 +204,12 @@ struct VulkanEngine {
 	bool doesResourceExist(const char* resource_name);
 	entt::registry render_registry;
 
-	std::unordered_map<std::string, EntityID> resourceMap;
-
-	std::vector < AllocatedBuffer> transformUniformBuffers;
+	std::unordered_map<std::string, EntityID> resourceMap;	
 
 	AlignedBuffer<UniformBufferObject> StagingCPUUBOArray{0};
 	EntityID blankTexture;
+	EntityID blackTexture;
+	EntityID testCubemap;
 };
 
 

@@ -156,18 +156,22 @@ void VulkanEngine::init_vulkan()
 	create_descriptor_sets();
 	
 
-	blankTexture = load_texture(MAKE_ASSET_PATH("sprites/blank.png"), "blank");
-	
 
-	
+	blankTexture = load_texture(MAKE_ASSET_PATH("sprites/blank.png"), "blank");
+	blackTexture = load_texture(MAKE_ASSET_PATH("sprites/black.png"), "black");
+	testCubemap = load_texture(MAKE_ASSET_PATH("sprites/cubemap_yokohama_bc3_unorm.ktx"), "cubemap",true);
+
+	sceneParameters.fog_a = glm::vec4(1);
+	sceneParameters.fog_b.x = 0.f;
+	sceneParameters.fog_b.y = 10000.f;
+	sceneParameters.ambient = glm::vec4(0.1f);
 	//load_scene("E:/Gamedev/tps-demo/level/geometry/demolevel.blend");
-	load_scene(MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Interior.fbx"));
-	//load_scene(MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Interior.fbx"));
-	//load_scene(MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Interior.fbx"));
-	//load_scene(MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Interior.fbx"));
-	//load_scene(MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Interior.fbx"));
-	//load_scene(MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Exterior.fbx"));
-	//load_scene(MAKE_ASSET_PATH("models/SunTemple.fbx"));
+	load_scene(MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Interior.fbx"), glm::mat4(1.f));
+	load_scene(MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Exterior.fbx"), glm::mat4(1.f));
+
+
+	//load_scene(MAKE_ASSET_PATH("models/SunTemple.fbx"),
+	//	glm::rotate(glm::mat4(1), glm::radians(90.f), glm::vec3(1, 0, 0)));
 
 	ImGui::CreateContext();
 
@@ -308,7 +312,7 @@ void VulkanEngine::create_descriptor_sets()
 }
 
 
-EntityID VulkanEngine::create_basic_descriptor_sets(EntityID pipelineID, std::array<EntityID,8> textureID)
+EntityID VulkanEngine::create_basic_descriptor_sets(EntityID pipelineID, std::string name, std::array<EntityID,8> textureID)
 {
 	
 	const PipelineResource &pipeline = render_registry.get<PipelineResource>(pipelineID);
@@ -318,38 +322,28 @@ EntityID VulkanEngine::create_basic_descriptor_sets(EntityID pipelineID, std::ar
 	DescriptorResource descriptors;
 
 	int siz;
-	std::string name = render_registry.get<TextureResource>(textureID[0]).name;
-
-
-	for (size_t i = 0; i < swapChainImages.size(); i++) {
-
-		vk::DescriptorBufferInfo bufferInfo;
-		bufferInfo.buffer = test_uniformBuffers[i].buffer;
-		bufferInfo.offset = 0;
-		bufferInfo.range = sizeof(UniformBufferObject);
-
-		vk::DescriptorBufferInfo bigbufferInfo;
-		bigbufferInfo.buffer = object_buffers[i].buffer;
-		bigbufferInfo.offset = 0;
-		bigbufferInfo.range = sizeof(glm::mat4) * 10000;
-
-		setBuilder.bind_buffer("ubo", bufferInfo);
-		setBuilder.bind_buffer("ubo2", bufferInfo);
-		setBuilder.bind_buffer("MainObjectBuffer", bigbufferInfo);
-
-		descriptors.descriptorSets.push_back(setBuilder.build_descriptor(0, DescriptorLifetime::Static));
-	}
-
+	
 	for (int j = 0; j < 8; j++) {
+		if (render_registry.valid(textureID[j]) && render_registry.has<TextureResource>(textureID[j])) {
+			const TextureResource& texture = render_registry.get<TextureResource>(textureID[j]);
 
-		const TextureResource& texture = render_registry.get<TextureResource>(textureID[j]);
+			vk::DescriptorImageInfo imageInfo = {};
+			imageInfo.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+			imageInfo.imageView = texture.imageView;
+			imageInfo.sampler = texture.textureSampler;
 
-		vk::DescriptorImageInfo imageInfo = {};
-		imageInfo.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-		imageInfo.imageView = texture.imageView;
-		imageInfo.sampler = texture.textureSampler;			
+			setBuilder.bind_image(2, 6 + j, imageInfo);
+		}	
+		else {
+			const TextureResource& texture = render_registry.get<TextureResource>(blankTexture);
 
-		setBuilder.bind_image(2, 6 + j, imageInfo);
+			vk::DescriptorImageInfo imageInfo = {};
+			imageInfo.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+			imageInfo.imageView = texture.imageView;
+			imageInfo.sampler = texture.textureSampler;
+
+			setBuilder.bind_image(2, 6 + j, imageInfo);
+		}
 	}
 
 	descriptors.materialSet = setBuilder.build_descriptor(2, DescriptorLifetime::Static);
@@ -782,33 +776,24 @@ void VulkanEngine::create_index_buffer()
 
 void VulkanEngine::create_uniform_buffers()
 {
-	vk::DeviceSize bufferSize = align_dynamic_descriptor(sizeof(UniformBufferObject)) * 4;
+	vk::DeviceSize UBOSize = (sizeof(UniformBufferObject));
 
-	test_uniformBuffers.resize(swapChainImages.size());
+	cameraDataBuffers.resize(swapChainImages.size());
+	sceneParamBuffers.resize(swapChainImages.size());
 	object_buffers.resize(swapChainImages.size());
 	//uniformBuffersMemory.resize(swapChainImages.size());
 
 	for (size_t i = 0; i < swapChainImages.size(); i++) {
-		createBuffer(bufferSize, vk::BufferUsageFlagBits::eUniformBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, test_uniformBuffers[i]);
+		//cam buffer
+		createBuffer(sizeof(UniformBufferObject), vk::BufferUsageFlagBits::eUniformBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, cameraDataBuffers[i]);
 	
+		//scene data buffer
+		createBuffer(sizeof(GPUSceneParams), vk::BufferUsageFlagBits::eUniformBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, sceneParamBuffers[i]);
+
+		//mesh transform buffer
 		createBuffer(sizeof(glm::mat4) * 10000, vk::BufferUsageFlagBits::eStorageBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, object_buffers[i]);
-	}
+	
 
-
-
-	// Calculate required alignment based on minimum device offset alignment
-	//size_t minUboAlignment = vulkanDevice->properties.limits.minUniformBufferOffsetAlignment;
-	//dynamicAlignment = sizeof(glm::mat4);
-	//if (minUboAlignment > 0) {
-	//	dynamicAlignment = (dynamicAlignment + minUboAlignment - 1) & ~(minUboAlignment - 1);
-	//}
-
-
-	transformUniformBuffers.resize(swapChainImages.size());
-
-	bufferSize = StagingCPUUBOArray.get_offset(MAX_UNIFORM_BUFFER);// sizeof(UniformBufferObject) * MAX_UNIFORM_BUFFER;
-	for (size_t i = 0; i < swapChainImages.size(); i++) {
-		createBuffer(bufferSize, vk::BufferUsageFlagBits::eUniformBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, transformUniformBuffers[i]);
 	}
 
 }
@@ -1027,22 +1012,38 @@ void VulkanEngine::RenderMainPass(const vk::CommandBuffer& cmd)
 
 				DescriptorSetBuilder setBuilder{pipeline.effect,&descriptorMegapool};
 				
-				vk::DescriptorBufferInfo bufferInfo;
-				bufferInfo.buffer = test_uniformBuffers[currentFrameIndex].buffer;
-				bufferInfo.offset = 0;
-				bufferInfo.range = sizeof(UniformBufferObject);
+				vk::DescriptorBufferInfo camBufferInfo;
+				camBufferInfo.buffer = cameraDataBuffers[currentFrameIndex].buffer;
+				camBufferInfo.offset = 0;
+				camBufferInfo.range = sizeof(UniformBufferObject);
 				
-				vk::DescriptorBufferInfo bigbufferInfo;
-				bigbufferInfo.buffer = object_buffers[currentFrameIndex].buffer;
-				bigbufferInfo.offset = 0;
-				bigbufferInfo.range = sizeof(glm::mat4) * 10000;
+				vk::DescriptorBufferInfo sceneBufferInfo;
+				sceneBufferInfo.buffer = sceneParamBuffers[currentFrameIndex].buffer;
+				sceneBufferInfo.offset = 0;
+				sceneBufferInfo.range = sizeof(GPUSceneParams);
+
+				vk::DescriptorBufferInfo transformBufferInfo;
+				transformBufferInfo.buffer = object_buffers[currentFrameIndex].buffer;
+				transformBufferInfo.offset = 0;
+				transformBufferInfo.range = sizeof(glm::mat4) * 10000;
+
+				const TextureResource& texture = render_registry.get<TextureResource>(testCubemap);
+
+				vk::DescriptorImageInfo imageInfo = {};
+				imageInfo.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+				imageInfo.imageView = texture.imageView;
+				imageInfo.sampler = texture.textureSampler;
+
+				setBuilder.bind_image("ambientCubemap", imageInfo);
+				setBuilder.bind_buffer("ubo", camBufferInfo);
+				setBuilder.bind_buffer("sceneParams", sceneBufferInfo);
+				setBuilder.bind_buffer("MainObjectBuffer", transformBufferInfo);
 				
-				setBuilder.bind_buffer("ubo", bufferInfo);				
-				setBuilder.bind_buffer("MainObjectBuffer", bigbufferInfo);
+				std::array<vk::DescriptorSet, 2> descriptors;
+				descriptors[0] = setBuilder.build_descriptor(0, DescriptorLifetime::PerFrame);
+				descriptors[1] = setBuilder.build_descriptor(1, DescriptorLifetime::PerFrame);
 				
-				vk::DescriptorSet globalset = setBuilder.build_descriptor(0, DescriptorLifetime::PerFrame);
-				
-				cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, piplayout, 0, 1, &globalset, 0, nullptr);
+				cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, piplayout, 0, 2, &descriptors[0], 0, nullptr);
 			}
 
 			if (LastMesh != renderable.mesh_resource_entity) {
@@ -1098,16 +1099,24 @@ void VulkanEngine::update_uniform_buffer(uint32_t currentImage)
 	//invert projection matrix couse glm is inverted y compared to vulkan
 	ubo.proj[1][1] *= -1;
 		
-	void* data = mapBuffer(test_uniformBuffers[currentImage]);
+	void* data = mapBuffer(cameraDataBuffers[currentImage]);
 	//auto alignUbo = align_dynamic_descriptor(sizeof(ubo));
 	char* dt = (char*)data;// + alignUbo; ;
 	
 	// +sizeof(ubo) * 3;
 	memcpy(dt, &ubo, sizeof(UniformBufferObject) );
 	
-	unmapBuffer(test_uniformBuffers[currentImage]);
+	unmapBuffer(cameraDataBuffers[currentImage]);
 
+	data = mapBuffer(sceneParamBuffers[currentImage]);
 	
+	dt = (char*)data;
+
+	memcpy(dt, &sceneParameters, sizeof(GPUSceneParams));
+
+	unmapBuffer(sceneParamBuffers[currentImage]);
+
+
 		int copyidx = 0;
 		std::vector<glm::mat4> object_matrices;
 
@@ -1122,10 +1131,6 @@ void VulkanEngine::update_uniform_buffer(uint32_t currentImage)
 
 		if (copyidx > 0) {
 			ZoneScopedN("Uniform copy");
-			//void* data2 = mapBuffer(transformUniformBuffers[currentImage]);
-			//memcpy(data2, StagingCPUUBOArray.get_raw(), StagingCPUUBOArray.get_offset(copyidx + 1));
-			//
-			//unmapBuffer(transformUniformBuffers[currentImage]);
 
 			void* matdata = mapBuffer(object_buffers[currentImage]);
 			memcpy(matdata, object_matrices.data(), object_matrices.size() * sizeof(glm::mat4));
@@ -1148,10 +1153,10 @@ void VulkanEngine::cleanup_swap_chain()
 		device.destroyFramebuffer(framebuffer);
 	}
 
-	for (size_t i = 0; i < test_uniformBuffers.size(); i++) {
+	for (size_t i = 0; i < cameraDataBuffers.size(); i++) {
 		//device.freeMemory(uniformBuffers[i]);
 	//	device.freeMemory(uniformBuffersMemory[i]);
-		destroyBuffer(test_uniformBuffers[i]);
+		destroyBuffer(cameraDataBuffers[i]);
 	}
 
 	
@@ -1255,52 +1260,7 @@ void VulkanEngine::create_semaphores()
 
 bool VulkanEngine::load_model(const char* model_path, std::vector<Vertex> &vertices, std::vector<uint32_t> &indices)
 {
-	//tinyobj::attrib_t attrib;
-	//std::vector<tinyobj::shape_t> shapes;
-	//std::vector<tinyobj::material_t> materials;
-	//std::string warn, err;
-	//	
-	//vertices.clear();
-	//indices.clear();
-	//
-	//if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, model_path /*MAKE_ASSET_PATH("models/gd-robot.obj")*/)) {
-	//	throw std::runtime_error(warn + err);
-	//}
-	//
-	////for (const auto& shape : shapes) {
-	//	for (const auto& shape : shapes) {
-	//		for (const auto& index : shape.mesh.indices) {
-	//			Vertex vertex = {};
-	//			vertex.pos = {
-	//				attrib.vertices[3 * index.vertex_index + 0],
-	//				attrib.vertices[3 * index.vertex_index + 1],
-	//				attrib.vertices[3 * index.vertex_index + 2]
-	//			};
-	//
-	//			vertex.texCoord = {
-	//				attrib.texcoords[2 * index.texcoord_index + 0],
-	//				1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
-	//			};
-	//
-	//			if (index.normal_index >= 0){
-	//				vertex.normal = {
-	//				attrib.normals[3 * index.normal_index + 0],
-	//				attrib.normals[3 * index.normal_index + 1],
-	//				attrib.normals[3 * index.normal_index + 2],
-	//				};
-	//			}
-	//			else {
-	//				vertex.normal = { 0.0,0.0,1.0 };
-	//			}
-	//			
-	//
-	//			vertex.color = { 1.0f, 1.0f, 1.0f };
-	//
-	//			vertices.push_back(vertex);
-	//			indices.push_back(indices.size());
-	//		}
-	//	}
-	//}
+
 	return true;
 }
 
@@ -1550,7 +1510,7 @@ void Coutproperty(aiMaterialProperty* property) {
 }
 
 
-bool VulkanEngine::load_scene(const char* scene_path)
+bool VulkanEngine::load_scene(const char* scene_path, glm::mat4 rootMatrix)
 {
 	auto start1 = std::chrono::system_clock::now();
 
@@ -1623,7 +1583,14 @@ bool VulkanEngine::load_scene(const char* scene_path)
 
 	std::array<EntityID, 8> blank_textures;
 	for (int i = 0; i < 8; i++) {
-		blank_textures[i] = blankTexture;
+		if (i < 2)
+		{
+
+			blank_textures[i] = blankTexture;
+		}
+		else {
+			blank_textures[i] = blackTexture;
+		}
 	}
 
 	for (int i = 0; i < scene->mNumMaterials; i++)
@@ -1644,6 +1611,10 @@ bool VulkanEngine::load_scene(const char* scene_path)
 		if (GrabTextureID(scene->mMaterials[i], aiTextureType_SHININESS, this, textureId)) {
 			mat.textureIDs[3] = textureId;
 		}
+		if (GrabTextureID(scene->mMaterials[i], aiTextureType_EMISSIVE, this, textureId)) {
+			mat.textureIDs[4] = textureId;
+		}
+		
 		materials[i] = mat;	
 	}
 	
@@ -1654,7 +1625,7 @@ bool VulkanEngine::load_scene(const char* scene_path)
 	auto pipeline_id = createResource("pipeline_basiclit", pipeline);
 
 	
-	auto blank_descriptor = create_basic_descriptor_sets(pipeline_id, blank_textures);
+	auto blank_descriptor = create_basic_descriptor_sets(pipeline_id,"blank" ,blank_textures);
 	std::vector<EntityID> loaded_meshes;
 	std::vector<EntityID> mesh_descriptors;
 	for (int i = 0; i < scene->mNumMeshes; i++)
@@ -1662,9 +1633,9 @@ bool VulkanEngine::load_scene(const char* scene_path)
 		loaded_meshes.push_back( load_assimp_mesh(scene->mMeshes[i]));
 		
 		try {
-			
+			std::string matname = scene->mMaterials[scene->mMeshes[i]->mMaterialIndex]->GetName().C_Str();
 			//blank_textures[0] = textures;
-			auto descriptor_id = create_basic_descriptor_sets(pipeline_id, materials[scene->mMeshes[i]->mMaterialIndex].textureIDs);
+			auto descriptor_id = create_basic_descriptor_sets(pipeline_id, matname,materials[scene->mMeshes[i]->mMaterialIndex].textureIDs);
 			mesh_descriptors.push_back(descriptor_id);
 		}
 		catch (std::runtime_error& e) {
@@ -1723,7 +1694,19 @@ bool VulkanEngine::load_scene(const char* scene_path)
 			process_node(node->mChildren[ch],node_mat);
 		}
 	};
+
 	aiMatrix4x4 mat{};
+
+	
+	for (int y = 0; y < 4; y++)
+	{
+		for (int x = 0; x < 4; x++)
+		{
+			mat[x][y] = rootMatrix[y][x];
+		}
+	}
+
+	
 	process_node(scene->mRootNode, mat);
 
 	return true;	

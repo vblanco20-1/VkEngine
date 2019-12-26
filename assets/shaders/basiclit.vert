@@ -22,12 +22,7 @@ layout(std140,set = 0, binding = 2) readonly buffer Pos
    PerObject objects[ ];
 } MainObjectBuffer;
 
-layout(set = 1, binding = 0) uniform SceneParameters {
-	vec4 fog_a; //xyz color, w power
-    vec4 fog_b; //x min, y far, zw unused
-    vec4 ambient;//xyz color, w power
-	vec4 eye;
-} scene;
+
 
 layout(std140,set = 1, binding = 3) readonly buffer Lights 
 {

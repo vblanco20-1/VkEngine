@@ -65,7 +65,6 @@ struct GPUSceneParams {
 	glm::vec4 fog_a; //xyz color, w power
 	glm::vec4 fog_b; //x min, y far, zw unused
 	glm::vec4 ambient;//xyz color, w power
-	glm::vec4 eye;
 };
 struct GPUPointLight {
 	glm::vec4 pos_r; //xyz pos, w radius
@@ -118,7 +117,7 @@ struct PipelineResource : public ResourceComponent {
 };
 
 struct DescriptorResource : public ResourceComponent {
-	std::vector<vk::DescriptorSet> descriptorSets;
+	//std::vector<vk::DescriptorSet> descriptorSets;
 	vk::DescriptorSet materialSet;
 };
 

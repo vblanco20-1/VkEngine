@@ -352,6 +352,22 @@ struct ShaderDescriptorBindings {
     std::vector<VkDescriptorSetLayoutBinding> descriptorBindings;
 };
 
+void add_binding(ShaderDescriptorBindings* bindings, VkDescriptorSetLayoutBinding newBind) {
+
+    //merge stage
+    for (VkDescriptorSetLayoutBinding& bind : bindings->descriptorBindings) {
+        if (bind.binding == newBind.binding)
+        {
+            assert(bind.descriptorType == newBind.descriptorType);
+
+            bind.stageFlags |= newBind.stageFlags;
+            return;
+        }
+    }
+
+    bindings->descriptorBindings.push_back(newBind);
+}
+
 struct ShaderEffectPrivateData {
     std::vector< glslang::TShader*> Shaders;
     std::vector< VkPipelineShaderStageCreateInfo> ShaderStages;
@@ -543,7 +559,9 @@ bool ShaderEffect::build_effect(VkDevice device)
             VkDescriptorSetLayoutBinding vkbind = createLayoutBinding(binding, ShaderTypeToVulkanFlag(ShaderMod.type));
             vkbind.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 
-            privData->bindingSets[set].descriptorBindings.push_back(vkbind);
+            add_binding(&privData->bindingSets[set], vkbind);
+
+            //privData->bindingSets[set].descriptorBindings.push_back(vkbind);
 
             BindInfo newinfo;
             newinfo.set = set;
@@ -565,7 +583,9 @@ bool ShaderEffect::build_effect(VkDevice device)
             VkDescriptorSetLayoutBinding vkbind = createLayoutBinding(binding, ShaderTypeToVulkanFlag(ShaderMod.type));
             vkbind.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 
-            privData->bindingSets[set].descriptorBindings.push_back(vkbind);
+           // privData->bindingSets[set].descriptorBindings.push_back(vkbind);
+
+            add_binding(&privData->bindingSets[set], vkbind);
 
             BindInfo newinfo;
             newinfo.set = set;
@@ -578,16 +598,26 @@ bool ShaderEffect::build_effect(VkDevice device)
 
         for (const Resource& resource : res.sampled_images)
         {
-            //const SPIRType& type = comp.get_type(resource.base_type_id);
+            const SPIRType& type = comp.get_type(resource.base_type_id);
             //size_t size = comp.get_declared_struct_size(type);
             unsigned set = comp.get_decoration(resource.id, spv::DecorationDescriptorSet);
             unsigned binding = comp.get_decoration(resource.id, spv::DecorationBinding);
 
 
             VkDescriptorSetLayoutBinding vkbind = createLayoutBinding(binding, ShaderTypeToVulkanFlag(ShaderMod.type));
-            vkbind.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+
+            if(type.image.dim == spv::Dim::DimCube)
+            {
+                vkbind.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;               
+            }
+            else {
+                vkbind.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            }
             
-            privData->bindingSets[set].descriptorBindings.push_back(vkbind);
+            
+            //privData->bindingSets[set].descriptorBindings.push_back(vkbind);
+
+            add_binding(&privData->bindingSets[set], vkbind);
 
             BindInfo newinfo;
             newinfo.set = set;

@@ -10,7 +10,7 @@
 #include "tiny_gltf.h"
 #include "stb_image.h"
 
-EntityID VulkanEngine::load_texture(const char* image_path, std::string textureName)
+EntityID VulkanEngine::load_texture(const char* image_path, std::string textureName, bool bIsCubemap)
 {
 	TextureResource texture;
 	int texWidth, texHeight, texChannels;
@@ -52,21 +52,34 @@ EntityID VulkanEngine::load_texture(const char* image_path, std::string textureN
 	vmaUnmapMemory(allocator, stagingBuffer.allocation);
 	
 	stbi_image_free(pixels);	
+
+
+	vk::ImageUsageFlags usageFlags = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled;
 	
 	createImage(texWidth, texHeight, image_format,
-		vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
-		vk::MemoryPropertyFlagBits::eDeviceLocal, texture.image);
+		vk::ImageTiling::eOptimal, usageFlags,
+		vk::MemoryPropertyFlagBits::eDeviceLocal, texture.image,bIsCubemap);
 	
-	transitionImageLayout(texture.image.image, image_format, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal);
+	//transitionImageLayout(texture.image.image, image_format, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal);
 	
-	copyBufferToImage(stagingBuffer.buffer, texture.image.image, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));
+	auto cmd1 = beginSingleTimeCommands();
+
+	cmd_transitionImageLayout(cmd1, texture.image.image, image_format, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal,bIsCubemap);
+
+	endSingleTimeCommands(cmd1);
+
+	copyBufferToImage(stagingBuffer.buffer, texture.image.image, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight),bIsCubemap);
 	
-	transitionImageLayout(texture.image.image, image_format, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
-	
+	//transitionImageLayout(texture.image.image, image_format, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
+	auto cmd2 = beginSingleTimeCommands();
+
+	cmd_transitionImageLayout(cmd2, texture.image.image, image_format, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, bIsCubemap);
+
+	endSingleTimeCommands(cmd2);
 	
 	vmaDestroyBuffer(allocator, stagingBuffer.buffer, stagingBuffer.allocation);
 	
-	texture.imageView = createImageView(texture.image.image, image_format, vk::ImageAspectFlagBits::eColor);
+	texture.imageView = createImageView(texture.image.image, image_format, vk::ImageAspectFlagBits::eColor,bIsCubemap);
 	
 	vk::SamplerCreateInfo samplerInfo;
 	samplerInfo.magFilter = vk::Filter::eLinear;
@@ -284,7 +297,7 @@ void VulkanEngine::create_texture_image_view()
 }
 
 void VulkanEngine::createImage(uint32_t width, uint32_t height, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage,
-	vk::MemoryPropertyFlags properties, AllocatedImage& image)
+	vk::MemoryPropertyFlags properties, AllocatedImage& image, bool bIsCubemap)
 {
 	vk::ImageCreateInfo imageInfo;
 	imageInfo.imageType = vk::ImageType::e2D;
@@ -292,7 +305,14 @@ void VulkanEngine::createImage(uint32_t width, uint32_t height, vk::Format forma
 	imageInfo.extent.height = static_cast<uint32_t>(height);
 	imageInfo.extent.depth = 1;
 	imageInfo.mipLevels = 1;
-	imageInfo.arrayLayers = 1;
+	if (bIsCubemap)
+	{
+		imageInfo.arrayLayers = 6;
+	}
+	else {
+		imageInfo.arrayLayers = 1;
+	}
+	
 
 	imageInfo.format = format;
 	imageInfo.tiling = tiling;
@@ -303,8 +323,10 @@ void VulkanEngine::createImage(uint32_t width, uint32_t height, vk::Format forma
 	imageInfo.sharingMode = vk::SharingMode::eExclusive;
 
 	imageInfo.samples = vk::SampleCountFlagBits::e1;
-
-
+	if (bIsCubemap)
+	{
+		imageInfo.flags = vk::ImageCreateFlagBits::eCubeCompatible;
+	}
 
 	VmaAllocationCreateInfo vmaallocInfo = {};
 	vmaallocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
@@ -318,29 +340,66 @@ void VulkanEngine::createImage(uint32_t width, uint32_t height, vk::Format forma
 
 }
 
-vk::ImageView VulkanEngine::createImageView(vk::Image image, vk::Format format, vk::ImageAspectFlags aspectFlags)
+vk::ImageView VulkanEngine::createImageView(vk::Image image, vk::Format format, vk::ImageAspectFlags aspectFlags, bool bIsCubemap)
 {
 	vk::ImageViewCreateInfo viewInfo;
 	viewInfo.image = image;
-	viewInfo.viewType = vk::ImageViewType::e2D;
+	viewInfo.viewType = bIsCubemap ? vk::ImageViewType::eCube:  vk::ImageViewType::e2D;
 	viewInfo.format = format;
 	viewInfo.subresourceRange.aspectMask = aspectFlags;
 	viewInfo.subresourceRange.baseMipLevel = 0;
 	viewInfo.subresourceRange.levelCount = 1;
 	viewInfo.subresourceRange.baseArrayLayer = 0;
 	viewInfo.subresourceRange.layerCount = 1;
+	if (bIsCubemap)
+	{
+		viewInfo.subresourceRange.layerCount = 6;
+	}
 
 	return device.createImageView(viewInfo);
 }
 
-void VulkanEngine::copyBufferToImage(vk::Buffer buffer, vk::Image image, uint32_t width, uint32_t height)
+void VulkanEngine::copyBufferToImage(vk::Buffer buffer, vk::Image image, uint32_t width, uint32_t height, bool bIsCubemap)
 {
 	auto cmd = beginSingleTimeCommands();
 	{
 		tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(cmd);
 		TracyVkZone(profilercontext, VkCommandBuffer(cmd), "Upload Image");
+		if (!bIsCubemap) {
+			cmd_copyBufferToImage(cmd, buffer, image, width, height);
+		}
+		else {
+			std::vector<vk::BufferImageCopy> bufferCopyRegions;
+		
+			for (uint32_t face = 0; face < 6; face++)
+			{
+				vk::BufferImageCopy region = {};
+				region.bufferOffset = 0;
+				region.bufferRowLength = 0;
+				region.bufferImageHeight = 0;
 
-		cmd_copyBufferToImage(cmd, buffer, image, width, height);
+				region.imageSubresource.aspectMask = vk::ImageAspectFlagBits::eColor;
+				region.imageSubresource.mipLevel = 0;
+				region.imageSubresource.baseArrayLayer = face;
+				region.imageSubresource.layerCount = 1;
+
+				region.imageOffset = { 0, 0, 0 };
+				region.imageExtent = {
+					width,
+					height,
+					1
+				};
+
+				bufferCopyRegions.push_back(region);
+			}
+		
+			cmd.copyBufferToImage(
+				buffer,
+				image,
+				vk::ImageLayout::eTransferDstOptimal,
+				bufferCopyRegions.size(),
+				&bufferCopyRegions[0]);
+			}
 	}
 
 	endSingleTimeCommands(cmd);
@@ -406,7 +465,7 @@ void VulkanEngine::transitionImageLayout(vk::Image image, vk::Format format, vk:
 	endSingleTimeCommands(cmd);
 }
 
-void VulkanEngine::cmd_transitionImageLayout(vk::CommandBuffer& commandBuffer, vk::Image image, vk::Format format, vk::ImageLayout oldLayout, vk::ImageLayout newLayout)
+void VulkanEngine::cmd_transitionImageLayout(vk::CommandBuffer& commandBuffer, vk::Image image, vk::Format format, vk::ImageLayout oldLayout, vk::ImageLayout newLayout, bool bIsCubemap)
 {
 	vk::ImageMemoryBarrier barrier;
 	barrier.oldLayout = oldLayout;
@@ -418,7 +477,7 @@ void VulkanEngine::cmd_transitionImageLayout(vk::CommandBuffer& commandBuffer, v
 	barrier.subresourceRange.baseMipLevel = 0;
 	barrier.subresourceRange.levelCount = 1;
 	barrier.subresourceRange.baseArrayLayer = 0;
-	barrier.subresourceRange.layerCount = 1;
+	barrier.subresourceRange.layerCount = bIsCubemap? 6: 1;
 	//barrier.srcAccessMask = 0; // TODO
 	//barrier.dstAccessMask = 0; // TODO
 

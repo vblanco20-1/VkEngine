@@ -34,6 +34,26 @@ void UI::DrawEngineUI(VulkanEngine* engine)
 
 	ImGui::Separator();
 
+	ImGui::Text("Scene Parameters");
+	
+	ImGui::ColorEdit3("Fog Color", (float*)&engine->sceneParameters.fog_a[0],0);
+	ImGui::SliderFloat("Fog Power", (float*)&engine->sceneParameters.fog_a.w, 0.0f, 3.f);
+
+	ImGui::InputFloat("Fog Near", (float*)&engine->sceneParameters.fog_b.x);
+	ImGui::InputFloat("Fog Far", (float*)&engine->sceneParameters.fog_a.y);
+
+
+	ImGui::ColorEdit3("Ambient Color", (float*)&engine->sceneParameters.ambient[0], 0);	
+
+	//ImGui::InputFloat3("Ambient Color", (float*)&engine->sceneParameters.ambient[0]);
+	ImGui::SliderFloat("Ambient Power", (float*)&engine->sceneParameters.ambient.w, 0.0f,3.f);
+
+	struct GPUSceneParams {
+		glm::vec4 fog_a; //xyz color, w power
+		glm::vec4 fog_b; //x min, y far, zw unused
+		glm::vec4 ambient;//xyz color, w power
+	};
+	ImGui::Separator();
 	static std::string search_string;
 
 	ImGui::InputText("Search", &search_string);
