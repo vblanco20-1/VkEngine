@@ -249,7 +249,7 @@ void VulkanEngine::createSwapChain()
 	if (swapChainSupport.capabilities.maxImageCount > 0 && imageCount > swapChainSupport.capabilities.maxImageCount) {
 		imageCount = swapChainSupport.capabilities.maxImageCount;
 	}
-
+	//imageCount = 3;
 	vk::SwapchainCreateInfoKHR createInfo;
 	createInfo.surface = surface;
 

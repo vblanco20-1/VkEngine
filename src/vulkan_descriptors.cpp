@@ -37,7 +37,7 @@ vk::DescriptorSet DescriptorMegaPool::allocate_descriptor(vk::DescriptorSetLayou
 		selectedPool = &static_pools;
 		break;
 	case DescriptorLifetime::PerFrame:
-		selectedPool = &dynamic_pools;
+		selectedPool = dynamic_pools[currentFrame];
 		break;
 	}
 	//find vector by descriptor type
@@ -46,34 +46,15 @@ vk::DescriptorSet DescriptorMegaPool::allocate_descriptor(vk::DescriptorSetLayou
 	DescriptorAllocator* selected_allocator;
 	//first initialization
 	if (selected_vector->size() == 0) {
-		const int initial_descriptor_size = 64;
-		selected_allocator = new DescriptorAllocator();
-
-		selected_allocator->current_descriptors = 0;
-		selected_allocator->max_descriptors = initial_descriptor_size;
-		selected_allocator->pool = create_descriptor_pool(device, initial_descriptor_size);
-		
+		selected_allocator = get_allocator();
 		selected_vector->push_back(selected_allocator);
-
 	}
 	else
 	{
 		selected_allocator = selected_vector->back();
 		if (selected_allocator->current_descriptors == selected_allocator->max_descriptors) {
-			DescriptorAllocator* lastAllocator = selected_allocator;
 
-
-			int descriptor_size = lastAllocator->max_descriptors * 2;
-			if (descriptor_size > 1024) {
-				descriptor_size = 1024;
-			}
-
-			selected_allocator = new DescriptorAllocator();
-
-			selected_allocator->current_descriptors = 0;
-			selected_allocator->max_descriptors = descriptor_size;
-			selected_allocator->pool = create_descriptor_pool(device,descriptor_size);
-
+			selected_allocator = get_allocator();
 			selected_vector->push_back(selected_allocator);
 		}
 	}
@@ -89,6 +70,49 @@ vk::DescriptorSet DescriptorMegaPool::allocate_descriptor(vk::DescriptorSetLayou
 	device.allocateDescriptorSets(&allocInfo, &newSet);
 
 	return newSet;
+}
+
+DescriptorAllocator* DescriptorMegaPool::get_allocator()
+{
+	if (empty_pools.size() == 0) {
+		const int descriptor_size = 512;
+
+		DescriptorAllocator* selected_allocator = new DescriptorAllocator();
+
+		selected_allocator->current_descriptors = 0;
+		selected_allocator->max_descriptors = descriptor_size;
+		selected_allocator->pool = create_descriptor_pool(device, descriptor_size);
+
+		return selected_allocator;
+	}
+	else {
+		DescriptorAllocator* selected_allocator = empty_pools.back();
+		empty_pools.pop_back();
+		return selected_allocator;
+	}
+}
+
+void DescriptorMegaPool::initialize(int numFrames,vk::Device _device)
+{
+	
+	device = _device;
+	for (int i = 0; i < numFrames; i++) {
+		dynamic_pools.push_back(new PoolStorage);
+	}
+}
+
+void DescriptorMegaPool::set_frame(int frameNumber)
+{
+	PoolStorage* framePool = dynamic_pools[frameNumber];
+
+	for (DescriptorAllocator* alloc : *framePool) {
+		device.resetDescriptorPool(alloc->pool);
+
+		empty_pools.push_back(alloc);
+	}
+	framePool->clear();
+
+	currentFrame = frameNumber;
 }
 
 DescriptorSetBuilder::DescriptorSetBuilder(ShaderEffect* _effect, DescriptorMegaPool* _parentPool)
@@ -211,5 +235,9 @@ void DescriptorSetBuilder::update_descriptor(int set, vk::DescriptorSet& descrip
 
 vk::DescriptorSet DescriptorSetBuilder::build_descriptor(int set, DescriptorLifetime lifetime)
 {
-	return vk::DescriptorSet();
+	vk::DescriptorSetLayout layout = effect->build_descriptor_layouts(parentPool->device)[set];
+	vk::DescriptorSet newSet = parentPool->allocate_descriptor(layout, lifetime);
+
+	update_descriptor(set, newSet, parentPool->device);
+	return newSet;
 }

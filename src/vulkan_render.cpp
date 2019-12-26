@@ -105,7 +105,7 @@ void VulkanEngine::init_vulkan()
 
 	create_device();
 
-	descriptorMegapool.device = device;
+	descriptorMegapool.initialize(MAX_FRAMES_IN_FLIGHT,device);
 
 	VmaAllocatorCreateInfo allocatorInfo = {};
 	allocatorInfo.physicalDevice = physicalDevice;
@@ -304,9 +304,24 @@ void VulkanEngine::create_descriptor_pool()
 
 void VulkanEngine::create_descriptor_sets()
 {
-	for (size_t i = 0; i < swapChainImages.size(); i++) {
 
-		test_descriptorSets.push_back(descriptorMegapool.allocate_descriptor(descriptorSetLayout, DescriptorLifetime::Static));
+}
+
+
+EntityID VulkanEngine::create_basic_descriptor_sets(EntityID pipelineID, std::array<EntityID,8> textureID)
+{
+	
+	const PipelineResource &pipeline = render_registry.get<PipelineResource>(pipelineID);
+
+	DescriptorSetBuilder setBuilder{ pipeline.effect,&descriptorMegapool };
+
+	DescriptorResource descriptors;
+
+	int siz;
+	std::string name = render_registry.get<TextureResource>(textureID[0]).name;
+
+
+	for (size_t i = 0; i < swapChainImages.size(); i++) {
 
 		vk::DescriptorBufferInfo bufferInfo;
 		bufferInfo.buffer = test_uniformBuffers[i].buffer;
@@ -316,178 +331,28 @@ void VulkanEngine::create_descriptor_sets()
 		vk::DescriptorBufferInfo bigbufferInfo;
 		bigbufferInfo.buffer = object_buffers[i].buffer;
 		bigbufferInfo.offset = 0;
-		bigbufferInfo.range = sizeof(glm::mat4)*10000;
+		bigbufferInfo.range = sizeof(glm::mat4) * 10000;
+
+		setBuilder.bind_buffer("ubo", bufferInfo);
+		setBuilder.bind_buffer("ubo2", bufferInfo);
+		setBuilder.bind_buffer("MainObjectBuffer", bigbufferInfo);
+
+		descriptors.descriptorSets.push_back(setBuilder.build_descriptor(0, DescriptorLifetime::Static));
+	}
+
+	for (int j = 0; j < 8; j++) {
+
+		const TextureResource& texture = render_registry.get<TextureResource>(textureID[j]);
 
 		vk::DescriptorImageInfo imageInfo = {};
 		imageInfo.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-		imageInfo.imageView = tset_textureImageView;
-		imageInfo.sampler = test_textureSampler;
+		imageInfo.imageView = texture.imageView;
+		imageInfo.sampler = texture.textureSampler;			
 
-		//DescriptorSetBuilder setBuilder{nullptr,nullptr};
-		//
-		//setBuilder.bind_buffer(0, 0, bufferInfo, vk::DescriptorType::eUniformBuffer);
-		//setBuilder.bind_buffer(0, 1, bufferInfo, vk::DescriptorType::eUniformBuffer);
-		//setBuilder.bind_buffer(0, 2, bigbufferInfo, vk::DescriptorType::eStorageBuffer);
-		//
-		//setBuilder.bind_image(0,6, imageInfo);
-		//
-		//setBuilder.update_descriptor(0,test_descriptorSets[i],device);
-
-		std::array<vk::WriteDescriptorSet, 4> descriptorWrites = {};
-		descriptorWrites[0].dstSet = test_descriptorSets[i];
-		descriptorWrites[0].dstBinding = 0;
-		descriptorWrites[0].dstArrayElement = 0;
-		descriptorWrites[0].descriptorType = vk::DescriptorType::eUniformBuffer;//Dynamic;
-		descriptorWrites[0].descriptorCount = 1;
-		descriptorWrites[0].pBufferInfo = &bufferInfo;
-		descriptorWrites[0].pImageInfo = nullptr; // Optional
-		descriptorWrites[0].pTexelBufferView = nullptr; // Optional		
-		
-		descriptorWrites[2].dstSet = test_descriptorSets[i];
-		descriptorWrites[2].dstBinding = 1;
-		descriptorWrites[2].dstArrayElement = 0;
-		descriptorWrites[2].descriptorType = vk::DescriptorType::eUniformBuffer;
-		descriptorWrites[2].descriptorCount = 1;
-		descriptorWrites[2].pBufferInfo = &bufferInfo;
-		descriptorWrites[2].pImageInfo = nullptr; // Optional
-		descriptorWrites[2].pTexelBufferView = nullptr; // Optional		
-		
-		descriptorWrites[1].dstSet = test_descriptorSets[i];
-		descriptorWrites[1].dstBinding = 6;
-		descriptorWrites[1].dstArrayElement = 0;
-		descriptorWrites[1].descriptorType = vk::DescriptorType::eCombinedImageSampler;
-		descriptorWrites[1].descriptorCount = 1;
-		descriptorWrites[1].pBufferInfo = nullptr;
-		descriptorWrites[1].pImageInfo = &imageInfo; // Optional
-		descriptorWrites[1].pTexelBufferView = nullptr; // Optional		
-		
-		descriptorWrites[3].dstSet = test_descriptorSets[i];
-		descriptorWrites[3].dstBinding = 2;
-		descriptorWrites[3].dstArrayElement = 0;
-		descriptorWrites[3].descriptorType = vk::DescriptorType::eStorageBuffer;
-		descriptorWrites[3].descriptorCount = 1;
-		descriptorWrites[3].pBufferInfo = &bigbufferInfo;
-		descriptorWrites[3].pImageInfo = nullptr; // Optional
-		descriptorWrites[3].pTexelBufferView = nullptr; // Optional		
-		
-		device.updateDescriptorSets(descriptorWrites, 0);
-	}
-}
-
-
-EntityID VulkanEngine::create_basic_descriptor_sets(EntityID pipelineID, std::array<EntityID,8> textureID)
-{
-	
-	const PipelineResource &pipeline = render_registry.get<PipelineResource>(pipelineID);
-
-
-	DescriptorResource descriptors;
-	
-	//create buffers to hold the matrices
-	vk::DeviceSize bufferSize = sizeof(UniformBufferObject);
-
-	for (size_t i = 0; i < swapChainImages.size(); i++) {
-
-		descriptors.descriptorSets.push_back(descriptorMegapool.allocate_descriptor(descriptorSetLayout, DescriptorLifetime::Static));
+		setBuilder.bind_image(2, 6 + j, imageInfo);
 	}
 
-	static std::vector<vk::WriteDescriptorSet> descriptorWrites;
-	
-	static std::vector<vk::DescriptorBufferInfo> bufferInfos;
-
-	static std::vector<vk::DescriptorImageInfo> imageInfos;
-
-	descriptorWrites.clear();
-	bufferInfos.clear();
-	imageInfos.clear();
-
-	imageInfos.reserve(8);
-
-	int siz;
-	std::string name = render_registry.get<TextureResource>(textureID[0]).name;
-	for (size_t i = 0; i < swapChainImages.size(); i++) {
-
-		descriptorWrites.clear();
-		bufferInfos.clear();
-		imageInfos.clear();
-
-		vk::DescriptorBufferInfo bufferInfo;
-		bufferInfo.buffer = transformUniformBuffers[i].buffer;
-		bufferInfo.offset = 0;
-		bufferInfo.range = sizeof(UniformBufferObject);
-
-		vk::DescriptorBufferInfo glbbufferInfo;
-		glbbufferInfo.buffer = test_uniformBuffers[i].buffer;
-		glbbufferInfo.offset = 0;
-		glbbufferInfo.range = sizeof(UniformBufferObject);
-
-		vk::DescriptorBufferInfo bigbufferInfo;
-		bigbufferInfo.buffer = object_buffers[i].buffer;
-		bigbufferInfo.offset = 0;
-		bigbufferInfo.range = sizeof(glm::mat4) * 10000;		
-
-		//std::array<vk::WriteDescriptorSet, 4> descriptorWrites = {};
-		descriptorWrites.push_back(vk::WriteDescriptorSet{});
-		descriptorWrites[0].dstSet = descriptors.descriptorSets[i];
-		descriptorWrites[0].dstBinding = 0;
-		descriptorWrites[0].dstArrayElement = 0;
-		descriptorWrites[0].descriptorType = vk::DescriptorType::eUniformBuffer;//Dynamic;
-		descriptorWrites[0].descriptorCount = 1;
-		descriptorWrites[0].pBufferInfo = &bufferInfo;
-		descriptorWrites[0].pImageInfo = nullptr; // Optional
-		descriptorWrites[0].pTexelBufferView = nullptr; // Optional		
-
-
-		for (int j = 0; j < 8; j++) {
-
-			const TextureResource& texture = render_registry.get<TextureResource>(textureID[j]);
-
-			vk::DescriptorImageInfo imageInfo = {};
-			imageInfo.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-			imageInfo.imageView = texture.imageView;
-			imageInfo.sampler = texture.textureSampler;
-
-			imageInfos.push_back(imageInfo);
-		}
-		for (int j = 0; j < 8; j++) {
-			siz = descriptorWrites.size();
-			descriptorWrites.push_back(vk::WriteDescriptorSet{});
-			descriptorWrites[siz].dstSet = descriptors.descriptorSets[i];
-			descriptorWrites[siz].dstBinding = 6 + j;
-			descriptorWrites[siz].dstArrayElement = 0;
-			descriptorWrites[siz].descriptorType = vk::DescriptorType::eCombinedImageSampler;
-			descriptorWrites[siz].descriptorCount = 1;
-			descriptorWrites[siz].pBufferInfo = nullptr;
-			descriptorWrites[siz].pImageInfo = &imageInfos[j]; // Optional
-			descriptorWrites[siz].pTexelBufferView = nullptr; // Optional	
-		}
-
-
-
-		siz = descriptorWrites.size();
-		descriptorWrites.push_back(vk::WriteDescriptorSet{});
-		descriptorWrites[siz].dstSet = descriptors.descriptorSets[i];
-		descriptorWrites[siz].dstBinding = 1;
-		descriptorWrites[siz].dstArrayElement = 0;
-		descriptorWrites[siz].descriptorType = vk::DescriptorType::eUniformBuffer;
-		descriptorWrites[siz].descriptorCount = 1;
-		descriptorWrites[siz].pBufferInfo = &glbbufferInfo;
-		descriptorWrites[siz].pImageInfo = nullptr; // Optional
-		descriptorWrites[siz].pTexelBufferView = nullptr; // Optional		
-
-		siz = descriptorWrites.size();
-		descriptorWrites.push_back(vk::WriteDescriptorSet{});
-		descriptorWrites[siz].dstSet = descriptors.descriptorSets[i];
-		descriptorWrites[siz].dstBinding = 2;
-		descriptorWrites[siz].dstArrayElement = 0;
-		descriptorWrites[siz].descriptorType = vk::DescriptorType::eStorageBuffer;
-		descriptorWrites[siz].descriptorCount = 1;
-		descriptorWrites[siz].pBufferInfo = &bigbufferInfo;
-		descriptorWrites[siz].pImageInfo = nullptr; // Optional
-		descriptorWrites[siz].pTexelBufferView = nullptr; // Optional		
-
-		device.updateDescriptorSets(descriptorWrites, 0);
-	}
+	descriptors.materialSet = setBuilder.build_descriptor(2, DescriptorLifetime::Static);
 
 	std::string descriptorName = pipeline.name + name;
 	return createResource(descriptorName.c_str(), descriptors);
@@ -509,9 +374,7 @@ vk::ShaderModule VulkanEngine::createShaderModule(const std::vector<unsigned int
 	return device.createShaderModule(createInfo);
 }
 
-struct ShaderEffectHandle:public ResourceComponent {
-	ShaderEffect* handle;
-};
+
 
 void* VulkanEngine::get_profiler_context(vk::CommandBuffer cmd)
 {
@@ -825,9 +688,9 @@ void VulkanEngine::createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage,
 	vmaallocInfo.requiredFlags = VkMemoryPropertyFlags(properties);
 	VkBuffer vkbuffer;
 	VmaAllocation allocation;
-	vmaCreateBuffer(allocator, &vkbinfo, &vmaallocInfo, &vkbuffer, &allocation, nullptr);
+	vk::Result result = vk::Result(vmaCreateBuffer(allocator, &vkbinfo, &vmaallocInfo, &vkbuffer, &allocation, nullptr));
 
-	
+	assert(result == vk::Result::eSuccess);
 	allocatedbuffer.buffer = vkbuffer;
 	allocatedbuffer.allocation = allocation;
 }
@@ -1018,12 +881,10 @@ void VulkanEngine::draw_frame()
 	ZoneNamedNC(Framemark3, "Draw Frame 2 ", tracy::Color::Blue3, currentFrameIndex == 2);
 	//("Draw Frame", color);
 	{
-		
-
 		ZoneScopedNC("WaitFences", tracy::Color::Red);
 		device.waitForFences(1, &inFlightFences[currentFrameIndex], VK_TRUE, std::numeric_limits<uint64_t>::max());
 	}
-
+	descriptorMegapool.set_frame(currentFrameIndex);
 
 	vk::ResultValue<uint32_t> imageResult = device.acquireNextImageKHR(swapChain, std::numeric_limits<uint64_t>::max(), imageAvailableSemaphores[currentFrameIndex], nullptr);
 
@@ -1032,8 +893,9 @@ void VulkanEngine::draw_frame()
 		return;
 	}
 
+	
 	uint32_t imageIndex = imageResult.value;
-
+	std::cout << "swapchain image is " << imageIndex << "engine index is "<< currentFrameIndex << std::endl;
 	vk::SubmitInfo submitInfo;
 
 
@@ -1052,21 +914,18 @@ void VulkanEngine::draw_frame()
 
 	device.resetFences(1, &inFlightFences[currentFrameIndex]);
 
-	update_uniform_buffer(imageIndex);
+	update_uniform_buffer(currentFrameIndex/*imageIndex*/);
 
 	vk::CommandBufferAllocateInfo allocInfo;
 	allocInfo.commandPool = commandPool;
 	allocInfo.level = vk::CommandBufferLevel::ePrimary;
 	allocInfo.commandBufferCount = 1;
 
-	//auto bffs = device.allocateCommandBuffers(allocInfo);
-//
-
 	eng_stats.drawcalls = 0;
 
 	vk::CommandBuffer cmd = commandBuffers[currentFrameIndex];
 
-	start_frame_command_buffer(cmd, swapChainFramebuffers[currentFrameIndex]);
+	start_frame_command_buffer(cmd, swapChainFramebuffers[imageIndex]);
 
 	{
 		tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(cmd);
@@ -1075,7 +934,7 @@ void VulkanEngine::draw_frame()
 
 		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline);
 
-		cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, 1, &test_descriptorSets[(currentFrameIndex + 1) % 3], 0, nullptr);//1, &dynamicOffset);//0, nullptr);
+		//cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, 1, &test_descriptorSets[(currentFrameIndex + 1) %MAX_FRAMES_IN_FLIGHT], 0, nullptr);//1, &dynamicOffset);//0, nullptr);
 
 		{
 			ZoneScopedNC("RenderSort", tracy::Color::Violet);
@@ -1112,12 +971,16 @@ void VulkanEngine::draw_frame()
 	end_frame_command_buffer(cmd);
 	
 	{
-		ZoneScopedNC("Submit and present", tracy::Color::Red);
+		
 		submitInfo.commandBufferCount = 1;
 		submitInfo.pCommandBuffers = &cmd;
 		submitInfo.signalSemaphoreCount = 1;
 		submitInfo.pSignalSemaphores = signalSemaphores;
-		graphicsQueue.submit(1, &submitInfo, inFlightFences[currentFrameIndex]);
+		{
+			ZoneScopedNC("Submit", tracy::Color::Red);
+			graphicsQueue.submit(1, &submitInfo, inFlightFences[currentFrameIndex]);
+		}
+		
 
 
 		vk::PresentInfoKHR presentInfo = {};
@@ -1130,8 +993,10 @@ void VulkanEngine::draw_frame()
 		presentInfo.pImageIndices = &imageIndex;
 
 		presentInfo.pResults = nullptr; // Optional
-
-		presentQueue.presentKHR(presentInfo);
+		{
+			ZoneScopedNC("Present", tracy::Color::Red);
+			presentQueue.presentKHR(presentInfo);
+		}
 
 		currentFrameIndex = (currentFrameIndex + 1) % MAX_FRAMES_IN_FLIGHT;
 		globalFrameNumber++;
@@ -1144,18 +1009,40 @@ void VulkanEngine::RenderMainPass(const vk::CommandBuffer& cmd)
 		EntityID LastMesh = entt::null;
 	
 		vk::Pipeline last_pipeline = graphicsPipeline;
-		bool first_render = true;
+		vk::PipelineLayout piplayout;
+		bool first_render = true;		
+
 		render_registry.view<RenderMeshComponent>().each([&](RenderMeshComponent& renderable) {
 
 			const MeshResource& mesh = render_registry.get<MeshResource>(renderable.mesh_resource_entity);
 			const PipelineResource& pipeline = render_registry.get<PipelineResource>(renderable.pipeline_entity);
 			const DescriptorResource& descriptor = render_registry.get<DescriptorResource>(renderable.descriptor_entity);
 
-			bool bShouldBindPipeline = first_render ? true : pipeline.pipeline == last_pipeline;
+			bool bShouldBindPipeline = first_render ? true : pipeline.pipeline != last_pipeline;
 
 			if (bShouldBindPipeline) {
 				cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline.pipeline);
+				piplayout = (vk::PipelineLayout)pipeline.effect->build_pipeline_layout(device);
 				last_pipeline = graphicsPipeline;
+
+				DescriptorSetBuilder setBuilder{pipeline.effect,&descriptorMegapool};
+				
+				vk::DescriptorBufferInfo bufferInfo;
+				bufferInfo.buffer = test_uniformBuffers[currentFrameIndex].buffer;
+				bufferInfo.offset = 0;
+				bufferInfo.range = sizeof(UniformBufferObject);
+				
+				vk::DescriptorBufferInfo bigbufferInfo;
+				bigbufferInfo.buffer = object_buffers[currentFrameIndex].buffer;
+				bigbufferInfo.offset = 0;
+				bigbufferInfo.range = sizeof(glm::mat4) * 10000;
+				
+				setBuilder.bind_buffer("ubo", bufferInfo);				
+				setBuilder.bind_buffer("MainObjectBuffer", bigbufferInfo);
+				
+				vk::DescriptorSet globalset = setBuilder.build_descriptor(0, DescriptorLifetime::PerFrame);
+				
+				cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, piplayout, 0, 1, &globalset, 0, nullptr);
 			}
 
 			if (LastMesh != renderable.mesh_resource_entity) {
@@ -1168,8 +1055,7 @@ void VulkanEngine::RenderMainPass(const vk::CommandBuffer& cmd)
 				LastMesh = renderable.mesh_resource_entity;
 			}
 
-
-			cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, 1, &descriptor.descriptorSets[currentFrameIndex], 0, nullptr);
+			cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, piplayout, 2, 1, &descriptor.materialSet, 0, nullptr);
 
 			cmd.pushConstants(pipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(int), &renderable.object_idx);
 			
@@ -1177,11 +1063,9 @@ void VulkanEngine::RenderMainPass(const vk::CommandBuffer& cmd)
 			{
 				cmd.drawIndexed(static_cast<uint32_t>(mesh.indices.size()), 1, 0, 0, 0);
 				eng_stats.drawcalls++;
-			}
-			
-
-		
-			});
+			}		
+			first_render = false;
+		});
 	
 }
 //std::vector<UniformBufferObject> StagingCPUUBOArray;
@@ -1207,38 +1091,23 @@ void VulkanEngine::update_uniform_buffer(uint32_t currentImage)
 		auto eye = glm::vec3(camUp, 600, 200);
 
 	UniformBufferObject ubo = {};
-	ubo.model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -1.0f)) * glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+	ubo.model = glm::mat4(1.0f);
 	ubo.view = glm::lookAt(eye, glm::vec3(0.0f, 400.0f, 0.0f), config_parameters.CamUp);
 	ubo.proj = glm::perspective(glm::radians(config_parameters.fov), swapChainExtent.width / (float)swapChainExtent.height, 0.1f, 10000.0f);
 	ubo.eye = glm::vec4(eye,0.0f);
 	//invert projection matrix couse glm is inverted y compared to vulkan
 	ubo.proj[1][1] *= -1;
 		
-	//void* data = mapBuffer(test_uniformBuffers[currentImage]);
+	void* data = mapBuffer(test_uniformBuffers[currentImage]);
 	//auto alignUbo = align_dynamic_descriptor(sizeof(ubo));
-	//char* dt = (char*)data;// + alignUbo; ;
-	//
-	//// +sizeof(ubo) * 3;
-	//memcpy(dt, &ubo, alignUbo );
-	//
-	//unmapBuffer(test_uniformBuffers[currentImage]);
+	char* dt = (char*)data;// + alignUbo; ;
+	
+	// +sizeof(ubo) * 3;
+	memcpy(dt, &ubo, sizeof(UniformBufferObject) );
+	
+	unmapBuffer(test_uniformBuffers[currentImage]);
 
-	//render_registry.view<TransformComponent>().each([&](TransformComponent& transform) {
-	//	auto trmat =  glm::translate(mat_identity, transform.location);
-	//	auto rotmat = glm::rotate(mat_identity, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-	//	auto mat1 =glm::mat4(1.0f, 0.0f, 0.0f, 0.0f,
-	//		0.0f, 1.0f, 0.0f, 0.0f,
-	//		0.0f, 0.0f, 1.0f, 0.0f,
-	//		0.0f, 0.0f, 0.0f, 1.0f);
-	//	transform.model = mat1 *trmat * rotmat;// * glm::scale(glm::mat4(1.0f), transform.scale);
-	//
-	//});
-
-	//std::cout << sizeof(ubo);
-	//StagingCPUUBOArray.clear();
-	//static int renderid = 0;
-	//renderid++;
-	//if (renderid < 5) {
+	
 		int copyidx = 0;
 		std::vector<glm::mat4> object_matrices;
 
@@ -1246,39 +1115,23 @@ void VulkanEngine::update_uniform_buffer(uint32_t currentImage)
 		
 		render_registry.view<RenderMeshComponent, TransformComponent>().each([&](EntityID id, RenderMeshComponent& renderable, const TransformComponent& transform) {
 
-			UniformBufferObject ubo2 = ubo;
-			ubo2.model = transform.model;
-
-			//StagingCPUUBOArray.push_back(ubo2);
-			StagingCPUUBOArray[copyidx] = ubo2;
-
-			renderable.ubo_descriptor_offset = StagingCPUUBOArray.get_offset(copyidx);
-
-			object_matrices[copyidx] = ubo2.model;
-			//object_matrices.push_back(transform.model);
+			object_matrices[copyidx] = transform.model;			
 			renderable.object_idx = copyidx;
-
 			copyidx++;
-			
-
-
-			});
+		});
 
 		if (copyidx > 0) {
 			ZoneScopedN("Uniform copy");
-			void* data2 = mapBuffer(transformUniformBuffers[currentImage]);
-			memcpy(data2, StagingCPUUBOArray.get_raw(), StagingCPUUBOArray.get_offset(copyidx + 1));
-
-			unmapBuffer(transformUniformBuffers[currentImage]);
+			//void* data2 = mapBuffer(transformUniformBuffers[currentImage]);
+			//memcpy(data2, StagingCPUUBOArray.get_raw(), StagingCPUUBOArray.get_offset(copyidx + 1));
+			//
+			//unmapBuffer(transformUniformBuffers[currentImage]);
 
 			void* matdata = mapBuffer(object_buffers[currentImage]);
 			memcpy(matdata, object_matrices.data(), object_matrices.size() * sizeof(glm::mat4));
 
 			unmapBuffer(object_buffers[currentImage]);
 		}
-	//}
-
-
 }
 
 
@@ -1672,6 +1525,30 @@ bool GrabTextureID(aiMaterial* material, aiTextureType textype, VulkanEngine* en
 	return false;
 }
 
+void Coutproperty(aiMaterialProperty* property) {
+
+	switch (property->mType) {
+	case aiPTI_Float:
+		for (int i = 0; i < property->mDataLength; i += sizeof(float)) {
+			std::cout << *((float*)&property->mData[i]) << " - ";
+		}
+		
+		return;
+	case aiPTI_Integer:
+		for (int i = 0; i < property->mDataLength; i += sizeof(int)) {
+			std::cout << *((int*)&property->mData[i]) << " - ";
+		}
+		return;
+	case aiPTI_String:
+	case aiPTI_Buffer:
+		for (int i = 0; i < property->mDataLength; i +=1) {
+			std::cout << property->mData[i];
+		}
+		return;
+	
+	}
+}
+
 
 bool VulkanEngine::load_scene(const char* scene_path)
 {
@@ -1719,10 +1596,19 @@ bool VulkanEngine::load_scene(const char* scene_path)
 		if (GrabTextureLoadRequest(scene->mMaterials[i], aiTextureType_SHININESS, scenepath, request)) {
 			textureLoadRequests.push_back(request);
 		}
+		if (GrabTextureLoadRequest(scene->mMaterials[i], aiTextureType_EMISSIVE, scenepath, request)) {
+			textureLoadRequests.push_back(request);
+		}
+		if (GrabTextureLoadRequest(scene->mMaterials[i], aiTextureType_OPACITY, scenepath, request)) {
+			textureLoadRequests.push_back(request);
+		}
 
 		for (int j = 0; j < scene->mMaterials[i]->mNumProperties; j++)
 		{
-			std::cout << "found param:" << scene->mMaterials[i]->mProperties[j]->mKey.C_Str() << std::endl;
+			std::cout << "found param:" << scene->mMaterials[i]->mProperties[j]->mKey.C_Str() << " val: ";
+			
+			Coutproperty(scene->mMaterials[i]->mProperties[j]);
+			std::cout << std::endl;
 		}
 	}
 
@@ -1758,35 +1644,13 @@ bool VulkanEngine::load_scene(const char* scene_path)
 		if (GrabTextureID(scene->mMaterials[i], aiTextureType_SHININESS, this, textureId)) {
 			mat.textureIDs[3] = textureId;
 		}
-		materials[i] = mat;
-		
-		//std::cout << std::endl;
-		//std::cout << "iterating material" << scene->mMaterials[i]->GetName().C_Str() << std::endl;
-		//aiString texpath;
-		//if (scene->mMaterials[i]->GetTextureCount(aiTextureType_DIFFUSE))
-		//{
-		//	scene->mMaterials[i]->GetTexture(aiTextureType_DIFFUSE, 0, &texpath);
-		//	
-		//	const char* txpath = &texpath.data[0];
-		//	for (int i = 0; i < texpath.length; i++)
-		//	{
-		//		if (texpath.data[i] == '\\')
-		//		{
-		//			texpath.data[i] = '/';
-		//		}
-		//	}
-		//	std::cout << "loading material" << txpath << std::endl;
-		//	EntityID textureId = resourceMap[std::string(txpath)];
-		//	textures.push_back(textureId);
-		//}
-		//else {
-		//	textures.push_back(blankTexture);
-		//}		
+		materials[i] = mat;	
 	}
 	
 
 	PipelineResource pipeline;
 	pipeline.pipeline = graphicsPipeline;
+	pipeline.effect = getResource<ShaderEffectHandle>("basiclit").handle;
 	auto pipeline_id = createResource("pipeline_basiclit", pipeline);
 
 	
@@ -1796,10 +1660,7 @@ bool VulkanEngine::load_scene(const char* scene_path)
 	for (int i = 0; i < scene->mNumMeshes; i++)
 	{
 		loaded_meshes.push_back( load_assimp_mesh(scene->mMeshes[i]));
-
-		//std::array<EntityID, 8> textureIDs = blank_textures;
-		//
-		//textureIDs = ; 
+		
 		try {
 			
 			//blank_textures[0] = textures;

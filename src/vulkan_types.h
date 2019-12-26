@@ -108,12 +108,18 @@ struct MeshResource : public ResourceComponent {
 	std::vector<uint32_t> indices;
 };
 
+struct ShaderEffectHandle :public ResourceComponent {
+	struct ShaderEffect* handle;
+};
+
 struct PipelineResource : public ResourceComponent {
 	vk::Pipeline pipeline;
+	ShaderEffect* effect;
 };
 
 struct DescriptorResource : public ResourceComponent {
 	std::vector<vk::DescriptorSet> descriptorSets;
+	vk::DescriptorSet materialSet;
 };
 
 struct RenderMeshComponent {

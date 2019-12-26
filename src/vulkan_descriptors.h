@@ -68,9 +68,18 @@ struct DescriptorMegaPool {
 	using PoolStorage = std::vector<DescriptorAllocator*>;
 
 	vk::DescriptorSet allocate_descriptor(vk::DescriptorSetLayout layout, DescriptorLifetime lifetime);
+	DescriptorAllocator* get_allocator();
 
+	void initialize(int numFrames, vk::Device _device);
+	void set_frame(int frameNumber);
+
+	int currentFrame;
 	PoolStorage static_pools;
-	PoolStorage dynamic_pools;
+	//one per frame
+	std::vector<PoolStorage*> dynamic_pools;
+
+	PoolStorage empty_pools;
+
 	vk::Device device;
 };
 

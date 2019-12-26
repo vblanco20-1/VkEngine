@@ -17,14 +17,6 @@ layout(set = 0, binding = 0) uniform UniformBufferObject {
 	vec4 eye;
 } ubo;
 
-layout(set = 0, binding = 1) uniform UniformBufferObject2 {
-    mat4 model;
-    mat4 view;
-    mat4 proj;
-	vec4 eye;
-} ubo2;
-
-
 layout(std140,set = 0, binding = 2) readonly buffer Pos 
 {
    PerObject objects[ ];
@@ -64,12 +56,12 @@ void main() {
 	
 	eyePos = (ubo.eye).xyz;
 
-    //gl_Position = ubo2.proj * ubo2.view * ubo.model * vec4(inPosition, 1.0);
-	//gl_Position = ubo2.proj * ubo2.view * objects[object_id].model * vec4(inPosition, 1.0);
-	gl_Position = ubo.proj * ubo.view * MainObjectBuffer.objects[object_id].model * vec4(inPosition, 1.0);
+	mat4 objectMatrix = MainObjectBuffer.objects[object_id].model;
+
+	gl_Position = ubo.proj * ubo.view * objectMatrix * vec4(inPosition, 1.0);
     fragColor = inColor;
     fragTexCoord = inTexCoord;
-	fragNormal = normalize(ubo.model * vec4(inNormal, 0.0)).xyz;
-	fragPos = (MainObjectBuffer.objects[object_id].model * vec4(inPosition, 1.0)).xyz;
+	fragNormal = normalize(objectMatrix * vec4(inNormal, 0.0)).xyz;
+	fragPos = (objectMatrix * vec4(inPosition, 1.0)).xyz;
 
 }

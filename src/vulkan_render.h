@@ -2,7 +2,7 @@
 #include "vulkan_types.h"
 #include "vulkan_descriptors.h"
 
-constexpr int MAX_FRAMES_IN_FLIGHT = 3;
+constexpr int MAX_FRAMES_IN_FLIGHT = 2;
 constexpr int MAX_UNIFORM_BUFFER = 5000;
 
 #ifdef NDEBUG
@@ -23,6 +23,8 @@ const std::vector<const char*> deviceExtensions = {
 	VK_KHR_SWAPCHAIN_EXTENSION_NAME ,
 	//VK_NV_GLSL_SHADER_EXTENSION_NAME
 };
+
+
 
 struct VulkanEngine {
 
