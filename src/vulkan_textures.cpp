@@ -139,153 +139,166 @@ void VulkanEngine::load_textures_bulk(TextureLoadRequest* requests, size_t count
 	constexpr int max_tex_upload = 300;
 	int batches = (count / max_tex_upload) + 1;
 
-	for (int batch = 0; batch < batches; batch++) {
-		//std::vector<AllocatedBuffer> stagingBuffers;
-		for (int i = 0; i < max_tex_upload; i++) {
-
-			int index = batch * batches + i;
-			if (index >= count) break;
-			
-			const char* image_path = requests[index].image_path.c_str();
-		
-		//int texWidth, texHeight, texChannels;
-		//std::cout << "Trying to load texture " << image_path << std::endl;
-		AllData[index].pixels = stbi_load(image_path, &AllData[index].texWidth, &AllData[index].texHeight, &AllData[index].texChannels, STBI_rgb_alpha);
-		AllData[index].pixel_ptr = AllData[index].pixels;
-		AllData[index].imageSize = AllData[index].texWidth * AllData[index].texHeight * 4;
-
-		
-
-		AllData[index].image_format = vk::Format::eR8G8B8A8Unorm;
-		AllData[index].metadata.image_format = vk::Format::eR8G8B8A8Unorm;
-		AllData[index].metadata.texture_size.x = AllData[index].texWidth;
-		AllData[index].metadata.texture_size.y = AllData[index].texHeight;
-
-		gli::texture textu;
-		if (!AllData[index].pixels) {
-			textu = gli::load(image_path);
-			if (textu.empty()) {
-
-				AllData[index].bLoaded = false;
-				
-				std::cout << "failed to load texture on path: " << image_path << " : " << to_string(AllData[index].image_format) << std::endl;
-			}
-			else {
-
-				//std::cout << "Loading texture " << image_path << " : " <<to_string(AllData[i].image_format) << std::endl;
-
-				gli::gl GL(gli::gl::PROFILE_GL33);
-				gli::gl::format const Format = GL.translate(textu.format(), textu.swizzles());
-
-				VkFormat format = vkGetFormatFromOpenGLInternalFormat(Format.Internal);
-
-				AllData[index].texWidth = textu.extent().x;
-				AllData[index].texHeight = textu.extent().y;
-
-				AllData[index].pixel_ptr = textu.data();
-				AllData[index].imageSize = textu.size();
-
-				
-
-				AllData[index].image_format = vk::Format(format);
-
-				AllData[index].metadata.image_format = AllData[index].image_format;
-				AllData[index].metadata.texture_size.x = AllData[index].texWidth;
-				AllData[index].metadata.texture_size.y = AllData[index].texHeight;
-				AllData[index].bLoaded = true;
-			}			
-		}
-		else {
-			//std::cout << "Loading texture 2" << image_path << " : " << to_string(AllData[i].image_format) << std::endl;
-			AllData[index].bLoaded = true;
-		}
-		
 	
-		if (!AllData[index].bLoaded) {
-			requests[index].bLoaded = false;
-			continue;
-		}
+		for (int batch = 0; batch < batches; batch++) {
+			//std::vector<AllocatedBuffer> stagingBuffers;
+
+			{
+				ZoneScopedNC("Texture request load batch", tracy::Color::Yellow);
+				for (int i = 0; i < max_tex_upload; i++) {
+
+					int index = batch * batches + i;
+					if (index >= count) break;
+
+					const char* image_path = requests[index].image_path.c_str();
+
+					//int texWidth, texHeight, texChannels;
+					//std::cout << "Trying to load texture " << image_path << std::endl;
+					{
+						ZoneScopedNC("Texture load ", tracy::Color::Red);
+						AllData[index].pixels = stbi_load(image_path, &AllData[index].texWidth, &AllData[index].texHeight, &AllData[index].texChannels, STBI_rgb_alpha);
+					}
+					AllData[index].pixel_ptr = AllData[index].pixels;
+					AllData[index].imageSize = AllData[index].texWidth * AllData[index].texHeight * 4;
 
 
-			createBuffer(AllData[index].imageSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, AllData[index].stagingBuffer);
 
-			void* data;
-			vmaMapMemory(allocator, AllData[index].stagingBuffer.allocation, &data);
+					AllData[index].image_format = vk::Format::eR8G8B8A8Unorm;
+					AllData[index].metadata.image_format = vk::Format::eR8G8B8A8Unorm;
+					AllData[index].metadata.texture_size.x = AllData[index].texWidth;
+					AllData[index].metadata.texture_size.y = AllData[index].texHeight;
 
-			memcpy(data, AllData[index].pixel_ptr, static_cast<size_t>(AllData[index].imageSize));
+					gli::texture textu;
+					if (!AllData[index].pixels) {
+						{
+							ZoneScopedNC("Texture load ", tracy::Color::Red);
+							textu = gli::load(image_path);
+						}
+						if (textu.empty()) {
 
-			vmaUnmapMemory(allocator, AllData[index].stagingBuffer.allocation);
-			if (AllData[index].pixels) {
-				stbi_image_free(AllData[index].pixels);
+							AllData[index].bLoaded = false;
+
+							std::cout << "failed to load texture on path: " << image_path << " : " << to_string(AllData[index].image_format) << std::endl;
+						}
+						else {
+
+							//std::cout << "Loading texture " << image_path << " : " <<to_string(AllData[i].image_format) << std::endl;
+
+							gli::gl GL(gli::gl::PROFILE_GL33);
+							gli::gl::format const Format = GL.translate(textu.format(), textu.swizzles());
+
+							VkFormat format = vkGetFormatFromOpenGLInternalFormat(Format.Internal);
+
+							AllData[index].texWidth = textu.extent().x;
+							AllData[index].texHeight = textu.extent().y;
+
+							AllData[index].pixel_ptr = textu.data();
+							AllData[index].imageSize = textu.size();
+
+
+
+							AllData[index].image_format = vk::Format(format);
+
+							AllData[index].metadata.image_format = AllData[index].image_format;
+							AllData[index].metadata.texture_size.x = AllData[index].texWidth;
+							AllData[index].metadata.texture_size.y = AllData[index].texHeight;
+							AllData[index].bLoaded = true;
+						}
+					}
+					else {
+						//std::cout << "Loading texture 2" << image_path << " : " << to_string(AllData[i].image_format) << std::endl;
+						AllData[index].bLoaded = true;
+					}
+		
+					if (!AllData[index].bLoaded) {
+						requests[index].bLoaded = false;
+						continue;
+					}
+
+
+					createBuffer(AllData[index].imageSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, AllData[index].stagingBuffer);
+
+					void* data;
+					vmaMapMemory(allocator, AllData[index].stagingBuffer.allocation, &data);
+
+					memcpy(data, AllData[index].pixel_ptr, static_cast<size_t>(AllData[index].imageSize));
+
+					vmaUnmapMemory(allocator, AllData[index].stagingBuffer.allocation);
+					if (AllData[index].pixels) {
+						stbi_image_free(AllData[index].pixels);
+					}
+
+					createImage(AllData[index].texWidth, AllData[index].texHeight, AllData[index].image_format,
+						vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+						vk::MemoryPropertyFlagBits::eDeviceLocal, AllData[index].texture.image);
+
+				}
 			}
 			
-						
+			auto cmd = beginSingleTimeCommands();
 
+			{
+				tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(cmd);
+				TracyVkZone(profilercontext, VkCommandBuffer(cmd), "Upload Image");
 
-			createImage(AllData[index].texWidth, AllData[index].texHeight, AllData[index].image_format,
-				vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
-				vk::MemoryPropertyFlagBits::eDeviceLocal, AllData[index].texture.image);
-			
+				ZoneScopedN("Copying images to GPU");
+				for (int i = 0; i < max_tex_upload; i++) {
 
-		}
+					int index = batch * batches + i;
+					if (index >= count) break;
+					cmd_transitionImageLayout(cmd, AllData[index].texture.image.image, AllData[index].image_format, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal);
 
-		auto cmd = beginSingleTimeCommands();
+					cmd_copyBufferToImage(cmd, AllData[index].stagingBuffer.buffer, AllData[index].texture.image.image, static_cast<uint32_t>(AllData[index].texWidth), static_cast<uint32_t>(AllData[index].texHeight));
 
-		{
-			tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(cmd);
-			TracyVkZone(profilercontext, VkCommandBuffer(cmd), "Upload Image");
+					cmd_transitionImageLayout(cmd, AllData[index].texture.image.image, AllData[index].image_format, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
+				}
+			}
 
-			ZoneScopedN("Copying images to GPU");
-			for (int i = 0; i < max_tex_upload; i++) {
+			{
+				ZoneScopedNC("Texture batch wait load queue", tracy::Color::Red);
+				endSingleTimeCommands(cmd);
+			}
+			{
+				ZoneScopedNC("Texture batch image view creation", tracy::Color::Blue);
+				for (int i = 0; i < max_tex_upload; i++) {
 
-				int index = batch * batches + i;
-				if (index >= count) break;
-				cmd_transitionImageLayout(cmd, AllData[index].texture.image.image, AllData[index].image_format, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal);
+					int index = batch * batches + i;
+					if (index >= count) break;
 
-				cmd_copyBufferToImage(cmd, AllData[index].stagingBuffer.buffer, AllData[index].texture.image.image, static_cast<uint32_t>(AllData[index].texWidth), static_cast<uint32_t>(AllData[index].texHeight));
+					vmaDestroyBuffer(allocator, AllData[index].stagingBuffer.buffer, AllData[index].stagingBuffer.allocation);
 
-				cmd_transitionImageLayout(cmd, AllData[index].texture.image.image, AllData[index].image_format, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
+					AllData[index].texture.imageView = createImageView(AllData[index].texture.image.image, AllData[index].image_format, vk::ImageAspectFlagBits::eColor);
+
+					vk::SamplerCreateInfo samplerInfo;
+					samplerInfo.magFilter = vk::Filter::eLinear;
+					samplerInfo.minFilter = vk::Filter::eLinear;
+					samplerInfo.addressModeU = vk::SamplerAddressMode::eRepeat;
+					samplerInfo.addressModeV = vk::SamplerAddressMode::eRepeat;
+					samplerInfo.addressModeW = vk::SamplerAddressMode::eRepeat;
+
+					samplerInfo.anisotropyEnable = VK_TRUE;
+					samplerInfo.maxAnisotropy = 16;
+
+					samplerInfo.borderColor = vk::BorderColor::eIntOpaqueBlack;
+					samplerInfo.unnormalizedCoordinates = VK_FALSE;
+
+					samplerInfo.compareEnable = VK_FALSE;
+					samplerInfo.compareOp = vk::CompareOp::eAlways;
+
+					samplerInfo.mipmapMode = vk::SamplerMipmapMode::eLinear;
+					samplerInfo.mipLodBias = 0.0f;
+					samplerInfo.minLod = 0.0f;
+					samplerInfo.maxLod = 0.0f;
+
+					AllData[index].texture.textureSampler = device.createSampler(samplerInfo);
+
+					requests[index].loadedTexture = createResource(requests[index].textureName.c_str(), AllData[index].texture);
+					render_registry.assign<TextureResourceMetadata>(requests[index].loadedTexture, AllData[index].metadata);
+					requests[index].bLoaded = true;
+				}
 			}
 		}
-		endSingleTimeCommands(cmd);
-
-		for (int i = 0; i < max_tex_upload; i++) {
-
-			int index = batch * batches + i;
-			if (index >= count) break;
-
-			vmaDestroyBuffer(allocator, AllData[index].stagingBuffer.buffer, AllData[index].stagingBuffer.allocation);
-
-			AllData[index].texture.imageView = createImageView(AllData[index].texture.image.image, AllData[index].image_format, vk::ImageAspectFlagBits::eColor);
-
-			vk::SamplerCreateInfo samplerInfo;
-			samplerInfo.magFilter = vk::Filter::eLinear;
-			samplerInfo.minFilter = vk::Filter::eLinear;
-			samplerInfo.addressModeU = vk::SamplerAddressMode::eRepeat;
-			samplerInfo.addressModeV = vk::SamplerAddressMode::eRepeat;
-			samplerInfo.addressModeW = vk::SamplerAddressMode::eRepeat;
-
-			samplerInfo.anisotropyEnable = VK_TRUE;
-			samplerInfo.maxAnisotropy = 16;
-
-			samplerInfo.borderColor = vk::BorderColor::eIntOpaqueBlack;
-			samplerInfo.unnormalizedCoordinates = VK_FALSE;
-
-			samplerInfo.compareEnable = VK_FALSE;
-			samplerInfo.compareOp = vk::CompareOp::eAlways;
-
-			samplerInfo.mipmapMode = vk::SamplerMipmapMode::eLinear;
-			samplerInfo.mipLodBias = 0.0f;
-			samplerInfo.minLod = 0.0f;
-			samplerInfo.maxLod = 0.0f;
-
-			AllData[index].texture.textureSampler = device.createSampler(samplerInfo);
-
-			requests[index].loadedTexture = createResource(requests[index].textureName.c_str(), AllData[index].texture);
-			render_registry.assign<TextureResourceMetadata>(requests[index].loadedTexture, AllData[index].metadata);
-			requests[index].bLoaded = true;
-		}
-	}
+	
 	
 }
 

@@ -62,6 +62,13 @@ void VulkanEngine::init_vulkan()
 	
 	config_parameters.CamUp = glm::vec3(0, 0, 1);
 	config_parameters.fov = 90.f;
+	config_parameters.ShadowView = false;
+
+	config_parameters.sun_location = glm::vec3(100.0f, 1000.0f, 800.0f);
+	config_parameters.shadow_near = 1024.f;
+	config_parameters.shadow_far = 8096.f;
+	config_parameters.shadow_sides = 2048.f;
+
 	eng_stats.frametime = 0.1;
 
 	//-- EXTENSIONS
@@ -155,6 +162,7 @@ void VulkanEngine::init_vulkan()
 	//
 	create_descriptor_sets();
 	
+	create_shadow_framebuffer();
 
 
 	blankTexture = load_texture(MAKE_ASSET_PATH("sprites/blank.png"), "blank");
@@ -332,7 +340,21 @@ EntityID VulkanEngine::create_basic_descriptor_sets(EntityID pipelineID, std::st
 			imageInfo.imageView = texture.imageView;
 			imageInfo.sampler = texture.textureSampler;
 
-			setBuilder.bind_image(2, 6 + j, imageInfo);
+			//if (j == 0)
+			//{
+			//	vk::DescriptorImageInfo imageInfo = {};
+			//	imageInfo.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+			//	imageInfo.imageView = shadowPass.depth.view;
+			//	imageInfo.sampler = shadowPass.depthSampler;
+			//
+			//
+			//	setBuilder.bind_image(2, 6 + j, imageInfo);
+			//}
+			//else
+			{
+				setBuilder.bind_image(2, 6 + j, imageInfo);
+			}
+			
 		}	
 		else {
 			const TextureResource& texture = render_registry.get<TextureResource>(blankTexture);
@@ -516,6 +538,134 @@ void VulkanEngine::create_gfx_pipeline()
 	pipelineLayout = newLayout;
 
 	graphicsPipeline = device.createGraphicsPipelines(nullptr,pipelineInfo)[0];
+}
+
+
+void VulkanEngine::create_shadow_pipeline()
+{
+
+	std::vector<VkPipelineShaderStageCreateInfo> shaderStages;
+	ShaderEffect* pipelineEffect;
+	if (!doesResourceExist<ShaderEffectHandle>("shadowpipeline")) {
+
+		ShaderEffectHandle newShader;
+		newShader.handle = new ShaderEffect();
+
+		newShader.handle->add_shader_from_file(MAKE_ASSET_PATH("shaders/basicshadow.vert"));
+		//newShader.handle->add_shader_from_file(MAKE_ASSET_PATH("shaders/basicshadow.frag"));
+
+		newShader.handle->build_effect(device);
+
+		pipelineEffect = newShader.handle;
+
+		createResource<ShaderEffectHandle>("shadowpipeline", newShader);
+	}
+	else
+	{
+		pipelineEffect = getResource<ShaderEffectHandle>("shadowpipeline").handle;
+
+	}
+
+	shaderStages = pipelineEffect->get_stage_infos();
+
+	descriptorSetLayout = pipelineEffect->build_descriptor_layouts(device)[0];
+
+	vk::PipelineLayout newLayout = vk::PipelineLayout(pipelineEffect->build_pipeline_layout(device));
+
+
+	vk::PipelineVertexInputStateCreateInfo vertexInputInfo = Vertex::getPipelineCreateInfo();
+
+	vk::PipelineInputAssemblyStateCreateInfo inputAssembly;
+	inputAssembly.topology = vk::PrimitiveTopology::eTriangleList;
+	inputAssembly.primitiveRestartEnable = VK_FALSE;
+
+	vk::Viewport viewport;
+	viewport.x = 0.0f;
+	viewport.y = 0.0f;
+	viewport.width = 2048;
+	viewport.height = 2048;
+	viewport.minDepth = 0.0f;
+	viewport.maxDepth = 1.0f;
+
+	vk::Rect2D scissor;
+	scissor.offset = { 0, 0 };
+	scissor.extent = swapChainExtent;
+
+	vk::PipelineViewportStateCreateInfo viewportState;
+	viewportState.viewportCount = 1;
+	viewportState.pViewports = &viewport;
+	viewportState.scissorCount = 1;
+	viewportState.pScissors = &scissor;
+
+
+	vk::PipelineDepthStencilStateCreateInfo depthStencil;
+	depthStencil.depthTestEnable = VK_TRUE;
+	depthStencil.depthWriteEnable = VK_TRUE;
+	depthStencil.depthCompareOp = vk::CompareOp::eLessOrEqual;
+	depthStencil.depthBoundsTestEnable = VK_FALSE;
+	depthStencil.minDepthBounds = 0.0f; // Optional
+	depthStencil.maxDepthBounds = 1.0f; // Optional
+	depthStencil.stencilTestEnable = VK_FALSE;
+	depthStencil.front = {}; // Optional
+	depthStencil.back = {}; // Optional
+
+	vk::PipelineRasterizationStateCreateInfo rasterizer;
+	rasterizer.depthClampEnable = VK_FALSE;
+	rasterizer.rasterizerDiscardEnable = VK_FALSE;
+	rasterizer.polygonMode = vk::PolygonMode::eFill;
+	rasterizer.lineWidth = 1.0f;
+	rasterizer.cullMode = vk::CullModeFlagBits::eBack;
+	rasterizer.frontFace = vk::FrontFace::eCounterClockwise;
+	rasterizer.depthBiasEnable = VK_TRUE;
+	rasterizer.depthBiasConstantFactor = 0.0f; // Optional
+	rasterizer.depthBiasClamp = 0.0f; // Optional
+	rasterizer.depthBiasSlopeFactor = 0.0f; // Optional
+
+	vk::PipelineMultisampleStateCreateInfo multisampling;
+	multisampling.sampleShadingEnable = VK_FALSE;
+	multisampling.rasterizationSamples = vk::SampleCountFlagBits::e1;
+	multisampling.minSampleShading = 1.0f; // Optional
+	multisampling.pSampleMask = nullptr; // Optional
+	multisampling.alphaToCoverageEnable = VK_FALSE; // Optional
+	multisampling.alphaToOneEnable = VK_FALSE; // Optional
+
+
+	vk::PipelineColorBlendAttachmentState colorBlendAttachment;
+	colorBlendAttachment.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
+	colorBlendAttachment.blendEnable = VK_FALSE;
+
+
+	vk::PipelineColorBlendStateCreateInfo colorBlending;
+	colorBlending.logicOpEnable = VK_FALSE;
+	colorBlending.attachmentCount = 0;
+
+
+	vk::DynamicState dynamicStates[] = {
+	vk::DynamicState::eViewport,
+	vk::DynamicState::eScissor,
+	vk::DynamicState::eDepthBias
+	};
+
+	vk::PipelineDynamicStateCreateInfo dynamicState = {};
+	dynamicState.dynamicStateCount = 3;
+	dynamicState.pDynamicStates = dynamicStates;
+
+	vk::GraphicsPipelineCreateInfo pipelineInfo;
+	pipelineInfo.stageCount = 1;
+	pipelineInfo.pStages = reinterpret_cast<vk::PipelineShaderStageCreateInfo*>(shaderStages.data());
+	pipelineInfo.pVertexInputState = &vertexInputInfo;
+	pipelineInfo.pInputAssemblyState = &inputAssembly;
+	pipelineInfo.pViewportState = &viewportState;
+	pipelineInfo.pRasterizationState = &rasterizer;
+	pipelineInfo.pMultisampleState = &multisampling;
+	pipelineInfo.pDepthStencilState = &depthStencil;
+	pipelineInfo.pColorBlendState = &colorBlending;
+	pipelineInfo.pDynamicState = &dynamicState; // Optional
+	pipelineInfo.layout = newLayout;//pipelineLayout;
+	pipelineInfo.renderPass = shadowPass.renderPass;
+	pipelineInfo.subpass = 0;
+	
+	shadowPipeline = device.createGraphicsPipelines(nullptr, pipelineInfo)[0];
 }
 
 void VulkanEngine::create_render_pass()
@@ -778,6 +928,7 @@ void VulkanEngine::create_uniform_buffers()
 {
 	vk::DeviceSize UBOSize = (sizeof(UniformBufferObject));
 
+	shadowDataBuffers.resize(swapChainImages.size());
 	cameraDataBuffers.resize(swapChainImages.size());
 	sceneParamBuffers.resize(swapChainImages.size());
 	object_buffers.resize(swapChainImages.size());
@@ -787,6 +938,10 @@ void VulkanEngine::create_uniform_buffers()
 		//cam buffer
 		createBuffer(sizeof(UniformBufferObject), vk::BufferUsageFlagBits::eUniformBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, cameraDataBuffers[i]);
 	
+		//shadow buffer
+		createBuffer(sizeof(UniformBufferObject), vk::BufferUsageFlagBits::eUniformBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, shadowDataBuffers[i]);
+
+
 		//scene data buffer
 		createBuffer(sizeof(GPUSceneParams), vk::BufferUsageFlagBits::eUniformBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, sceneParamBuffers[i]);
 
@@ -810,8 +965,7 @@ void VulkanEngine::create_command_buffers()
 
 	get_profiler_context(commandBuffers[0]);
 }
-
-void VulkanEngine::start_frame_command_buffer(vk::CommandBuffer buffer, vk::Framebuffer framebuffer)
+void VulkanEngine::begin_frame_command_buffer(vk::CommandBuffer buffer)
 {
 	vk::CommandBufferBeginInfo beginInfo;
 	beginInfo.flags = vk::CommandBufferUsageFlagBits::eSimultaneousUse;
@@ -821,14 +975,34 @@ void VulkanEngine::start_frame_command_buffer(vk::CommandBuffer buffer, vk::Fram
 
 	cmd.reset(vk::CommandBufferResetFlags{});
 	cmd.begin(beginInfo);
+}
+void  VulkanEngine::start_shadow_renderpass(vk::CommandBuffer buffer)
+{
+	std::array<vk::ClearValue, 1> clearValues = {};
+	//clearValues[0].color = vk::ClearColorValue{ std::array<float,4> { 0.0f, 0.0f, 0.0f, 1.0f } };
+	clearValues[0].depthStencil = { 1.0f, 0 };
+	
+	vk::RenderPassBeginInfo renderPassInfo;
+	renderPassInfo.renderPass = shadowPass.renderPass;
+	renderPassInfo.framebuffer = shadowPass.frameBuffer;
+	renderPassInfo.renderArea.offset = { 0, 0 };
+	renderPassInfo.renderArea.extent.width = shadowPass.width;
+	renderPassInfo.renderArea.extent.height = shadowPass.height;
+	
+	renderPassInfo.clearValueCount = clearValues.size();
+	renderPassInfo.pClearValues = clearValues.data();
 
+
+	tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(buffer);
+	buffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
+}
+void VulkanEngine::start_frame_renderpass(vk::CommandBuffer buffer, vk::Framebuffer framebuffer)
+{
 	vk::RenderPassBeginInfo renderPassInfo;
 	renderPassInfo.renderPass = renderPass;
 	renderPassInfo.framebuffer = framebuffer;//swapChainFramebuffers[i];
 	renderPassInfo.renderArea.offset = { 0, 0 };
 	renderPassInfo.renderArea.extent = swapChainExtent;
-
-
 
 	std::array<vk::ClearValue, 2> clearValues = {};
 	clearValues[0].color = vk::ClearColorValue{ std::array<float,4> { 0.0f, 0.0f, 0.0f, 1.0f } };
@@ -836,9 +1010,9 @@ void VulkanEngine::start_frame_command_buffer(vk::CommandBuffer buffer, vk::Fram
 
 	renderPassInfo.clearValueCount = clearValues.size();
 	renderPassInfo.pClearValues = clearValues.data();
-	tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(cmd);
+	tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(buffer);
 	//TracyVkCollect(profilercontext, cmd);
-	cmd.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
+	buffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
 }
 static int counter = 0;
 void VulkanEngine::end_frame_command_buffer(vk::CommandBuffer cmd)
@@ -849,11 +1023,11 @@ void VulkanEngine::end_frame_command_buffer(vk::CommandBuffer cmd)
 
 	cmd.endRenderPass();
 
-	counter++;
-	if (counter > 5) {
+	//counter++;
+	//if (counter > 5) {
 		TracyVkCollect(profilercontext, cmd);
 		counter = 0;
-	}
+	//}
 	
 	
 	cmd.end();
@@ -878,9 +1052,9 @@ void VulkanEngine::draw_frame()
 		return;
 	}
 
-	
+
 	uint32_t imageIndex = imageResult.value;
-	std::cout << "swapchain image is " << imageIndex << "engine index is "<< currentFrameIndex << std::endl;
+	std::cout << "swapchain image is " << imageIndex << "engine index is " << currentFrameIndex << std::endl;
 	vk::SubmitInfo submitInfo;
 
 
@@ -910,10 +1084,29 @@ void VulkanEngine::draw_frame()
 
 	vk::CommandBuffer cmd = commandBuffers[currentFrameIndex];
 
-	start_frame_command_buffer(cmd, swapChainFramebuffers[imageIndex]);
+	begin_frame_command_buffer(cmd);
+	tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(cmd);
 
 	{
-		tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(cmd);
+		ZoneScopedNC("RenderSort", tracy::Color::Violet);
+		render_registry.sort<RenderMeshComponent>([](const RenderMeshComponent& A, const RenderMeshComponent& B) {
+			return A.mesh_resource_entity < B.mesh_resource_entity;
+			}, entt::std_sort{});
+	}
+
+	//shadowpass
+	start_shadow_renderpass(cmd);
+	{
+
+		TracyVkZoneC(profilercontext, VkCommandBuffer(cmd), "Shadow pass", tracy::Color::Grey);
+		render_shadow_pass(cmd);
+	}
+	cmd.endRenderPass();
+
+	start_frame_renderpass(cmd, swapChainFramebuffers[imageIndex]);
+
+	{
+		
 		VkCommandBuffer commandbuffer = VkCommandBuffer(cmd);
 		TracyVkZone(profilercontext, commandbuffer, "All Frame");
 
@@ -921,12 +1114,7 @@ void VulkanEngine::draw_frame()
 
 		//cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, 1, &test_descriptorSets[(currentFrameIndex + 1) %MAX_FRAMES_IN_FLIGHT], 0, nullptr);//1, &dynamicOffset);//0, nullptr);
 
-		{
-			ZoneScopedNC("RenderSort", tracy::Color::Violet);
-			render_registry.sort<RenderMeshComponent>([](const RenderMeshComponent& A, const RenderMeshComponent& B) {
-				return A.mesh_resource_entity < B.mesh_resource_entity;
-				}, entt::std_sort{});
-		}
+		
 
 		if (currentFrameIndex == 0) {
 			TracyVkZoneC(profilercontext, commandbuffer, "Main pass 0",tracy::Color::Red1);
@@ -987,6 +1175,96 @@ void VulkanEngine::draw_frame()
 		globalFrameNumber++;
 	}
 }
+void VulkanEngine::render_shadow_pass(const vk::CommandBuffer& cmd)
+{
+	vk::Viewport viewport;
+	viewport.height = shadowPass.height;
+	viewport.width = shadowPass.width;
+	viewport.minDepth = 0.f;
+	viewport.maxDepth = 1.f;
+	
+	cmd.setViewport(0, viewport);
+
+	vk::Rect2D scissor;
+	scissor.extent.width = shadowPass.width;
+	scissor.extent.height = shadowPass.height;
+
+	cmd.setScissor(0, scissor);
+
+	// Set depth bias (aka "Polygon offset")
+				// Required to avoid shadow mapping artefacts
+
+	float depthBiasConstant = 1.25f;
+	// Slope depth bias factor, applied depending on polygon's slope
+	float depthBiasSlope = 1.75f;
+
+	cmd.setDepthBias(depthBiasConstant, 0, depthBiasSlope);
+
+	ZoneScopedNC("Shadow Pass", tracy::Color::BlueViolet);
+	EntityID LastMesh = entt::null;
+
+	vk::Pipeline last_pipeline = shadowPipeline;
+	vk::PipelineLayout piplayout;
+	bool first_render = true;
+	ShaderEffect* effect = getResource<ShaderEffectHandle>("shadowpipeline").handle;
+
+	render_registry.view<RenderMeshComponent>().each([&](RenderMeshComponent& renderable) {
+
+		const MeshResource& mesh = render_registry.get<MeshResource>(renderable.mesh_resource_entity);
+		//const PipelineResource& pipeline = render_registry.get<PipelineResource>(renderable.pipeline_entity);
+		//const DescriptorResource& descriptor = render_registry.get<DescriptorResource>(renderable.descriptor_entity);
+
+		bool bShouldBindPipeline = first_render;// ? true : pipeline.pipeline != last_pipeline;
+
+		if (bShouldBindPipeline) {
+			cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, shadowPipeline);
+			piplayout = (vk::PipelineLayout)effect->build_pipeline_layout(device);
+			last_pipeline = shadowPipeline;
+
+			DescriptorSetBuilder setBuilder{ effect,&descriptorMegapool };
+
+			vk::DescriptorBufferInfo camBufferInfo;
+			camBufferInfo.buffer = shadowDataBuffers[currentFrameIndex].buffer;
+			camBufferInfo.offset = 0;
+			camBufferInfo.range = sizeof(UniformBufferObject);
+
+			vk::DescriptorBufferInfo transformBufferInfo;
+			transformBufferInfo.buffer = object_buffers[currentFrameIndex].buffer;
+			transformBufferInfo.offset = 0;
+			transformBufferInfo.range = sizeof(glm::mat4) * 10000;
+			
+			setBuilder.bind_buffer("ubo", camBufferInfo);
+			setBuilder.bind_buffer("MainObjectBuffer", transformBufferInfo);
+
+			std::array<vk::DescriptorSet, 2> descriptors;
+			descriptors[0] = setBuilder.build_descriptor(0, DescriptorLifetime::PerFrame);
+			
+
+			cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, piplayout, 0, 1, &descriptors[0], 0, nullptr);
+		}
+
+		if (LastMesh != renderable.mesh_resource_entity) {
+			vk::Buffer meshbuffers[] = { mesh.vertexBuffer.buffer };
+			vk::DeviceSize offsets[] = { 0 };
+			cmd.bindVertexBuffers(0, 1, meshbuffers, offsets);
+
+			cmd.bindIndexBuffer(mesh.indexBuffer.buffer, 0, vk::IndexType::eUint32);
+
+			LastMesh = renderable.mesh_resource_entity;
+		}
+
+		//cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, piplayout, 2, 1, &descriptor.materialSet, 0, nullptr);
+
+		cmd.pushConstants(pipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(int), &renderable.object_idx);
+
+		
+		cmd.drawIndexed(static_cast<uint32_t>(mesh.indices.size()), 1, 0, 0, 0);
+		eng_stats.drawcalls++;
+		
+		first_render = false;
+	});
+
+}
 constexpr int MULTIDRAW = 1;
 void VulkanEngine::RenderMainPass(const vk::CommandBuffer& cmd)
 {
@@ -996,6 +1274,8 @@ void VulkanEngine::RenderMainPass(const vk::CommandBuffer& cmd)
 		vk::Pipeline last_pipeline = graphicsPipeline;
 		vk::PipelineLayout piplayout;
 		bool first_render = true;		
+
+		
 
 		render_registry.view<RenderMeshComponent>().each([&](RenderMeshComponent& renderable) {
 
@@ -1010,12 +1290,26 @@ void VulkanEngine::RenderMainPass(const vk::CommandBuffer& cmd)
 				piplayout = (vk::PipelineLayout)pipeline.effect->build_pipeline_layout(device);
 				last_pipeline = graphicsPipeline;
 
-				DescriptorSetBuilder setBuilder{pipeline.effect,&descriptorMegapool};
+				DescriptorSetBuilder setBuilder{ pipeline.effect,&descriptorMegapool};
 				
 				vk::DescriptorBufferInfo camBufferInfo;
-				camBufferInfo.buffer = cameraDataBuffers[currentFrameIndex].buffer;
+				if (config_parameters.ShadowView)
+				{
+					camBufferInfo.buffer = shadowDataBuffers[currentFrameIndex].buffer;
+				}
+				else
+				{
+					camBufferInfo.buffer = cameraDataBuffers[currentFrameIndex].buffer;
+				}
+				
 				camBufferInfo.offset = 0;
 				camBufferInfo.range = sizeof(UniformBufferObject);
+
+
+				vk::DescriptorBufferInfo shadowBufferInfo;
+				shadowBufferInfo.buffer = shadowDataBuffers[currentFrameIndex].buffer;
+				shadowBufferInfo.offset = 0;
+				shadowBufferInfo.range = sizeof(UniformBufferObject);
 				
 				vk::DescriptorBufferInfo sceneBufferInfo;
 				sceneBufferInfo.buffer = sceneParamBuffers[currentFrameIndex].buffer;
@@ -1034,8 +1328,15 @@ void VulkanEngine::RenderMainPass(const vk::CommandBuffer& cmd)
 				imageInfo.imageView = texture.imageView;
 				imageInfo.sampler = texture.textureSampler;
 
+				vk::DescriptorImageInfo shadowInfo = {};
+				shadowInfo.imageLayout = vk::ImageLayout::eDepthStencilReadOnlyOptimal;
+				shadowInfo.imageView = shadowPass.depth.view;
+				shadowInfo.sampler = shadowPass.depthSampler; 
+				
+				setBuilder.bind_image("shadowMap", shadowInfo);
 				setBuilder.bind_image("ambientCubemap", imageInfo);
 				setBuilder.bind_buffer("ubo", camBufferInfo);
+				setBuilder.bind_buffer("shadowUbo", shadowBufferInfo);
 				setBuilder.bind_buffer("sceneParams", sceneBufferInfo);
 				setBuilder.bind_buffer("MainObjectBuffer", transformBufferInfo);
 				
@@ -1089,7 +1390,7 @@ void VulkanEngine::update_uniform_buffer(uint32_t currentImage)
 		eng_stats.frametime += delta / 10.f;
 		float camUp = sin(time / 10.0f) * 1000.f;
 
-		auto eye = glm::vec3(camUp, 600, 200);
+		auto eye = glm::vec3(camUp, 100, 600);
 
 	UniformBufferObject ubo = {};
 	ubo.model = glm::mat4(1.0f);
@@ -1098,14 +1399,32 @@ void VulkanEngine::update_uniform_buffer(uint32_t currentImage)
 	ubo.eye = glm::vec4(eye,0.0f);
 	//invert projection matrix couse glm is inverted y compared to vulkan
 	ubo.proj[1][1] *= -1;
-		
+	
+	UniformBufferObject shadowubo = {};	
+
+	glm::vec3 shadowloc = config_parameters.sun_location;
+	glm::vec3 shadowtarget = glm::vec3(0.0f);
+
+
+	float s = config_parameters.shadow_sides;
+	float n = config_parameters.shadow_near;
+	float f = config_parameters.shadow_far;
+
+	shadowubo.view = glm::lookAt(shadowloc, glm::vec3(0.0f, 400.0f, 0.0f), config_parameters.CamUp);
+	shadowubo.proj = glm::ortho(-s,s,-s,s,-n,f);//glm::perspective(glm::radians(89.f), 1.0f,1.f, 5000.f);
+	shadowubo.proj[1][1] *= -1;
+	shadowubo.model = shadowubo.view * shadowubo.proj;//shadowubo.view * shadowubo.proj;
+
+
+
 	void* data = mapBuffer(cameraDataBuffers[currentImage]);
 	//auto alignUbo = align_dynamic_descriptor(sizeof(ubo));
 	char* dt = (char*)data;// + alignUbo; ;
 	
-	// +sizeof(ubo) * 3;
+	
 	memcpy(dt, &ubo, sizeof(UniformBufferObject) );
 	
+
 	unmapBuffer(cameraDataBuffers[currentImage]);
 
 	data = mapBuffer(sceneParamBuffers[currentImage]);
@@ -1115,6 +1434,16 @@ void VulkanEngine::update_uniform_buffer(uint32_t currentImage)
 	memcpy(dt, &sceneParameters, sizeof(GPUSceneParams));
 
 	unmapBuffer(sceneParamBuffers[currentImage]);
+
+
+	data = mapBuffer(shadowDataBuffers[currentImage]);
+
+	dt = (char*)data;
+
+	memcpy(dt, &shadowubo, sizeof(UniformBufferObject));
+
+	unmapBuffer(shadowDataBuffers[currentImage]);
+
 
 
 		int copyidx = 0;
@@ -1256,6 +1585,136 @@ void VulkanEngine::create_semaphores()
 		renderFinishedSemaphores[i] = device.createSemaphore(semaphoreInfo);
 		inFlightFences[i] = device.createFence(fenceInfo);
 	}
+}
+
+void VulkanEngine::create_shadow_framebuffer()
+{
+	shadowPass.width = SHADOWMAP_DIM;
+	shadowPass.height = SHADOWMAP_DIM;
+
+
+	VkFormat fbColorFormat = VK_FORMAT_R8G8B8A8_UNORM;
+
+	vk::ImageCreateInfo image;
+	image.imageType = vk::ImageType::e2D;
+	image.extent.width = shadowPass.width;
+	image.extent.height = shadowPass.height;
+	image.extent.depth = 1;
+	image.mipLevels = 1;
+	image.arrayLayers = 1;
+	image.samples = vk::SampleCountFlagBits::e1;
+	image.tiling = vk::ImageTiling::eOptimal;
+	image.format = vk::Format::eD16Unorm;
+	image.usage = vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled;
+
+
+	VmaAllocationCreateInfo vmaallocInfo = {};
+	vmaallocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+	vmaallocInfo.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+	VkImageCreateInfo imnfo = image;
+
+	VkImage depthImage;
+
+	vmaCreateImage(allocator, &imnfo, &vmaallocInfo, &depthImage, &shadowPass.depthImageAlloc, nullptr);
+	shadowPass.depth.image = depthImage;
+	vk::ImageViewCreateInfo depthStencilView;
+	depthStencilView.viewType = vk::ImageViewType::e2D;
+	depthStencilView.format = vk::Format::eD16Unorm;
+	depthStencilView.subresourceRange = {};
+	depthStencilView.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eDepth;
+	depthStencilView.subresourceRange.baseMipLevel = 0;
+	depthStencilView.subresourceRange.levelCount = 1;
+	depthStencilView.subresourceRange.baseArrayLayer = 0;
+	depthStencilView.subresourceRange.layerCount = 1;
+	depthStencilView.image = shadowPass.depth.image;
+
+	 shadowPass.depth.view = device.createImageView(depthStencilView);
+
+	 vk::SamplerCreateInfo sampler;
+	 sampler.magFilter = vk::Filter::eLinear;
+	 sampler.minFilter = vk::Filter::eLinear;
+	 sampler.mipmapMode = vk::SamplerMipmapMode::eLinear;
+	 sampler.addressModeU = vk::SamplerAddressMode::eClampToEdge;
+	 sampler.addressModeV = sampler.addressModeU;
+	 sampler.addressModeW = sampler.addressModeU;
+	 sampler.mipLodBias = 0.0f;
+	 sampler.maxAnisotropy = 1.0f;
+	 sampler.minLod = 0.0f;
+	 sampler.maxLod = 1.0f;
+	 sampler.borderColor = vk::BorderColor::eFloatOpaqueWhite;
+
+	 shadowPass.depthSampler = device.createSampler(sampler);
+
+	 create_shadow_renderpass();
+
+	 vk::FramebufferCreateInfo fbufCreateInfo;
+	 fbufCreateInfo.renderPass = shadowPass.renderPass;
+	 fbufCreateInfo.attachmentCount = 1;
+	 fbufCreateInfo.pAttachments = &shadowPass.depth.view;
+	 fbufCreateInfo.width = shadowPass.width;
+	 fbufCreateInfo.height = shadowPass.height;
+	 fbufCreateInfo.layers = 1;
+
+	 shadowPass.frameBuffer = device.createFramebuffer(fbufCreateInfo);
+
+	 create_shadow_pipeline();
+}
+
+void VulkanEngine::create_shadow_renderpass()
+{
+	vk::AttachmentDescription attachmentDescription;
+	attachmentDescription.format = vk::Format::eD16Unorm;
+	attachmentDescription.samples = vk::SampleCountFlagBits::e1;
+	attachmentDescription.loadOp = vk::AttachmentLoadOp::eClear;
+	attachmentDescription.storeOp = vk::AttachmentStoreOp::eStore;
+	attachmentDescription.stencilLoadOp = vk::AttachmentLoadOp::eDontCare;
+	attachmentDescription.stencilStoreOp = vk::AttachmentStoreOp::eDontCare;
+	attachmentDescription.initialLayout = vk::ImageLayout::eUndefined;
+	attachmentDescription.finalLayout = vk::ImageLayout::eDepthStencilReadOnlyOptimal;
+
+
+	vk::AttachmentReference depthReference;
+	depthReference.attachment = 0;
+	depthReference.layout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
+
+	vk::SubpassDescription subpass;
+	subpass.pipelineBindPoint = vk::PipelineBindPoint::eGraphics;
+	subpass.colorAttachmentCount = 0;
+	subpass.pDepthStencilAttachment = &depthReference;
+
+	std::array < vk::SubpassDependency,2> dependencies;
+	dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+	dependencies[0].dstSubpass = 0;
+
+	dependencies[0].srcStageMask = vk::PipelineStageFlagBits::eFragmentShader;
+	dependencies[0].dstStageMask = vk::PipelineStageFlagBits::eEarlyFragmentTests;
+
+	dependencies[0].srcAccessMask = vk::AccessFlagBits::eShaderRead;	
+	dependencies[0].dstAccessMask = vk::AccessFlagBits::eDepthStencilAttachmentWrite;
+
+	dependencies[0].dependencyFlags = vk::DependencyFlagBits::eByRegion;
+
+	dependencies[1].srcSubpass = 0;
+	dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
+
+	dependencies[1].srcStageMask = vk::PipelineStageFlagBits::eLateFragmentTests;
+	dependencies[1].dstStageMask = vk::PipelineStageFlagBits::eFragmentShader;
+
+	dependencies[1].srcAccessMask = vk::AccessFlagBits::eDepthStencilAttachmentWrite;
+	dependencies[1].dstAccessMask = vk::AccessFlagBits::eShaderRead;
+	dependencies[1].dependencyFlags = vk::DependencyFlagBits::eByRegion;
+
+	
+	vk::RenderPassCreateInfo renderPassInfo;
+	renderPassInfo.attachmentCount = 1;
+	renderPassInfo.pAttachments = &attachmentDescription;
+	renderPassInfo.subpassCount = 1;
+	renderPassInfo.pSubpasses = &subpass;
+	renderPassInfo.dependencyCount = 2;
+	renderPassInfo.pDependencies = &dependencies[0];
+
+	shadowPass.renderPass = device.createRenderPass(renderPassInfo);
 }
 
 bool VulkanEngine::load_model(const char* model_path, std::vector<Vertex> &vertices, std::vector<uint32_t> &indices)
@@ -1516,7 +1975,12 @@ bool VulkanEngine::load_scene(const char* scene_path, glm::mat4 rootMatrix)
 
 	std::filesystem::path sc_path{ std::string(scene_path) };
 	Assimp::Importer importer;
-	const aiScene* scene = importer.ReadFile(scene_path, aiProcess_Triangulate | aiProcess_OptimizeMeshes | aiProcess_FlipUVs | aiProcess_GenNormals);
+	const aiScene* scene;
+	{
+		ZoneScopedNC("Assimp load", tracy::Color::Magenta);
+		scene = importer.ReadFile(scene_path, aiProcess_Triangulate | aiProcess_OptimizeMeshes | aiProcess_FlipUVs | aiProcess_GenNormals);
+	}
+	
 	
 	auto end = std::chrono::system_clock::now();
 	auto elapsed = end - start1;
@@ -1530,7 +1994,7 @@ bool VulkanEngine::load_scene(const char* scene_path, glm::mat4 rootMatrix)
 
 	std::vector<EntityID> textures;
 	std::vector< TextureLoadRequest> textureLoadRequests;
-
+	textureLoadRequests.reserve(scene->mNumMaterials * 4);
 
 
 	struct SimpleMaterial {
@@ -1538,46 +2002,57 @@ bool VulkanEngine::load_scene(const char* scene_path, glm::mat4 rootMatrix)
 		
 	};
 	std::vector<SimpleMaterial> materials;
-	for (int i = 0; i < scene->mNumMaterials; i++)
-	{
-		std::cout << std::endl;
-		std::cout << "iterating material" << scene->mMaterials[i]->GetName().C_Str() << std::endl;
-		TextureLoadRequest request;
-		std::string scenepath = sc_path.parent_path().string();
-		if (GrabTextureLoadRequest(scene->mMaterials[i], aiTextureType_DIFFUSE,scenepath,request )) {
-			textureLoadRequests.push_back(request);
-		}
-		if (GrabTextureLoadRequest(scene->mMaterials[i], aiTextureType_NORMALS, scenepath, request)) {
-			textureLoadRequests.push_back(request);
-		}
-		if (GrabTextureLoadRequest(scene->mMaterials[i], aiTextureType_SPECULAR, scenepath, request)) {
-			textureLoadRequests.push_back(request);
-		}
-		if (GrabTextureLoadRequest(scene->mMaterials[i], aiTextureType_SHININESS, scenepath, request)) {
-			textureLoadRequests.push_back(request);
-		}
-		if (GrabTextureLoadRequest(scene->mMaterials[i], aiTextureType_EMISSIVE, scenepath, request)) {
-			textureLoadRequests.push_back(request);
-		}
-		if (GrabTextureLoadRequest(scene->mMaterials[i], aiTextureType_OPACITY, scenepath, request)) {
-			textureLoadRequests.push_back(request);
-		}
 
-		for (int j = 0; j < scene->mMaterials[i]->mNumProperties; j++)
+	{
+		const bool outputMaterialInfo = false;
+		ZoneScopedNC("Texture request building", tracy::Color::Green);
+		for (int i = 0; i < scene->mNumMaterials; i++)
 		{
-			std::cout << "found param:" << scene->mMaterials[i]->mProperties[j]->mKey.C_Str() << " val: ";
-			
-			Coutproperty(scene->mMaterials[i]->mProperties[j]);
-			std::cout << std::endl;
+			if (outputMaterialInfo) {
+
+
+				std::cout << std::endl;
+				std::cout << "iterating material" << scene->mMaterials[i]->GetName().C_Str() << std::endl;
+			}
+			TextureLoadRequest request;
+			std::string scenepath = sc_path.parent_path().string();
+			if (GrabTextureLoadRequest(scene->mMaterials[i], aiTextureType_DIFFUSE, scenepath, request)) {
+				textureLoadRequests.push_back(request);
+			}
+			if (GrabTextureLoadRequest(scene->mMaterials[i], aiTextureType_NORMALS, scenepath, request)) {
+				textureLoadRequests.push_back(request);
+			}
+			if (GrabTextureLoadRequest(scene->mMaterials[i], aiTextureType_SPECULAR, scenepath, request)) {
+				textureLoadRequests.push_back(request);
+			}
+			if (GrabTextureLoadRequest(scene->mMaterials[i], aiTextureType_METALNESS, scenepath, request)) {
+				textureLoadRequests.push_back(request);
+			}
+			if (GrabTextureLoadRequest(scene->mMaterials[i], aiTextureType_EMISSIVE, scenepath, request)) {
+				textureLoadRequests.push_back(request);
+			}
+			if (GrabTextureLoadRequest(scene->mMaterials[i], aiTextureType_OPACITY, scenepath, request)) {
+				textureLoadRequests.push_back(request);
+			}
+			if (outputMaterialInfo) {
+				for (int j = 0; j < scene->mMaterials[i]->mNumProperties; j++)
+				{
+					std::cout << "found param:" << scene->mMaterials[i]->mProperties[j]->mKey.C_Str() << " val: ";
+
+					Coutproperty(scene->mMaterials[i]->mProperties[j]);
+					std::cout << std::endl;
+				}
+			}
 		}
 	}
 
-	start1 = std::chrono::system_clock::now();
-	load_textures_bulk(textureLoadRequests.data(), textureLoadRequests.size());
+	{
+		ZoneScopedNC("Texture request bulk load", tracy::Color::Yellow);
 
-	 end = std::chrono::system_clock::now();
-	 elapsed = end - start1;
-	std::cout << "Texture load time" << elapsed.count() << '\n';
+		load_textures_bulk(textureLoadRequests.data(), textureLoadRequests.size());
+	}
+
+	
 
 	materials.resize(scene->mNumMaterials);
 
@@ -1592,32 +2067,35 @@ bool VulkanEngine::load_scene(const char* scene_path, glm::mat4 rootMatrix)
 			blank_textures[i] = blackTexture;
 		}
 	}
-
-	for (int i = 0; i < scene->mNumMaterials; i++)
 	{
-		SimpleMaterial mat;
-		mat.textureIDs = blank_textures;
+		ZoneScopedNC("Material gather", tracy::Color::Yellow);
 
-		EntityID textureId;
-		if (GrabTextureID(scene->mMaterials[i], aiTextureType_DIFFUSE, this, textureId)) {
-			mat.textureIDs[0] = textureId;
+		for (int i = 0; i < scene->mNumMaterials; i++)
+		{
+			SimpleMaterial mat;
+			mat.textureIDs = blank_textures;
+
+			EntityID textureId;
+			if (GrabTextureID(scene->mMaterials[i], aiTextureType_DIFFUSE, this, textureId)) {
+				mat.textureIDs[0] = textureId;
+			}
+			if (GrabTextureID(scene->mMaterials[i], aiTextureType_NORMALS, this, textureId)) {
+				mat.textureIDs[1] = textureId;
+			}
+			if (GrabTextureID(scene->mMaterials[i], aiTextureType_SPECULAR, this, textureId)) {
+				mat.textureIDs[2] = textureId;
+			}
+			if (GrabTextureID(scene->mMaterials[i], aiTextureType_METALNESS, this, textureId)) {
+				mat.textureIDs[3] = textureId;
+			}
+			if (GrabTextureID(scene->mMaterials[i], aiTextureType_EMISSIVE, this, textureId)) {
+				mat.textureIDs[4] = textureId;
+			}
+
+			materials[i] = mat;
 		}
-		if (GrabTextureID(scene->mMaterials[i], aiTextureType_NORMALS, this, textureId)) {
-			mat.textureIDs[1] = textureId;
-		}
-		if (GrabTextureID(scene->mMaterials[i], aiTextureType_SPECULAR, this, textureId)) {
-			mat.textureIDs[2] = textureId;
-		}
-		if (GrabTextureID(scene->mMaterials[i], aiTextureType_SHININESS, this, textureId)) {
-			mat.textureIDs[3] = textureId;
-		}
-		if (GrabTextureID(scene->mMaterials[i], aiTextureType_EMISSIVE, this, textureId)) {
-			mat.textureIDs[4] = textureId;
-		}
-		
-		materials[i] = mat;	
+
 	}
-	
 
 	PipelineResource pipeline;
 	pipeline.pipeline = graphicsPipeline;
@@ -1628,20 +2106,24 @@ bool VulkanEngine::load_scene(const char* scene_path, glm::mat4 rootMatrix)
 	auto blank_descriptor = create_basic_descriptor_sets(pipeline_id,"blank" ,blank_textures);
 	std::vector<EntityID> loaded_meshes;
 	std::vector<EntityID> mesh_descriptors;
-	for (int i = 0; i < scene->mNumMeshes; i++)
 	{
-		loaded_meshes.push_back( load_assimp_mesh(scene->mMeshes[i]));
-		
-		try {
-			std::string matname = scene->mMaterials[scene->mMeshes[i]->mMaterialIndex]->GetName().C_Str();
-			//blank_textures[0] = textures;
-			auto descriptor_id = create_basic_descriptor_sets(pipeline_id, matname,materials[scene->mMeshes[i]->mMaterialIndex].textureIDs);
-			mesh_descriptors.push_back(descriptor_id);
+		ZoneScopedNC("Descriptor creation", tracy::Color::Magenta);
+
+		for (int i = 0; i < scene->mNumMeshes; i++)
+		{
+			loaded_meshes.push_back(load_assimp_mesh(scene->mMeshes[i]));
+
+			try {
+				std::string matname = scene->mMaterials[scene->mMeshes[i]->mMaterialIndex]->GetName().C_Str();
+				//blank_textures[0] = textures;
+				auto descriptor_id = create_basic_descriptor_sets(pipeline_id, matname, materials[scene->mMeshes[i]->mMaterialIndex].textureIDs);
+				mesh_descriptors.push_back(descriptor_id);
+			}
+			catch (std::runtime_error & e) {
+				std::cout << "error creating descriptor:" << e.what() << std::endl;
+				mesh_descriptors.push_back(blank_descriptor);
+			}
 		}
-		catch (std::runtime_error& e) {
-			std::cout << "error creating descriptor:" << e.what() << std::endl;
-			mesh_descriptors.push_back(blank_descriptor);
-		}		
 	}
 
 
@@ -1706,9 +2188,10 @@ bool VulkanEngine::load_scene(const char* scene_path, glm::mat4 rootMatrix)
 		}
 	}
 
-	
-	process_node(scene->mRootNode, mat);
-
+	{
+		ZoneScopedNC("Node transform Processing", tracy::Color::Blue);
+		process_node(scene->mRootNode, mat);
+	}
 	return true;	
 
 }

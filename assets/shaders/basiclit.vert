@@ -17,6 +17,13 @@ layout(set = 0, binding = 0) uniform UniformBufferObject {
 	vec4 eye;
 } ubo;
 
+layout(set = 1, binding = 1) uniform UniformBufferObject2 {
+    mat4 model;
+    mat4 view;
+    mat4 proj;
+	vec4 eye;
+} shadowUbo;
+
 layout(std140,set = 0, binding = 2) readonly buffer Pos 
 {
    PerObject objects[ ];
@@ -45,7 +52,13 @@ layout(location = 1) out vec2 fragTexCoord;
 layout(location = 2) out vec3 fragNormal;
 layout(location = 3) out vec3 fragPos;
 layout(location = 4) out vec3 eyePos;
+layout(location = 5) out vec4 ShadowCoord;
 
+const mat4 biasMat = mat4( 
+	0.5, 0.0, 0.0, 0.0,
+	0.0, 0.5, 0.0, 0.0,
+	0.0, 0.0, 1.0, 0.0,
+	0.5, 0.5, 0.0, 1.0 );
 void main() {
 
 	
@@ -58,5 +71,7 @@ void main() {
     fragTexCoord = inTexCoord;
 	fragNormal = normalize(objectMatrix * vec4(inNormal, 0.0)).xyz;
 	fragPos = (objectMatrix * vec4(inPosition, 1.0)).xyz;
+
+	ShadowCoord = biasMat *shadowUbo.proj * shadowUbo.view * objectMatrix * vec4(inPosition, 1.0);
 
 }

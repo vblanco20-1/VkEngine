@@ -2,8 +2,9 @@
 #include "vulkan_types.h"
 #include "vulkan_descriptors.h"
 
-constexpr int MAX_FRAMES_IN_FLIGHT = 2;
+constexpr int MAX_FRAMES_IN_FLIGHT =2;
 constexpr int MAX_UNIFORM_BUFFER = 5000;
+constexpr int SHADOWMAP_DIM = 2048;
 
 #ifdef NDEBUG
 const bool enableValidationLayers = false;
@@ -57,6 +58,7 @@ struct VulkanEngine {
 
 	vk::PipelineLayout pipelineLayout;
 	vk::Pipeline graphicsPipeline;
+	vk::Pipeline shadowPipeline;
 
 	std::vector<vk::Framebuffer> swapChainFramebuffers;
 
@@ -67,6 +69,7 @@ struct VulkanEngine {
 	AllocatedBuffer indexBuffer;
 	//vk::DeviceMemory indexBufferMemory;
 
+	std::vector < AllocatedBuffer> shadowDataBuffers;
 	std::vector < AllocatedBuffer> cameraDataBuffers;
 	std::vector < AllocatedBuffer> object_buffers;
 	std::vector < AllocatedBuffer> sceneParamBuffers;
@@ -100,6 +103,24 @@ struct VulkanEngine {
 	ConfigParams config_parameters;
 	EngineStats eng_stats;
 
+
+	struct FrameBufferAttachment {
+		vk::Image image;
+		VkDeviceMemory mem;
+		vk::ImageView view;
+	};
+	struct ShadowPass {
+		int32_t width, height;
+		VkFramebuffer frameBuffer;
+		FrameBufferAttachment depth;
+		VkRenderPass renderPass;
+		VkSampler depthSampler;
+		VkDescriptorImageInfo descriptor;
+		VmaAllocation depthImageAlloc;
+	} shadowPass;
+
+
+
 	std::vector<const char*> get_extensions();
 	void cleanup_swap_chain();
 
@@ -117,6 +138,8 @@ struct VulkanEngine {
 	
 	void* get_profiler_context(vk::CommandBuffer cmd);
 	void create_gfx_pipeline();
+	void create_shadow_pipeline();
+
 	void create_render_pass();
 	void create_framebuffers();
 	void create_command_pool();
@@ -131,6 +154,9 @@ struct VulkanEngine {
 	void create_command_buffers();
 	void create_semaphores();
 	
+	void create_shadow_framebuffer();
+	void create_shadow_renderpass();
+
 	bool load_model(const char* model_path, std::vector<Vertex> &vertices, std::vector<uint32_t> &indices);
 
 	EntityID load_mesh(const char* model_path, std::string modelName);
@@ -143,7 +169,11 @@ struct VulkanEngine {
 	bool load_scene(const char* scene_path, glm::mat4 rootMatrix);
 	EntityID create_basic_descriptor_sets(EntityID pipelineID, std::string name, std::array<EntityID,8> textureID);
 
-	void start_frame_command_buffer(vk::CommandBuffer buffer, vk::Framebuffer framebuffer);
+	void begin_frame_command_buffer(vk::CommandBuffer buffer);
+
+	void start_shadow_renderpass(vk::CommandBuffer buffer);
+
+	void start_frame_renderpass(vk::CommandBuffer buffer, vk::Framebuffer framebuffer);
 	void end_frame_command_buffer(vk::CommandBuffer buffer);
 
 	void recreate_swapchain();
@@ -151,6 +181,7 @@ struct VulkanEngine {
 	size_t align_dynamic_descriptor(size_t initial_alignement);
 
 	void draw_frame();
+	void render_shadow_pass(const vk::CommandBuffer& cmd);
 	void RenderMainPass(const vk::CommandBuffer& cmd);
 	void update_uniform_buffer(uint32_t currentImage);
 

@@ -151,7 +151,12 @@ struct TextureLoadRequest {
 
 struct ConfigParams {
 	glm::vec3 CamUp;
+	glm::vec3 sun_location;
+	float shadow_near;
+	float shadow_far;
+	float shadow_sides;
 	float fov;
+	bool ShadowView;
 };
 
 struct EngineStats {

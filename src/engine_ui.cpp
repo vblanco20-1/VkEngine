@@ -32,6 +32,17 @@ void UI::DrawEngineUI(VulkanEngine* engine)
 	ImGui::InputFloat3("Camera Up", &engine->config_parameters.CamUp[0]);
 	ImGui::InputFloat("Camera FOV", &engine->config_parameters.fov);
 
+	ImGui::Checkbox("show shadow viewpoint", &engine->config_parameters.ShadowView);
+
+	ImGui::Separator();
+
+	ImGui::InputFloat3("Sun Location", &engine->config_parameters.sun_location[0]);
+	ImGui::InputFloat("Shadow near", &engine->config_parameters.shadow_near);
+	ImGui::InputFloat("Shadow far", &engine->config_parameters.shadow_far);
+	ImGui::InputFloat("Shadow sides", &engine->config_parameters.shadow_sides);
+
+
+
 	ImGui::Separator();
 
 	ImGui::Text("Scene Parameters");
