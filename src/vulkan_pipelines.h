@@ -21,5 +21,24 @@ namespace VkPipelineInitializers {
 
 	vk::PipelineColorBlendAttachmentState build_color_blend_attachment_state();
 
-	vk::PipelineColorBlendStateCreateInfo build_color_blend(vk::PipelineColorBlendAttachmentState* colorBlendAttachment);
+	vk::PipelineColorBlendStateCreateInfo build_color_blend(vk::PipelineColorBlendAttachmentState* colorAttachments, int attachmentCount);
 }
+struct ShaderEffect;
+
+struct GraphicsPipelineBuilder {
+	struct VulkanInfos {
+		vk::Viewport viewport;
+		vk::Rect2D scissor;
+		vk::PipelineVertexInputStateCreateInfo vertexInputInfo;
+		vk::PipelineInputAssemblyStateCreateInfo inputAssembly;
+		vk::PipelineDepthStencilStateCreateInfo depthStencil;
+		vk::PipelineRasterizationStateCreateInfo rasterizer;
+		vk::PipelineMultisampleStateCreateInfo multisampling;
+		std::vector< vk::DynamicState> dynamicStates;
+		std::vector < vk::PipelineColorBlendAttachmentState> colorAttachmentStates;
+	};
+
+	VulkanInfos data;
+
+	vk::Pipeline build_pipeline(vk::Device device, vk::RenderPass renderPass, uint32_t subpass, ShaderEffect* shaderEffect);
+};

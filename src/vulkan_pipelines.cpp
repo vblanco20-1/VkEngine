@@ -1,4 +1,5 @@
 #include "vulkan_pipelines.h"
+#include "shader_processor.h"
 
 vk::Viewport VkPipelineInitializers::build_viewport(uint32_t width, uint32_t height)
 {
@@ -99,16 +100,69 @@ vk::PipelineColorBlendAttachmentState VkPipelineInitializers::build_color_blend_
 	return colorBlendAttachment;
 }
 
-vk::PipelineColorBlendStateCreateInfo VkPipelineInitializers::build_color_blend(vk::PipelineColorBlendAttachmentState* colorAttachment)
+vk::PipelineColorBlendStateCreateInfo VkPipelineInitializers::build_color_blend(vk::PipelineColorBlendAttachmentState* colorAttachments, int attachmentCount)
 {
 	vk::PipelineColorBlendStateCreateInfo colorBlending;
 	colorBlending.logicOpEnable = VK_FALSE;
 	colorBlending.logicOp = vk::LogicOp::eCopy; // Optional
-	colorBlending.attachmentCount = 1;
-	colorBlending.pAttachments = colorAttachment;
+
+	colorBlending.attachmentCount = attachmentCount;
+	colorBlending.pAttachments = colorAttachments;
+	
+	
 	colorBlending.blendConstants[0] = 0.0f; // Optional
 	colorBlending.blendConstants[1] = 0.0f; // Optional
 	colorBlending.blendConstants[2] = 0.0f; // Optional
 	colorBlending.blendConstants[3] = 0.0f; // Optional
 	return colorBlending;
+}
+
+vk::Pipeline GraphicsPipelineBuilder::build_pipeline(vk::Device device, vk::RenderPass renderPass, uint32_t subpass, ShaderEffect* shaderEffect)
+{
+	//build shader data from effect
+	std::vector<VkPipelineShaderStageCreateInfo> shaderStages = shaderEffect->get_stage_infos();
+
+	vk::PipelineLayout newLayout = vk::PipelineLayout(shaderEffect->build_pipeline_layout(device));
+
+
+	//copy from internal data
+	vk::PipelineVertexInputStateCreateInfo vertexInputInfo = data.vertexInputInfo;
+
+	vk::PipelineInputAssemblyStateCreateInfo inputAssembly = data.inputAssembly;
+
+	vk::Viewport viewport = data.viewport;
+
+	vk::Rect2D scissor = data.scissor;
+
+	vk::PipelineViewportStateCreateInfo viewportState = VkPipelineInitializers::build_viewport_state(&viewport, &scissor);
+
+	vk::PipelineDepthStencilStateCreateInfo depthStencil = data.depthStencil;
+
+	vk::PipelineRasterizationStateCreateInfo rasterizer = data.rasterizer;
+
+	vk::PipelineMultisampleStateCreateInfo multisampling = data.multisampling;
+
+	vk::PipelineColorBlendStateCreateInfo colorBlending = VkPipelineInitializers::build_color_blend(data.colorAttachmentStates.data(), data.colorAttachmentStates.size());
+
+	vk::PipelineDynamicStateCreateInfo dynamicState = {};
+	dynamicState.dynamicStateCount = data.dynamicStates.size();
+	dynamicState.pDynamicStates = data.dynamicStates.data();
+
+	vk::GraphicsPipelineCreateInfo pipelineInfo;
+	pipelineInfo.stageCount = shaderStages.size();
+	pipelineInfo.pStages = reinterpret_cast<vk::PipelineShaderStageCreateInfo*>(shaderStages.data());
+	pipelineInfo.pVertexInputState = &vertexInputInfo;
+	pipelineInfo.pInputAssemblyState = &inputAssembly;
+	pipelineInfo.pViewportState = &viewportState;
+	pipelineInfo.pRasterizationState = &rasterizer;
+	pipelineInfo.pMultisampleState = &multisampling;
+	pipelineInfo.pDepthStencilState = &depthStencil;
+	pipelineInfo.pColorBlendState = &colorBlending;
+	pipelineInfo.pDynamicState = &dynamicState;
+	pipelineInfo.layout = newLayout;
+	pipelineInfo.renderPass = renderPass;
+	pipelineInfo.subpass = subpass;
+
+	vk::Pipeline pipeline = device.createGraphicsPipelines(nullptr, pipelineInfo)[0];
+	return pipeline;
 }

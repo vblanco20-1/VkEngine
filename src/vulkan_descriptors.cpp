@@ -52,7 +52,7 @@ vk::DescriptorSet DescriptorMegaPool::allocate_descriptor(vk::DescriptorSetLayou
 	else
 	{
 		selected_allocator = selected_vector->back();
-		if (selected_allocator->current_descriptors == selected_allocator->max_descriptors) {
+		if (selected_allocator->current_descriptors >= selected_allocator->max_descriptors) {
 
 			selected_allocator = get_allocator();
 			selected_vector->push_back(selected_allocator);

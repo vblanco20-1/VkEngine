@@ -404,7 +404,6 @@ void* VulkanEngine::get_profiler_context(vk::CommandBuffer cmd)
 
 void VulkanEngine::create_gfx_pipeline()
 {
-
 	std::vector<VkPipelineShaderStageCreateInfo> shaderStages;
 	ShaderEffect* pipelineEffect;
 	if (!doesResourceExist<ShaderEffectHandle>("basiclit") ){
@@ -423,71 +422,27 @@ void VulkanEngine::create_gfx_pipeline()
 	}
 	else
 	{
-		pipelineEffect = getResource<ShaderEffectHandle>("basiclit").handle;
-		
+		pipelineEffect = getResource<ShaderEffectHandle>("basiclit").handle;		
 	}
 
-	shaderStages = pipelineEffect->get_stage_infos();
-	
-	descriptorSetLayout = pipelineEffect->build_descriptor_layouts(device)[0];
-
-	vk::PipelineLayout newLayout = vk::PipelineLayout(pipelineEffect->build_pipeline_layout(device));
+	gfxPipelineBuilder = new GraphicsPipelineBuilder();
 
 
-	vk::PipelineVertexInputStateCreateInfo vertexInputInfo = Vertex::getPipelineCreateInfo();
+	gfxPipelineBuilder->data.vertexInputInfo = Vertex::getPipelineCreateInfo();
+	gfxPipelineBuilder->data.inputAssembly = VkPipelineInitializers::build_input_assembly(vk::PrimitiveTopology::eTriangleList);
+	gfxPipelineBuilder->data.viewport = VkPipelineInitializers::build_viewport(swapChainExtent.width, swapChainExtent.height);
+	gfxPipelineBuilder->data.scissor = VkPipelineInitializers::build_rect2d(0, 0, swapChainExtent.width, swapChainExtent.height);
+	gfxPipelineBuilder->data.depthStencil = VkPipelineInitializers::build_depth_stencil(true, true);
+	gfxPipelineBuilder->data.rasterizer = VkPipelineInitializers::build_rasterizer();
+	gfxPipelineBuilder->data.multisampling = VkPipelineInitializers::build_multisampling();
+	gfxPipelineBuilder->data.colorAttachmentStates.push_back(VkPipelineInitializers::build_color_blend_attachment_state());	
 
-	vk::PipelineInputAssemblyStateCreateInfo inputAssembly = VkPipelineInitializers::build_input_assembly(vk::PrimitiveTopology::eTriangleList);
-
-	vk::Viewport viewport = VkPipelineInitializers::build_viewport(swapChainExtent.width, swapChainExtent.height);
-
-	vk::Rect2D scissor = VkPipelineInitializers::build_rect2d(0, 0, swapChainExtent.width, swapChainExtent.height);
-
-	vk::PipelineViewportStateCreateInfo viewportState = VkPipelineInitializers::build_viewport_state(&viewport,&scissor);
-
-	vk::PipelineDepthStencilStateCreateInfo depthStencil = VkPipelineInitializers::build_depth_stencil(true, true);
-
-	vk::PipelineRasterizationStateCreateInfo rasterizer = VkPipelineInitializers::build_rasterizer();
-
-	vk::PipelineMultisampleStateCreateInfo multisampling = VkPipelineInitializers::build_multisampling();
-
-	vk::PipelineColorBlendAttachmentState colorBlendAttachment = VkPipelineInitializers::build_color_blend_attachment_state();	
-
-	vk::PipelineColorBlendStateCreateInfo colorBlending = VkPipelineInitializers::build_color_blend(&colorBlendAttachment);
-
-	vk::DynamicState dynamicStates[] = {
-	vk::DynamicState::eViewport,
-	vk::DynamicState::eLineWidth
-	};
-
-	vk::PipelineDynamicStateCreateInfo dynamicState = {};	
-	dynamicState.dynamicStateCount = 2;
-	dynamicState.pDynamicStates = dynamicStates;
-
-	vk::GraphicsPipelineCreateInfo pipelineInfo;
-	pipelineInfo.stageCount = shaderStages.size();
-	pipelineInfo.pStages = reinterpret_cast<vk::PipelineShaderStageCreateInfo*>( shaderStages.data());
-	pipelineInfo.pVertexInputState = &vertexInputInfo;
-	pipelineInfo.pInputAssemblyState = &inputAssembly;
-	pipelineInfo.pViewportState = &viewportState;
-	pipelineInfo.pRasterizationState = &rasterizer;
-	pipelineInfo.pMultisampleState = &multisampling;
-	pipelineInfo.pDepthStencilState = &depthStencil;
-	pipelineInfo.pColorBlendState = &colorBlending;
-	pipelineInfo.pDynamicState = nullptr; // Optional
-	pipelineInfo.layout = newLayout;//pipelineLayout;
-	pipelineInfo.renderPass = renderPass;
-	pipelineInfo.subpass = 0;
-
-	pipelineLayout = newLayout;
-
-	graphicsPipeline = device.createGraphicsPipelines(nullptr,pipelineInfo)[0];
+	graphicsPipeline = gfxPipelineBuilder->build_pipeline(device, renderPass, 0, pipelineEffect);
 }
 
 
 void VulkanEngine::create_shadow_pipeline()
 {
-
-	std::vector<VkPipelineShaderStageCreateInfo> shaderStages;
 	ShaderEffect* pipelineEffect;
 	if (!doesResourceExist<ShaderEffectHandle>("shadowpipeline")) {
 
@@ -509,69 +464,22 @@ void VulkanEngine::create_shadow_pipeline()
 
 	}
 
-	shaderStages = pipelineEffect->get_stage_infos();
-
-	descriptorSetLayout = pipelineEffect->build_descriptor_layouts(device)[0];
-
-	vk::PipelineLayout newLayout = vk::PipelineLayout(pipelineEffect->build_pipeline_layout(device));
-
-	vk::PipelineVertexInputStateCreateInfo vertexInputInfo = Vertex::getPipelineCreateInfo();
-
-	vk::PipelineInputAssemblyStateCreateInfo inputAssembly = VkPipelineInitializers::build_input_assembly(vk::PrimitiveTopology::eTriangleList);
-
-
-	vk::Viewport viewport = VkPipelineInitializers::build_viewport(2048,2048);
-
-	vk::Rect2D scissor = VkPipelineInitializers::build_rect2d(0,0,swapChainExtent.width,swapChainExtent.height);
-
-	vk::PipelineViewportStateCreateInfo viewportState;
-	viewportState.viewportCount = 1;
-	viewportState.pViewports = &viewport;
-	viewportState.scissorCount = 1;
-	viewportState.pScissors = &scissor;
-
-	vk::PipelineDepthStencilStateCreateInfo depthStencil = VkPipelineInitializers::build_depth_stencil(true,true);	
-
-	vk::PipelineRasterizationStateCreateInfo rasterizer = VkPipelineInitializers::build_rasterizer();	
-
-	vk::PipelineMultisampleStateCreateInfo multisampling = VkPipelineInitializers::build_multisampling();
-
-	vk::PipelineColorBlendAttachmentState colorBlendAttachment;
-	colorBlendAttachment.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
-	colorBlendAttachment.blendEnable = VK_FALSE;
-
-
-	vk::PipelineColorBlendStateCreateInfo colorBlending;
-	colorBlending.logicOpEnable = VK_FALSE;
-	colorBlending.attachmentCount = 0;
-
-
-	vk::DynamicState dynamicStates[] = {
-	vk::DynamicState::eViewport,
-	vk::DynamicState::eScissor,
-	vk::DynamicState::eDepthBias
+	GraphicsPipelineBuilder shadowPipelineBuilder;
+	shadowPipelineBuilder.data.vertexInputInfo = Vertex::getPipelineCreateInfo();
+	shadowPipelineBuilder.data.inputAssembly = VkPipelineInitializers::build_input_assembly(vk::PrimitiveTopology::eTriangleList);
+	shadowPipelineBuilder.data.viewport = VkPipelineInitializers::build_viewport(2048, 2048);
+	shadowPipelineBuilder.data.scissor = VkPipelineInitializers::build_rect2d(0, 0, 2048, 2048);
+	shadowPipelineBuilder.data.depthStencil = VkPipelineInitializers::build_depth_stencil(true, true);
+	shadowPipelineBuilder.data.rasterizer = VkPipelineInitializers::build_rasterizer();
+	shadowPipelineBuilder.data.multisampling = VkPipelineInitializers::build_multisampling();
+	
+	shadowPipelineBuilder.data.dynamicStates = {
+		vk::DynamicState::eViewport,
+		vk::DynamicState::eScissor,
+		vk::DynamicState::eDepthBias
 	};
 
-	vk::PipelineDynamicStateCreateInfo dynamicState = {};
-	dynamicState.dynamicStateCount = 3;
-	dynamicState.pDynamicStates = dynamicStates;
-
-	vk::GraphicsPipelineCreateInfo pipelineInfo;
-	pipelineInfo.stageCount = 1;
-	pipelineInfo.pStages = reinterpret_cast<vk::PipelineShaderStageCreateInfo*>(shaderStages.data());
-	pipelineInfo.pVertexInputState = &vertexInputInfo;
-	pipelineInfo.pInputAssemblyState = &inputAssembly;
-	pipelineInfo.pViewportState = &viewportState;
-	pipelineInfo.pRasterizationState = &rasterizer;
-	pipelineInfo.pMultisampleState = &multisampling;
-	pipelineInfo.pDepthStencilState = &depthStencil;
-	pipelineInfo.pColorBlendState = &colorBlending;
-	pipelineInfo.pDynamicState = &dynamicState; // Optional
-	pipelineInfo.layout = newLayout;//pipelineLayout;
-	pipelineInfo.renderPass = shadowPass.renderPass;
-	pipelineInfo.subpass = 0;
-	
-	shadowPipeline = device.createGraphicsPipelines(nullptr, pipelineInfo)[0];
+	shadowPipeline = shadowPipelineBuilder.build_pipeline(device, shadowPass.renderPass, 0, pipelineEffect);
 }
 
 void VulkanEngine::create_render_pass()
@@ -1158,7 +1066,7 @@ void VulkanEngine::render_shadow_pass(const vk::CommandBuffer& cmd)
 
 		//cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, piplayout, 2, 1, &descriptor.materialSet, 0, nullptr);
 
-		cmd.pushConstants(pipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(int), &renderable.object_idx);
+		cmd.pushConstants(piplayout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(int), &renderable.object_idx);
 
 		
 		cmd.drawIndexed(static_cast<uint32_t>(mesh.indices.size()), 1, 0, 0, 0);
@@ -1174,7 +1082,7 @@ void VulkanEngine::RenderMainPass(const vk::CommandBuffer& cmd)
 	ZoneScopedNC("Main Pass", tracy::Color::BlueViolet);
 	EntityID LastMesh = entt::null;
 	
-	vk::Pipeline last_pipeline = graphicsPipeline;
+	vk::Pipeline last_pipeline;
 	vk::PipelineLayout piplayout;
 	bool first_render = true;		
 
@@ -1191,7 +1099,7 @@ void VulkanEngine::RenderMainPass(const vk::CommandBuffer& cmd)
 		if (bShouldBindPipeline) {
 				cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline.pipeline);
 				piplayout = (vk::PipelineLayout)pipeline.effect->build_pipeline_layout(device);
-				last_pipeline = graphicsPipeline;
+				last_pipeline = pipeline.pipeline;
 
 				DescriptorSetBuilder setBuilder{ pipeline.effect,&descriptorMegapool};
 				
@@ -1262,7 +1170,7 @@ void VulkanEngine::RenderMainPass(const vk::CommandBuffer& cmd)
 
 		cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, piplayout, 2, 1, &descriptor.materialSet, 0, nullptr);
 
-		cmd.pushConstants(pipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(int), &renderable.object_idx);			
+		cmd.pushConstants(piplayout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(int), &renderable.object_idx);
 		
 		cmd.drawIndexed(static_cast<uint32_t>(mesh.indices.size()), 1, 0, 0, 0);
 		eng_stats.drawcalls++;
@@ -1401,7 +1309,7 @@ void VulkanEngine::cleanup_swap_chain()
 	device.freeCommandBuffers(commandPool, commandBuffers);
 
 	device.destroyPipeline(graphicsPipeline);
-	device.destroyPipelineLayout(pipelineLayout);
+	//device.destroyPipelineLayout(pipelineLayout);
 	device.destroyRenderPass(renderPass);
 	device.destroySwapchainKHR(swapChain);
 
@@ -1461,7 +1369,6 @@ void VulkanEngine::clear_vulkan()
 
 	}
 	
-	device.destroyDescriptorSetLayout(descriptorSetLayout);
 	
 	device.destroy();
 
@@ -1615,6 +1522,16 @@ void VulkanEngine::create_shadow_renderpass()
 	renderPassInfo.pDependencies = &dependencies[0];
 
 	shadowPass.renderPass = device.createRenderPass(renderPassInfo);
+}
+
+void VulkanEngine::rebuild_pipeline_resource(PipelineResource* resource)
+{
+	
+
+	if (resource->pipelineBuilder == gfxPipelineBuilder) {
+		resource->effect->reload_shaders(device);
+		resource->pipeline = resource->pipelineBuilder->build_pipeline(device, renderPass, 0, resource->effect);
+	}
 }
 
 bool VulkanEngine::load_model(const char* model_path, std::vector<Vertex> &vertices, std::vector<uint32_t> &indices)
@@ -2000,6 +1917,7 @@ bool VulkanEngine::load_scene(const char* scene_path, glm::mat4 rootMatrix)
 	PipelineResource pipeline;
 	pipeline.pipeline = graphicsPipeline;
 	pipeline.effect = getResource<ShaderEffectHandle>("basiclit").handle;
+	pipeline.pipelineBuilder = gfxPipelineBuilder;
 	auto pipeline_id = createResource("pipeline_basiclit", pipeline);
 
 	

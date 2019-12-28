@@ -3,6 +3,7 @@
 #include "imgui.h"
 #include "engine_ui.h"
 #include "misc/cpp/imgui_stdlib.h"
+#include "shader_processor.h"
 
 
 
@@ -149,7 +150,19 @@ void UI::DrawEngineUI(VulkanEngine* engine)
 			for (auto [K, V] : engine->resourceMap) {
 		
 				if (found(K) && engine->render_registry.has<PipelineResource>(V)) {
+
+					PipelineResource& pip = engine->render_registry.get<PipelineResource>(V);
 					ImGui::Text(K.c_str());
+					ImGui::SameLine();
+					if (ImGui::Button("Reload"))
+					{
+						engine->rebuild_pipeline_resource(&pip);
+					}
+					ImGui::Separator();
+
+					for (auto& s : pip.effect->loaded_shaders) {
+						ImGui::Text(s.c_str());
+					}
 				}
 			}
 			ImGui::EndChild();

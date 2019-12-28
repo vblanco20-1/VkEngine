@@ -114,6 +114,7 @@ struct ShaderEffectHandle :public ResourceComponent {
 struct PipelineResource : public ResourceComponent {
 	vk::Pipeline pipeline;
 	ShaderEffect* effect;
+	struct GraphicsPipelineBuilder* pipelineBuilder;
 };
 
 struct DescriptorResource : public ResourceComponent {

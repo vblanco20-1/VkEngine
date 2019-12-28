@@ -428,7 +428,7 @@ bool ShaderEffect::add_shader_from_file(const char* path)
 
         if (!Shader.preprocess(&Resources, DefaultVersion, ENoProfile, false, false, messages, &PreprocessedGLSL, Includer))
         {
-            std::cout << "GLSL Preprocessing Failed for: " << std::endl;// << filename << std::endl;
+            std::cout << "GLSL Preprocessing Failed for: "<< path << std::endl;// << filename << std::endl;
             std::cout << Shader.getInfoLog() << std::endl;
             std::cout << Shader.getInfoDebugLog() << std::endl;
             delete PtrShader;
@@ -440,7 +440,7 @@ bool ShaderEffect::add_shader_from_file(const char* path)
 
         if (!Shader.parse(&Resources, 100, false, messages))
         {
-            std::cout << "GLSL Parsing Failed for: " << std::endl;// << filename << std::endl;
+            std::cout << "GLSL Parsing Failed for: " << path << std::endl;// << filename << std::endl;
             std::cout << Shader.getInfoLog() << std::endl;
             std::cout << Shader.getInfoDebugLog() << std::endl;
             delete PtrShader;
@@ -451,8 +451,46 @@ bool ShaderEffect::add_shader_from_file(const char* path)
         privData->Shaders.push_back(PtrShader);
         privData->Program.addShader(PtrShader);
 
+        loaded_shaders.push_back(path);
+
         return true;
     }
+
+    return false;
+}
+bool ShaderEffect::reload_shaders(VkDevice device) {
+    //save old state to be able to recover
+    std::vector< ShaderModule> oldmodules = modules;
+    ShaderEffectPrivateData* oldPrivData = privData;
+
+    //clear internal state
+    privData = new ShaderEffectPrivateData;
+    modules.clear();
+
+    std::vector<std::string> shaders = loaded_shaders;
+    loaded_shaders.clear();
+    
+    for (auto& s : shaders) {
+        if (!add_shader_from_file(s.c_str()))
+        {
+            goto failure;
+        }
+    }
+
+    if (!build_effect(device))
+    {
+        goto failure;
+    }
+
+    std::cout << "Succesful shader reload" << std::endl;
+    //everything working like a charm
+
+    return true;
+failure:
+    delete privData;
+    modules = oldmodules;
+    privData = oldPrivData;
+    loaded_shaders = shaders;
 
     return false;
 }

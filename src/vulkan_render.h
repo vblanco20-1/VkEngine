@@ -159,6 +159,8 @@ struct VulkanEngine {
 	void create_shadow_framebuffer();
 	void create_shadow_renderpass();
 
+	void rebuild_pipeline_resource(PipelineResource* resource);
+
 	bool load_model(const char* model_path, std::vector<Vertex> &vertices, std::vector<uint32_t> &indices);
 
 	EntityID load_mesh(const char* model_path, std::string modelName);
@@ -243,6 +245,9 @@ struct VulkanEngine {
 	EntityID blankTexture;
 	EntityID blackTexture;
 	EntityID testCubemap;
+
+	GraphicsPipelineBuilder* gfxPipelineBuilder;
+	GraphicsPipelineBuilder* shadowPipelineBuilder;
 };
 
 

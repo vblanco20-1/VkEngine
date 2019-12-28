@@ -53,13 +53,15 @@ struct BindReflection {
 struct ShaderEffect {
 
 	std::vector< ShaderModule> modules;
-
+	std::vector<std::string> loaded_shaders;
 	//pImpl
 	struct ShaderEffectPrivateData* privData;
 	//add a shader to the effect
 	bool add_shader_from_file(const char* path);
 
 	bool build_effect(VkDevice device);
+
+	bool reload_shaders(VkDevice device);
 
 	//returns a vkPipelineLayout
 	VkPipelineLayout build_pipeline_layout(VkDevice device);
