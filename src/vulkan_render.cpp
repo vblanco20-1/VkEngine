@@ -14,7 +14,7 @@
 #include "imgui_impl_vulkan.h"
 
 #include "shader_processor.h"
-
+#include "vulkan_pipelines.h"
 #define STB_IMAGE_IMPLEMENTATION
 #define TINYGLTF_IMPLEMENTATION
 #define STB_IMAGE_WRITE_IMPLEMENTATION
@@ -167,19 +167,20 @@ void VulkanEngine::init_vulkan()
 
 	blankTexture = load_texture(MAKE_ASSET_PATH("sprites/blank.png"), "blank");
 	blackTexture = load_texture(MAKE_ASSET_PATH("sprites/black.png"), "black");
-	testCubemap = load_texture(MAKE_ASSET_PATH("sprites/cubemap_yokohama_bc3_unorm.ktx"), "cubemap",true);
+	testCubemap = load_texture(MAKE_ASSET_PATH("models/SunTemple_Skybox.hdr"), "cubemap", true);
+	//testCubemap = load_texture(MAKE_ASSET_PATH("sprites/cubemap_yokohama_bc3_unorm.ktx"), "cubemap",true);
 
 	sceneParameters.fog_a = glm::vec4(1);
 	sceneParameters.fog_b.x = 0.f;
 	sceneParameters.fog_b.y = 10000.f;
 	sceneParameters.ambient = glm::vec4(0.1f);
 	//load_scene("E:/Gamedev/tps-demo/level/geometry/demolevel.blend");
-	load_scene(MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Interior.fbx"), glm::mat4(1.f));
-	load_scene(MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Exterior.fbx"), glm::mat4(1.f));
+	//load_scene(MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Interior.fbx"), glm::mat4(1.f));
+	//load_scene(MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Exterior.fbx"), glm::mat4(1.f));
 
 
-	//load_scene(MAKE_ASSET_PATH("models/SunTemple.fbx"),
-	//	glm::rotate(glm::mat4(1), glm::radians(90.f), glm::vec3(1, 0, 0)));
+	load_scene(MAKE_ASSET_PATH("models/SunTemple.fbx"),
+		glm::rotate(glm::mat4(1), glm::radians(90.f), glm::vec3(1, 0, 0)));
 
 	ImGui::CreateContext();
 
@@ -435,81 +436,23 @@ void VulkanEngine::create_gfx_pipeline()
 
 	vk::PipelineVertexInputStateCreateInfo vertexInputInfo = Vertex::getPipelineCreateInfo();
 
-	vk::PipelineInputAssemblyStateCreateInfo inputAssembly;	
-	inputAssembly.topology = vk::PrimitiveTopology::eTriangleList;
-	inputAssembly.primitiveRestartEnable = VK_FALSE;
+	vk::PipelineInputAssemblyStateCreateInfo inputAssembly = VkPipelineInitializers::build_input_assembly(vk::PrimitiveTopology::eTriangleList);
 
-	vk::Viewport viewport;
-	viewport.x = 0.0f;
-	viewport.y = 0.0f;
-	viewport.width = (float)swapChainExtent.width;
-	viewport.height = (float)swapChainExtent.height;
-	viewport.minDepth = 0.0f;
-	viewport.maxDepth = 1.0f;
+	vk::Viewport viewport = VkPipelineInitializers::build_viewport(swapChainExtent.width, swapChainExtent.height);
 
-	vk::Rect2D scissor;
-	scissor.offset = { 0, 0 };
-	scissor.extent = swapChainExtent;
+	vk::Rect2D scissor = VkPipelineInitializers::build_rect2d(0, 0, swapChainExtent.width, swapChainExtent.height);
 
-	vk::PipelineViewportStateCreateInfo viewportState;	
-	viewportState.viewportCount = 1;
-	viewportState.pViewports = &viewport;
-	viewportState.scissorCount = 1;
-	viewportState.pScissors = &scissor;
+	vk::PipelineViewportStateCreateInfo viewportState = VkPipelineInitializers::build_viewport_state(&viewport,&scissor);
 
+	vk::PipelineDepthStencilStateCreateInfo depthStencil = VkPipelineInitializers::build_depth_stencil(true, true);
 
-	vk::PipelineDepthStencilStateCreateInfo depthStencil;
-	depthStencil.depthTestEnable = VK_TRUE;
-	depthStencil.depthWriteEnable = VK_TRUE;
-	depthStencil.depthCompareOp = vk::CompareOp::eLess;
-	depthStencil.depthBoundsTestEnable = VK_FALSE;
-	depthStencil.minDepthBounds = 0.0f; // Optional
-	depthStencil.maxDepthBounds = 1.0f; // Optional
-	depthStencil.stencilTestEnable = VK_FALSE;
-	depthStencil.front = {}; // Optional
-	depthStencil.back = {}; // Optional
+	vk::PipelineRasterizationStateCreateInfo rasterizer = VkPipelineInitializers::build_rasterizer();
 
-	vk::PipelineRasterizationStateCreateInfo rasterizer;
-	rasterizer.depthClampEnable = VK_FALSE;
-	rasterizer.rasterizerDiscardEnable = VK_FALSE;
-	rasterizer.polygonMode = vk::PolygonMode::eFill;
-	rasterizer.lineWidth = 1.0f;
-	rasterizer.cullMode = vk::CullModeFlagBits::eBack;
-	rasterizer.frontFace = vk::FrontFace::eCounterClockwise;
-	rasterizer.depthBiasEnable = VK_FALSE;
-	rasterizer.depthBiasConstantFactor = 0.0f; // Optional
-	rasterizer.depthBiasClamp = 0.0f; // Optional
-	rasterizer.depthBiasSlopeFactor = 0.0f; // Optional
+	vk::PipelineMultisampleStateCreateInfo multisampling = VkPipelineInitializers::build_multisampling();
 
-	vk::PipelineMultisampleStateCreateInfo multisampling;
-	multisampling.sampleShadingEnable = VK_FALSE;
-	multisampling.rasterizationSamples = vk::SampleCountFlagBits::e1;
-	multisampling.minSampleShading = 1.0f; // Optional
-	multisampling.pSampleMask = nullptr; // Optional
-	multisampling.alphaToCoverageEnable = VK_FALSE; // Optional
-	multisampling.alphaToOneEnable = VK_FALSE; // Optional
+	vk::PipelineColorBlendAttachmentState colorBlendAttachment = VkPipelineInitializers::build_color_blend_attachment_state();	
 
-
-	vk::PipelineColorBlendAttachmentState colorBlendAttachment;
-	colorBlendAttachment.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
-	colorBlendAttachment.blendEnable = VK_FALSE;
-	colorBlendAttachment.srcColorBlendFactor = vk::BlendFactor::eOne; // Optional
-	colorBlendAttachment.dstColorBlendFactor = vk::BlendFactor::eZero; // Optional
-	colorBlendAttachment.colorBlendOp = vk::BlendOp::eAdd; // Optional
-	colorBlendAttachment.srcAlphaBlendFactor = vk::BlendFactor::eOne;// Optional
-	colorBlendAttachment.dstAlphaBlendFactor = vk::BlendFactor::eZero; // Optional
-	colorBlendAttachment.alphaBlendOp = vk::BlendOp::eAdd; // Optional
-
-	vk::PipelineColorBlendStateCreateInfo colorBlending ;
-
-	colorBlending.logicOpEnable = VK_FALSE;
-	colorBlending.logicOp = vk::LogicOp::eCopy; // Optional
-	colorBlending.attachmentCount = 1;
-	colorBlending.pAttachments = &colorBlendAttachment;
-	colorBlending.blendConstants[0] = 0.0f; // Optional
-	colorBlending.blendConstants[1] = 0.0f; // Optional
-	colorBlending.blendConstants[2] = 0.0f; // Optional
-	colorBlending.blendConstants[3] = 0.0f; // Optional
+	vk::PipelineColorBlendStateCreateInfo colorBlending = VkPipelineInitializers::build_color_blend(&colorBlendAttachment);
 
 	vk::DynamicState dynamicStates[] = {
 	vk::DynamicState::eViewport,
@@ -572,24 +515,14 @@ void VulkanEngine::create_shadow_pipeline()
 
 	vk::PipelineLayout newLayout = vk::PipelineLayout(pipelineEffect->build_pipeline_layout(device));
 
-
 	vk::PipelineVertexInputStateCreateInfo vertexInputInfo = Vertex::getPipelineCreateInfo();
 
-	vk::PipelineInputAssemblyStateCreateInfo inputAssembly;
-	inputAssembly.topology = vk::PrimitiveTopology::eTriangleList;
-	inputAssembly.primitiveRestartEnable = VK_FALSE;
+	vk::PipelineInputAssemblyStateCreateInfo inputAssembly = VkPipelineInitializers::build_input_assembly(vk::PrimitiveTopology::eTriangleList);
 
-	vk::Viewport viewport;
-	viewport.x = 0.0f;
-	viewport.y = 0.0f;
-	viewport.width = 2048;
-	viewport.height = 2048;
-	viewport.minDepth = 0.0f;
-	viewport.maxDepth = 1.0f;
 
-	vk::Rect2D scissor;
-	scissor.offset = { 0, 0 };
-	scissor.extent = swapChainExtent;
+	vk::Viewport viewport = VkPipelineInitializers::build_viewport(2048,2048);
+
+	vk::Rect2D scissor = VkPipelineInitializers::build_rect2d(0,0,swapChainExtent.width,swapChainExtent.height);
 
 	vk::PipelineViewportStateCreateInfo viewportState;
 	viewportState.viewportCount = 1;
@@ -597,38 +530,11 @@ void VulkanEngine::create_shadow_pipeline()
 	viewportState.scissorCount = 1;
 	viewportState.pScissors = &scissor;
 
+	vk::PipelineDepthStencilStateCreateInfo depthStencil = VkPipelineInitializers::build_depth_stencil(true,true);	
 
-	vk::PipelineDepthStencilStateCreateInfo depthStencil;
-	depthStencil.depthTestEnable = VK_TRUE;
-	depthStencil.depthWriteEnable = VK_TRUE;
-	depthStencil.depthCompareOp = vk::CompareOp::eLessOrEqual;
-	depthStencil.depthBoundsTestEnable = VK_FALSE;
-	depthStencil.minDepthBounds = 0.0f; // Optional
-	depthStencil.maxDepthBounds = 1.0f; // Optional
-	depthStencil.stencilTestEnable = VK_FALSE;
-	depthStencil.front = {}; // Optional
-	depthStencil.back = {}; // Optional
+	vk::PipelineRasterizationStateCreateInfo rasterizer = VkPipelineInitializers::build_rasterizer();	
 
-	vk::PipelineRasterizationStateCreateInfo rasterizer;
-	rasterizer.depthClampEnable = VK_FALSE;
-	rasterizer.rasterizerDiscardEnable = VK_FALSE;
-	rasterizer.polygonMode = vk::PolygonMode::eFill;
-	rasterizer.lineWidth = 1.0f;
-	rasterizer.cullMode = vk::CullModeFlagBits::eBack;
-	rasterizer.frontFace = vk::FrontFace::eCounterClockwise;
-	rasterizer.depthBiasEnable = VK_TRUE;
-	rasterizer.depthBiasConstantFactor = 0.0f; // Optional
-	rasterizer.depthBiasClamp = 0.0f; // Optional
-	rasterizer.depthBiasSlopeFactor = 0.0f; // Optional
-
-	vk::PipelineMultisampleStateCreateInfo multisampling;
-	multisampling.sampleShadingEnable = VK_FALSE;
-	multisampling.rasterizationSamples = vk::SampleCountFlagBits::e1;
-	multisampling.minSampleShading = 1.0f; // Optional
-	multisampling.pSampleMask = nullptr; // Optional
-	multisampling.alphaToCoverageEnable = VK_FALSE; // Optional
-	multisampling.alphaToOneEnable = VK_FALSE; // Optional
-
+	vk::PipelineMultisampleStateCreateInfo multisampling = VkPipelineInitializers::build_multisampling();
 
 	vk::PipelineColorBlendAttachmentState colorBlendAttachment;
 	colorBlendAttachment.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
@@ -1211,8 +1117,6 @@ void VulkanEngine::render_shadow_pass(const vk::CommandBuffer& cmd)
 	render_registry.view<RenderMeshComponent>().each([&](RenderMeshComponent& renderable) {
 
 		const MeshResource& mesh = render_registry.get<MeshResource>(renderable.mesh_resource_entity);
-		//const PipelineResource& pipeline = render_registry.get<PipelineResource>(renderable.pipeline_entity);
-		//const DescriptorResource& descriptor = render_registry.get<DescriptorResource>(renderable.descriptor_entity);
 
 		bool bShouldBindPipeline = first_render;// ? true : pipeline.pipeline != last_pipeline;
 
@@ -1237,8 +1141,7 @@ void VulkanEngine::render_shadow_pass(const vk::CommandBuffer& cmd)
 			setBuilder.bind_buffer("MainObjectBuffer", transformBufferInfo);
 
 			std::array<vk::DescriptorSet, 2> descriptors;
-			descriptors[0] = setBuilder.build_descriptor(0, DescriptorLifetime::PerFrame);
-			
+			descriptors[0] = setBuilder.build_descriptor(0, DescriptorLifetime::PerFrame);			
 
 			cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, piplayout, 0, 1, &descriptors[0], 0, nullptr);
 		}
@@ -1269,23 +1172,23 @@ constexpr int MULTIDRAW = 1;
 void VulkanEngine::RenderMainPass(const vk::CommandBuffer& cmd)
 {
 	ZoneScopedNC("Main Pass", tracy::Color::BlueViolet);
-		EntityID LastMesh = entt::null;
+	EntityID LastMesh = entt::null;
 	
-		vk::Pipeline last_pipeline = graphicsPipeline;
-		vk::PipelineLayout piplayout;
-		bool first_render = true;		
+	vk::Pipeline last_pipeline = graphicsPipeline;
+	vk::PipelineLayout piplayout;
+	bool first_render = true;		
 
-		
+	
 
-		render_registry.view<RenderMeshComponent>().each([&](RenderMeshComponent& renderable) {
+	render_registry.view<RenderMeshComponent>().each([&](RenderMeshComponent& renderable) {
 
-			const MeshResource& mesh = render_registry.get<MeshResource>(renderable.mesh_resource_entity);
-			const PipelineResource& pipeline = render_registry.get<PipelineResource>(renderable.pipeline_entity);
-			const DescriptorResource& descriptor = render_registry.get<DescriptorResource>(renderable.descriptor_entity);
+		const MeshResource& mesh = render_registry.get<MeshResource>(renderable.mesh_resource_entity);
+		const PipelineResource& pipeline = render_registry.get<PipelineResource>(renderable.pipeline_entity);
+		const DescriptorResource& descriptor = render_registry.get<DescriptorResource>(renderable.descriptor_entity);
 
-			bool bShouldBindPipeline = first_render ? true : pipeline.pipeline != last_pipeline;
+		const bool bShouldBindPipeline = first_render ? true : pipeline.pipeline != last_pipeline;
 
-			if (bShouldBindPipeline) {
+		if (bShouldBindPipeline) {
 				cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline.pipeline);
 				piplayout = (vk::PipelineLayout)pipeline.effect->build_pipeline_layout(device);
 				last_pipeline = graphicsPipeline;
@@ -1347,7 +1250,7 @@ void VulkanEngine::RenderMainPass(const vk::CommandBuffer& cmd)
 				cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, piplayout, 0, 2, &descriptors[0], 0, nullptr);
 			}
 
-			if (LastMesh != renderable.mesh_resource_entity) {
+		if (LastMesh != renderable.mesh_resource_entity) {
 				vk::Buffer meshbuffers[] = { mesh.vertexBuffer.buffer };
 				vk::DeviceSize offsets[] = { 0 };
 				cmd.bindVertexBuffers(0, 1, meshbuffers, offsets);
@@ -1357,18 +1260,15 @@ void VulkanEngine::RenderMainPass(const vk::CommandBuffer& cmd)
 				LastMesh = renderable.mesh_resource_entity;
 			}
 
-			cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, piplayout, 2, 1, &descriptor.materialSet, 0, nullptr);
+		cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, piplayout, 2, 1, &descriptor.materialSet, 0, nullptr);
 
-			cmd.pushConstants(pipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(int), &renderable.object_idx);
+		cmd.pushConstants(pipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(int), &renderable.object_idx);			
+		
+		cmd.drawIndexed(static_cast<uint32_t>(mesh.indices.size()), 1, 0, 0, 0);
+		eng_stats.drawcalls++;
 			
-			for (int i = 0; i < MULTIDRAW; i++)
-			{
-				cmd.drawIndexed(static_cast<uint32_t>(mesh.indices.size()), 1, 0, 0, 0);
-				eng_stats.drawcalls++;
-			}		
-			first_render = false;
-		});
-	
+		first_render = false;
+	});	
 }
 //std::vector<UniformBufferObject> StagingCPUUBOArray;
 void VulkanEngine::update_uniform_buffer(uint32_t currentImage)
@@ -1614,10 +1514,10 @@ void VulkanEngine::create_shadow_framebuffer()
 
 	VkImageCreateInfo imnfo = image;
 
-	VkImage depthImage;
+	VkImage shadowdepthImage;
 
-	vmaCreateImage(allocator, &imnfo, &vmaallocInfo, &depthImage, &shadowPass.depthImageAlloc, nullptr);
-	shadowPass.depth.image = depthImage;
+	vmaCreateImage(allocator, &imnfo, &vmaallocInfo, &shadowdepthImage, &shadowPass.depthImageAlloc, nullptr);
+	shadowPass.depth.image = shadowdepthImage;
 	vk::ImageViewCreateInfo depthStencilView;
 	depthStencilView.viewType = vk::ImageViewType::e2D;
 	depthStencilView.format = vk::Format::eD16Unorm;

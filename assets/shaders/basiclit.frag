@@ -32,7 +32,7 @@ layout(location = 4) in vec3 eyePos;
 layout(location = 5) in vec4 inShadowCoord;
 
 layout(location = 0) out vec4 outColor;
-#define ambientshadow 0.3
+#define ambientshadow 0.1
 float shadowSample(){
    return texture( shadowMap, (inShadowCoord / inShadowCoord.w).st).r;
 }
@@ -50,6 +50,7 @@ float textureProj(vec4 shadowCoord, vec2 off)
 	}
 	return shadow;
 }
+
 
 float filterPCF(vec4 sc)
 {
@@ -74,40 +75,105 @@ float filterPCF(vec4 sc)
 	return shadowFactor / count;
 }
 
+const float PI = 3.14159265359;
+float DistributionGGX(vec3 N, vec3 H, float roughness)
+{
+    float a      = roughness*roughness;
+    float a2     = a*a;
+    float NdotH  = max(dot(N, H), 0.0);
+    float NdotH2 = NdotH*NdotH;
+	
+    float num   = a2;
+    float denom = (NdotH2 * (a2 - 1.0) + 1.0);
+    denom = PI * denom * denom;
+	
+    return num / denom;
+}
 
+float GeometrySchlickGGX(float NdotV, float roughness)
+{
+    float r = (roughness + 1.0);
+    float k = (r*r) / 8.0;
+
+    float num   = NdotV;
+    float denom = NdotV * (1.0 - k) + k;
+	
+    return num / denom;
+}
+float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
+{
+    float NdotV = max(dot(N, V), 0.0);
+    float NdotL = max(dot(N, L), 0.0);
+    float ggx2  = GeometrySchlickGGX(NdotV, roughness);
+    float ggx1  = GeometrySchlickGGX(NdotL, roughness);
+	
+    return ggx1 * ggx2;
+}
+
+vec3 fresnelSchlick(float cosTheta, vec3 F0)
+{
+    return F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
+} 
 void main() {
-
-
-
+	//vec3 ambient = sceneParams.ambient.xyz * sceneParams.ambient.w;
 	vec3 light_dir = normalize(vec3(100.0f, 600.0f, 800.0f)) * 1.f;
 
-
-
-	vec3 viewDir = normalize(eyePos - fragPos);
-	vec3 halfwayDir = normalize(light_dir + viewDir);
-
+    float ao = 1.f;
+	vec3 albedo = texture(tex1, fragTexCoord).rgb;
+	float metallic =  texture(tex3, fragTexCoord).b;
+	float roughness =  texture(tex3, fragTexCoord).g;
 	vec4 emmisive = texture(tex4, fragTexCoord);
 
-	float shadow = filterPCF(inShadowCoord / inShadowCoord.w);//textureProj(inShadowCoord / inShadowCoord.w, vec2(0.0));
+    vec3 N = normalize(fragNormal);
+    vec3 V = normalize(eyePos - fragPos);
+
+	vec3 F0 = vec3(0.04); 
+    F0 = mix(F0, albedo, metallic);
 
 
-	vec4 color = texture(tex1, fragTexCoord);
-	float metal =  texture(tex3, fragTexCoord).b;
-	float rough =  texture(tex3, fragTexCoord).g;
+	// reflectance equation
+    vec3 Lo = vec3(0.0);
 
+	float shadow = filterPCF(inShadowCoord / inShadowCoord.w);
+
+	vec3 radiance = texture(ambientCubemap, N, 0).rgb;
+
+	//light
+	vec3 L = light_dir;
+    vec3 H = normalize(V + L);
+	{
+		float distance    = length(light_dir);
+		float attenuation = shadow;// / (distance * distance);
+		vec3 lightradiance     = vec3(1.f,.9f,.9f) * attenuation * 10.f;        
+		
+		// cook-torrance brdf
+		float NDF = DistributionGGX(N, H, roughness);        
+		float G   = GeometrySmith(N, V, L, roughness);      
+		vec3 F    = fresnelSchlick(max(dot(H, V), 0.0), F0);       
+		
+		vec3 kS = F;
+		vec3 kD = vec3(1.0) - kS;
+		kD *= 1.0 - metallic;	  
+		
+		vec3 numerator    = NDF * G * F;
+		float denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0);
+		vec3 specular     = numerator / max(denominator, 0.001);  
+		    
+		// add to outgoing radiance Lo
+		float NdotL = max(dot(N, L), 0.0);                
+		Lo += (kD * albedo / PI + specular) * lightradiance * NdotL; 
+	}
+	vec3 kS = fresnelSchlick(max(dot(N, V), 0.0), F0);
+	vec3 kD = 1.0 - kS;
+	//vec3 irradiance = 1.f;//radiance;//texture(irradianceMap, N).rgb;
+	vec3 diffuse    = albedo;//irradiance * albedo;
+	//vec3 ambient    = (kD * diffuse) * ao; 
+
+	vec3 ambient = (kD * diffuse) * sceneParams.ambient.w;
+    vec3 color = ambient + Lo;
 	
-	vec4 cubemap = texture(ambientCubemap, reflect(-viewDir,fragNormal), 0);
-
-
-	float diffuse = clamp(dot(fragNormal,light_dir),0.1f,1.0f);
-	float spec = pow(max(dot(fragNormal, halfwayDir), 0.0),  mix(8,1.f, rough));
-
-	float fog_dist = clamp( length (fragPos - eyePos)/5000 ,0, 1.f);
-
-	vec4 dialectric = (color)*diffuse + vec4(0.1f) * spec;
-	vec4 metallic =  (color)*(spec*diffuse);
-
-	vec4 final_color = emmisive+ (mix(dialectric,metallic, metal) + vec4(sceneParams.ambient.xyz,0)) * sceneParams.ambient.w;
-
-    outColor = mix(shadow* mix(final_color,cubemap * color,metal * 0.3),  vec4( shadowSample()), sceneParams.fog_a.w);
+    color = color / (color + vec3(1.0));
+    //color = pow(color, vec3(1.0/2.2));  
+   
+    outColor = vec4(color, 1.0) + emmisive;
 }

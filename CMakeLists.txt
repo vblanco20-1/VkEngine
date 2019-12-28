@@ -15,6 +15,7 @@ file(GLOB_RECURSE GLSL_SOURCE_FILES
 	"${PROJECT_SOURCE_DIR}/assets/shaders/*.inl"
     )
 
+source_group("Shaders" FILES ${GLSL_SOURCE_FILES})
 add_library(
     Shaders 
 	"${PROJECT_SOURCE_DIR}/assets/shaders/dummy.cpp"
