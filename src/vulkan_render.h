@@ -3,6 +3,7 @@
 
 #include "vulkan_types.h"
 #include "vulkan_descriptors.h"
+#include "frustum_cull.h"
 
 constexpr int MAX_FRAMES_IN_FLIGHT =2;
 constexpr int MAX_UNIFORM_BUFFER = 5000;
@@ -30,6 +31,7 @@ const std::vector<const char*> deviceExtensions = {
 struct Camera {
 	glm::vec3 eyeLoc;
 	glm::vec3 eyeDir;
+	Frustum camfrustum;
 };
 
 struct VulkanEngine {

@@ -1187,7 +1187,13 @@ void VulkanEngine::RenderMainPass(const vk::CommandBuffer& cmd)
 
 		float angle = glm::angle(dir, mainCam.eyeDir);
 
-		bVisible = glm::degrees(angle) < 90.f;
+		glm::vec3 bmin = bounds_center - glm::vec3(bounds.extent);
+		glm::vec3 bmax = bounds_center + glm::vec3(bounds.extent);
+
+		bVisible = mainCam.camfrustum.IsBoxVisible(bmin,bmax); //glm::degrees(angle) < 90.f;
+
+
+
 
 		if (bVisible) {
 			DrawUnit newDrawUnit;
@@ -1332,6 +1338,8 @@ void VulkanEngine::update_uniform_buffer(uint32_t currentImage)
 
 	mainCam.eyeLoc = eye;
 	mainCam.eyeDir = glm::normalize (eye - glm::vec3(0.0f, 400.0f, 0.0f));
+
+	mainCam.camfrustum = Frustum(ubo.proj * ubo.view);
 
 
 	UniformBufferObject shadowubo = {};	
