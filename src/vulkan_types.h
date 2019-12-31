@@ -99,10 +99,17 @@ struct TextureResourceMetadata {
 	vk::Format image_format;
 };
 
+struct ObjectBounds {
+	//radius of sphere in W
+	glm::vec4 center_rad;
+	glm::vec4 extent;
+};
+
 struct MeshResource : public ResourceComponent {
 	AllocatedBuffer vertexBuffer;
 	AllocatedBuffer indexBuffer;
 
+	ObjectBounds bounds;
 	std::vector<Vertex> vertices;
 	std::vector<uint32_t> indices;
 };
@@ -113,8 +120,16 @@ struct ShaderEffectHandle :public ResourceComponent {
 
 struct PipelineResource : public ResourceComponent {
 	vk::Pipeline pipeline;
-	ShaderEffect* effect;
+	struct ShaderEffect* effect;
 	struct GraphicsPipelineBuilder* pipelineBuilder;
+};
+
+enum class MeshPasIndex : uint8_t {
+	ShadowPass = 0,
+	GBufferPass = 1,
+	MainPass = 2,
+	TransparencyPass = 3,
+	Num = 4
 };
 
 struct DescriptorResource : public ResourceComponent {
@@ -122,14 +137,28 @@ struct DescriptorResource : public ResourceComponent {
 	vk::DescriptorSet materialSet;
 };
 
+
+
 struct RenderMeshComponent {
 	//holds the data needed to render a mesh
 
-	EntityID pipeline_entity;
-	EntityID mesh_resource_entity;
-	EntityID descriptor_entity;
+	std::array<EntityID, (size_t)MeshPasIndex::Num> pass_pipelines;
+	std::array<EntityID, (size_t)MeshPasIndex::Num> pass_descriptors;
 
-	uint32_t ubo_descriptor_offset;
+	//EntityID pipeline_entity;
+	EntityID mesh_resource_entity;
+	//EntityID descriptor_entity;
+
+	uint32_t object_idx;
+};
+
+struct DrawUnit {
+	vk::Pipeline pipeline;
+	vk::DescriptorSet material_set;
+	vk::Buffer vertexBuffer;
+	vk::Buffer indexBuffer;
+	ShaderEffect* effect;
+	uint32_t index_count;
 	uint32_t object_idx;
 };
 

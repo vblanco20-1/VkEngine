@@ -25,6 +25,8 @@ namespace VkPipelineInitializers {
 }
 struct ShaderEffect;
 
+
+
 struct GraphicsPipelineBuilder {
 	struct VulkanInfos {
 		vk::Viewport viewport;

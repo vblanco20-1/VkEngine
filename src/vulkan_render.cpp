@@ -2,7 +2,7 @@
 #include "vulkan_render.h"
 #include "sdl_render.h"
 #include "rawbuffer.h"
-
+#include <glm/gtx/vector_angle.hpp>
 #include "termcolor.hpp"
 //#include <gli/gli.hpp>
 #include <vk_format.h>
@@ -175,12 +175,12 @@ void VulkanEngine::init_vulkan()
 	sceneParameters.fog_b.y = 10000.f;
 	sceneParameters.ambient = glm::vec4(0.1f);
 	//load_scene("E:/Gamedev/tps-demo/level/geometry/demolevel.blend");
-	//load_scene(MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Interior.fbx"), glm::mat4(1.f));
-	//load_scene(MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Exterior.fbx"), glm::mat4(1.f));
+	load_scene(MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Interior.fbx"), glm::mat4(1.f));
+	load_scene(MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Exterior.fbx"), glm::mat4(1.f));
 
 
-	load_scene(MAKE_ASSET_PATH("models/SunTemple.fbx"),
-		glm::rotate(glm::mat4(1), glm::radians(90.f), glm::vec3(1, 0, 0)));
+	//load_scene(MAKE_ASSET_PATH("models/SunTemple.fbx"),
+	//	glm::rotate(glm::mat4(1), glm::radians(90.f), glm::vec3(1, 0, 0)));
 
 	ImGui::CreateContext();
 
@@ -538,6 +538,90 @@ void VulkanEngine::create_render_pass()
 	renderPassInfo.pDependencies = &dependency;
 
 	renderPass = device.createRenderPass(renderPassInfo);
+}
+
+void VulkanEngine::create_thin_gbuffer_pass()
+{
+	vk::AttachmentDescription posdepthAttachment;
+	posdepthAttachment.format = vk::Format::eR32G32B32A32Sfloat;
+	posdepthAttachment.samples = vk::SampleCountFlagBits::e1;
+	posdepthAttachment.loadOp = vk::AttachmentLoadOp::eClear;
+	posdepthAttachment.storeOp = vk::AttachmentStoreOp::eStore;
+
+	posdepthAttachment.initialLayout = vk::ImageLayout::eUndefined;
+	posdepthAttachment.finalLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+
+	vk::AttachmentDescription normalAttachment;
+	normalAttachment.format = vk::Format::eR16G16B16A16Sfloat;
+	normalAttachment.samples = vk::SampleCountFlagBits::e1;
+	normalAttachment.loadOp = vk::AttachmentLoadOp::eClear;
+	normalAttachment.storeOp = vk::AttachmentStoreOp::eStore;
+
+	normalAttachment.initialLayout = vk::ImageLayout::eUndefined;
+	normalAttachment.finalLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+
+	vk::AttachmentDescription depthAttachment;
+	depthAttachment.format = findDepthFormat();
+	depthAttachment.samples = vk::SampleCountFlagBits::e1;
+	depthAttachment.loadOp = vk::AttachmentLoadOp::eClear;
+	depthAttachment.storeOp = vk::AttachmentStoreOp::eDontCare;
+	depthAttachment.stencilLoadOp = vk::AttachmentLoadOp::eDontCare;
+	depthAttachment.stencilStoreOp = vk::AttachmentStoreOp::eDontCare;
+	depthAttachment.initialLayout = vk::ImageLayout::eUndefined;
+	depthAttachment.finalLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
+
+	vk::AttachmentReference posdepthAttachmentRef;
+	posdepthAttachmentRef.attachment = 0;
+	posdepthAttachmentRef.layout = vk::ImageLayout::eColorAttachmentOptimal;
+
+	vk::AttachmentReference normalAttachmentRef;
+	normalAttachmentRef.attachment = 1;
+	normalAttachmentRef.layout = vk::ImageLayout::eColorAttachmentOptimal;
+
+	vk::AttachmentReference depthAttachmentRef;
+	depthAttachmentRef.attachment = 2;
+	depthAttachmentRef.layout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
+
+	vk::AttachmentReference attachrefs[] = { posdepthAttachmentRef,normalAttachmentRef };
+
+	vk::SubpassDescription subpass;
+	subpass.pipelineBindPoint = vk::PipelineBindPoint::eGraphics;
+	subpass.colorAttachmentCount = 2;
+	subpass.pColorAttachments = attachrefs;
+	subpass.pDepthStencilAttachment = &depthAttachmentRef;
+
+	std::array < vk::SubpassDependency, 2> dependencies;
+	dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+	dependencies[0].dstSubpass = 0;
+
+	dependencies[0].srcStageMask = vk::PipelineStageFlagBits::eFragmentShader;
+	dependencies[0].dstStageMask = vk::PipelineStageFlagBits::eEarlyFragmentTests;
+
+	dependencies[0].srcAccessMask = vk::AccessFlagBits::eShaderRead;
+	dependencies[0].dstAccessMask = vk::AccessFlagBits::eDepthStencilAttachmentWrite;
+
+	dependencies[0].dependencyFlags = vk::DependencyFlagBits::eByRegion;
+
+	dependencies[1].srcSubpass = 0;
+	dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
+
+	dependencies[1].srcStageMask = vk::PipelineStageFlagBits::eLateFragmentTests;
+	dependencies[1].dstStageMask = vk::PipelineStageFlagBits::eFragmentShader;
+
+	dependencies[1].srcAccessMask = vk::AccessFlagBits::eDepthStencilAttachmentWrite;
+	dependencies[1].dstAccessMask = vk::AccessFlagBits::eShaderRead;
+	dependencies[1].dependencyFlags = vk::DependencyFlagBits::eByRegion;
+
+	std::array<vk::AttachmentDescription, 3> attachments = { posdepthAttachment, normalAttachment, depthAttachment };
+	vk::RenderPassCreateInfo renderPassInfo;
+	renderPassInfo.attachmentCount = static_cast<uint32_t>(attachments.size());;
+	renderPassInfo.pAttachments = attachments.data();
+	renderPassInfo.subpassCount = 1;
+	renderPassInfo.pSubpasses = &subpass;
+	renderPassInfo.dependencyCount = static_cast<uint32_t>(dependencies.size());;
+	renderPassInfo.pDependencies = dependencies.data();
+
+	gbuffPass.renderPass = device.createRenderPass(renderPassInfo);
 }
 
 void VulkanEngine::create_framebuffers()
@@ -903,9 +987,9 @@ void VulkanEngine::draw_frame()
 
 	{
 		ZoneScopedNC("RenderSort", tracy::Color::Violet);
-		render_registry.sort<RenderMeshComponent>([](const RenderMeshComponent& A, const RenderMeshComponent& B) {
-			return A.mesh_resource_entity < B.mesh_resource_entity;
-			}, entt::std_sort{});
+		//render_registry.sort<RenderMeshComponent>([](const RenderMeshComponent& A, const RenderMeshComponent& B) {
+		//	return A.mesh_resource_entity < B.mesh_resource_entity;
+		//	}, entt::std_sort{});
 	}
 
 	//shadowpass
@@ -1064,8 +1148,6 @@ void VulkanEngine::render_shadow_pass(const vk::CommandBuffer& cmd)
 			LastMesh = renderable.mesh_resource_entity;
 		}
 
-		//cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, piplayout, 2, 1, &descriptor.materialSet, 0, nullptr);
-
 		cmd.pushConstants(piplayout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(int), &renderable.object_idx);
 
 		
@@ -1084,99 +1166,138 @@ void VulkanEngine::RenderMainPass(const vk::CommandBuffer& cmd)
 	
 	vk::Pipeline last_pipeline;
 	vk::PipelineLayout piplayout;
+	vk::Buffer last_vertex_buffer;
+	vk::Buffer last_index_buffer;
 	bool first_render = true;		
 
-	
+	static std::vector<DrawUnit> drawables;
 
-	render_registry.view<RenderMeshComponent>().each([&](RenderMeshComponent& renderable) {
+	drawables.clear();
+	drawables.reserve(render_registry.view<RenderMeshComponent>().size());
 
+	render_registry.group<RenderMeshComponent,TransformComponent,ObjectBounds>().each([&](RenderMeshComponent& renderable,TransformComponent& tf ,ObjectBounds& bounds) {
 		const MeshResource& mesh = render_registry.get<MeshResource>(renderable.mesh_resource_entity);
-		const PipelineResource& pipeline = render_registry.get<PipelineResource>(renderable.pipeline_entity);
-		const DescriptorResource& descriptor = render_registry.get<DescriptorResource>(renderable.descriptor_entity);
+		const PipelineResource& pipeline = render_registry.get<PipelineResource>(renderable.pass_pipelines[(size_t)MeshPasIndex::MainPass]);
+		const DescriptorResource& descriptor = render_registry.get<DescriptorResource>(renderable.pass_descriptors[(size_t)MeshPasIndex::MainPass]);
 
-		const bool bShouldBindPipeline = first_render ? true : pipeline.pipeline != last_pipeline;
+		bool bVisible = false;
+
+		glm::vec3 bounds_center = glm::vec3(bounds.center_rad);
+		glm::vec3 dir = normalize(mainCam.eyeLoc - bounds_center);
+
+		float angle = glm::angle(dir, mainCam.eyeDir);
+
+		bVisible = glm::degrees(angle) < 90.f;
+
+		if (bVisible) {
+			DrawUnit newDrawUnit;
+			newDrawUnit.indexBuffer = mesh.indexBuffer.buffer;
+			newDrawUnit.vertexBuffer = mesh.vertexBuffer.buffer;
+			newDrawUnit.index_count = mesh.indices.size();
+			newDrawUnit.material_set = descriptor.materialSet;
+			newDrawUnit.object_idx = renderable.object_idx;
+			newDrawUnit.pipeline = pipeline.pipeline;
+			newDrawUnit.effect = pipeline.effect;
+
+			drawables.push_back(newDrawUnit);
+		}		
+	});
+
+	std::sort(drawables.begin(), drawables.end(), [](const DrawUnit& a, const DrawUnit& b) {
+		return a.vertexBuffer < b.vertexBuffer;
+		});	
+
+	for(const DrawUnit& unit : drawables){		
+
+		const bool bShouldBindPipeline = unit.pipeline != last_pipeline;
 
 		if (bShouldBindPipeline) {
-				cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline.pipeline);
-				piplayout = (vk::PipelineLayout)pipeline.effect->build_pipeline_layout(device);
-				last_pipeline = pipeline.pipeline;
+			cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, unit.pipeline);
+			piplayout = (vk::PipelineLayout)unit.effect->build_pipeline_layout(device);
+			last_pipeline = unit.pipeline;
 
-				DescriptorSetBuilder setBuilder{ pipeline.effect,&descriptorMegapool};
-				
-				vk::DescriptorBufferInfo camBufferInfo;
-				if (config_parameters.ShadowView)
-				{
-					camBufferInfo.buffer = shadowDataBuffers[currentFrameIndex].buffer;
-				}
-				else
-				{
-					camBufferInfo.buffer = cameraDataBuffers[currentFrameIndex].buffer;
-				}
-				
-				camBufferInfo.offset = 0;
-				camBufferInfo.range = sizeof(UniformBufferObject);
+			DescriptorSetBuilder setBuilder{ unit.effect,&descriptorMegapool };
 
-
-				vk::DescriptorBufferInfo shadowBufferInfo;
-				shadowBufferInfo.buffer = shadowDataBuffers[currentFrameIndex].buffer;
-				shadowBufferInfo.offset = 0;
-				shadowBufferInfo.range = sizeof(UniformBufferObject);
-				
-				vk::DescriptorBufferInfo sceneBufferInfo;
-				sceneBufferInfo.buffer = sceneParamBuffers[currentFrameIndex].buffer;
-				sceneBufferInfo.offset = 0;
-				sceneBufferInfo.range = sizeof(GPUSceneParams);
-
-				vk::DescriptorBufferInfo transformBufferInfo;
-				transformBufferInfo.buffer = object_buffers[currentFrameIndex].buffer;
-				transformBufferInfo.offset = 0;
-				transformBufferInfo.range = sizeof(glm::mat4) * 10000;
-
-				const TextureResource& texture = render_registry.get<TextureResource>(testCubemap);
-
-				vk::DescriptorImageInfo imageInfo = {};
-				imageInfo.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-				imageInfo.imageView = texture.imageView;
-				imageInfo.sampler = texture.textureSampler;
-
-				vk::DescriptorImageInfo shadowInfo = {};
-				shadowInfo.imageLayout = vk::ImageLayout::eDepthStencilReadOnlyOptimal;
-				shadowInfo.imageView = shadowPass.depth.view;
-				shadowInfo.sampler = shadowPass.depthSampler; 
-				
-				setBuilder.bind_image("shadowMap", shadowInfo);
-				setBuilder.bind_image("ambientCubemap", imageInfo);
-				setBuilder.bind_buffer("ubo", camBufferInfo);
-				setBuilder.bind_buffer("shadowUbo", shadowBufferInfo);
-				setBuilder.bind_buffer("sceneParams", sceneBufferInfo);
-				setBuilder.bind_buffer("MainObjectBuffer", transformBufferInfo);
-				
-				std::array<vk::DescriptorSet, 2> descriptors;
-				descriptors[0] = setBuilder.build_descriptor(0, DescriptorLifetime::PerFrame);
-				descriptors[1] = setBuilder.build_descriptor(1, DescriptorLifetime::PerFrame);
-				
-				cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, piplayout, 0, 2, &descriptors[0], 0, nullptr);
+			vk::DescriptorBufferInfo camBufferInfo;
+			if (config_parameters.ShadowView)
+			{
+				camBufferInfo.buffer = shadowDataBuffers[currentFrameIndex].buffer;
+			}
+			else
+			{
+				camBufferInfo.buffer = cameraDataBuffers[currentFrameIndex].buffer;
 			}
 
-		if (LastMesh != renderable.mesh_resource_entity) {
-				vk::Buffer meshbuffers[] = { mesh.vertexBuffer.buffer };
-				vk::DeviceSize offsets[] = { 0 };
-				cmd.bindVertexBuffers(0, 1, meshbuffers, offsets);
+			camBufferInfo.offset = 0;
+			camBufferInfo.range = sizeof(UniformBufferObject);
 
-				cmd.bindIndexBuffer(mesh.indexBuffer.buffer, 0, vk::IndexType::eUint32);
 
-				LastMesh = renderable.mesh_resource_entity;
-			}
+			vk::DescriptorBufferInfo shadowBufferInfo;
+			shadowBufferInfo.buffer = shadowDataBuffers[currentFrameIndex].buffer;
+			shadowBufferInfo.offset = 0;
+			shadowBufferInfo.range = sizeof(UniformBufferObject);
 
-		cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, piplayout, 2, 1, &descriptor.materialSet, 0, nullptr);
+			vk::DescriptorBufferInfo sceneBufferInfo;
+			sceneBufferInfo.buffer = sceneParamBuffers[currentFrameIndex].buffer;
+			sceneBufferInfo.offset = 0;
+			sceneBufferInfo.range = sizeof(GPUSceneParams);
 
-		cmd.pushConstants(piplayout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(int), &renderable.object_idx);
-		
-		cmd.drawIndexed(static_cast<uint32_t>(mesh.indices.size()), 1, 0, 0, 0);
-		eng_stats.drawcalls++;
+			vk::DescriptorBufferInfo transformBufferInfo;
+			transformBufferInfo.buffer = object_buffers[currentFrameIndex].buffer;
+			transformBufferInfo.offset = 0;
+			transformBufferInfo.range = sizeof(glm::mat4) * 10000;
+
+			const TextureResource& texture = render_registry.get<TextureResource>(testCubemap);
+
+			vk::DescriptorImageInfo imageInfo = {};
+			imageInfo.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+			imageInfo.imageView = texture.imageView;
+			imageInfo.sampler = texture.textureSampler;
+
+			vk::DescriptorImageInfo shadowInfo = {};
+			shadowInfo.imageLayout = vk::ImageLayout::eDepthStencilReadOnlyOptimal;
+			shadowInfo.imageView = shadowPass.depth.view;
+			shadowInfo.sampler = shadowPass.depthSampler;
+
+			setBuilder.bind_image("shadowMap", shadowInfo);
+			setBuilder.bind_image("ambientCubemap", imageInfo);
+			setBuilder.bind_buffer("ubo", camBufferInfo);
+			setBuilder.bind_buffer("shadowUbo", shadowBufferInfo);
+			setBuilder.bind_buffer("sceneParams", sceneBufferInfo);
+			setBuilder.bind_buffer("MainObjectBuffer", transformBufferInfo);
+
+			std::array<vk::DescriptorSet, 2> descriptors;
+			descriptors[0] = setBuilder.build_descriptor(0, DescriptorLifetime::PerFrame);
+			descriptors[1] = setBuilder.build_descriptor(1, DescriptorLifetime::PerFrame);
+
+			cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, piplayout, 0, 2, &descriptors[0], 0, nullptr);
+		}
+
+		if (last_vertex_buffer != unit.vertexBuffer) {
+			vk::Buffer meshbuffers[] = { unit.vertexBuffer };
+			vk::DeviceSize offsets[] = { 0 };
+
+			cmd.bindVertexBuffers(0, 1, meshbuffers, offsets);		
+
+			last_vertex_buffer = unit.vertexBuffer;
+		}
+
+		if (last_index_buffer != unit.indexBuffer) {
 			
+			cmd.bindIndexBuffer(unit.indexBuffer, 0, vk::IndexType::eUint32);
+
+			last_index_buffer = unit.indexBuffer;
+		}
+
+		cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, piplayout, 2, 1, &unit.material_set, 0, nullptr);
+
+		cmd.pushConstants(piplayout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(int), &unit.object_idx);
+
+		cmd.drawIndexed(static_cast<uint32_t>(unit.index_count), 1, 0, 0, 0);
+		eng_stats.drawcalls++;
+
 		first_render = false;
-	});	
+	}
 }
 //std::vector<UniformBufferObject> StagingCPUUBOArray;
 void VulkanEngine::update_uniform_buffer(uint32_t currentImage)
@@ -1190,15 +1311,15 @@ void VulkanEngine::update_uniform_buffer(uint32_t currentImage)
 	float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
 	float delta = std::chrono::duration<float, std::chrono::milliseconds::period>(currentTime - lastTime).count();
 	lastTime = currentTime;
-		if ((globalFrameNumber % 10) == 0) {
-			//std::cout << "[frametime]" << delta << std::endl;
-		}
+	if ((globalFrameNumber % 10) == 0) {
+		//std::cout << "[frametime]" << delta << std::endl;
+	}
 
-		eng_stats.frametime *= 0.9f;//delta;
-		eng_stats.frametime += delta / 10.f;
-		float camUp = sin(time / 10.0f) * 1000.f;
+	eng_stats.frametime *= 0.9f;//delta;
+	eng_stats.frametime += delta / 10.f;
+	float camUp = sin(time / 10.0f) * 1000.f;
 
-		auto eye = glm::vec3(camUp, 100, 600);
+	auto eye = glm::vec3(camUp, 100, 600);
 
 	UniformBufferObject ubo = {};
 	ubo.model = glm::mat4(1.0f);
@@ -1208,6 +1329,11 @@ void VulkanEngine::update_uniform_buffer(uint32_t currentImage)
 	//invert projection matrix couse glm is inverted y compared to vulkan
 	ubo.proj[1][1] *= -1;
 	
+
+	mainCam.eyeLoc = eye;
+	mainCam.eyeDir = glm::normalize (eye - glm::vec3(0.0f, 400.0f, 0.0f));
+
+
 	UniformBufferObject shadowubo = {};	
 
 	glm::vec3 shadowloc = config_parameters.sun_location;
@@ -1259,7 +1385,7 @@ void VulkanEngine::update_uniform_buffer(uint32_t currentImage)
 
 		object_matrices.resize(render_registry.capacity<RenderMeshComponent>());
 		
-		render_registry.view<RenderMeshComponent, TransformComponent>().each([&](EntityID id, RenderMeshComponent& renderable, const TransformComponent& transform) {
+		render_registry.group<RenderMeshComponent, TransformComponent, ObjectBounds>().each([&](EntityID id, RenderMeshComponent& renderable, const TransformComponent& transform, ObjectBounds& bounds) {
 
 			object_matrices[copyidx] = transform.model;			
 			renderable.object_idx = copyidx;
@@ -1600,6 +1726,19 @@ EntityID VulkanEngine::load_assimp_mesh(aiMesh* mesh)
 {
 	MeshResource newMesh;
 	
+
+	glm::vec3 bmin = { mesh->mAABB.mMin.x,mesh->mAABB.mMin.y,mesh->mAABB.mMin.z };
+	glm::vec3 bmax = { mesh->mAABB.mMax.x,mesh->mAABB.mMax.y,mesh->mAABB.mMax.z };
+
+	ObjectBounds bounds;
+
+	bounds.center_rad = glm::vec4((bmax + bmin) / 2.f,1.f);
+
+	bounds.extent = glm::abs(glm::vec4((bmax - bmin) / 2.f, 0.f));
+	bounds.center_rad.w = glm::length(bounds.extent);
+
+	newMesh.bounds = bounds;
+
 	newMesh.vertices.clear();
 	newMesh.indices.clear();
 	
@@ -1795,7 +1934,7 @@ bool VulkanEngine::load_scene(const char* scene_path, glm::mat4 rootMatrix)
 	const aiScene* scene;
 	{
 		ZoneScopedNC("Assimp load", tracy::Color::Magenta);
-		scene = importer.ReadFile(scene_path, aiProcess_Triangulate | aiProcess_OptimizeMeshes | aiProcess_FlipUVs | aiProcess_GenNormals);
+		scene = importer.ReadFile(scene_path, aiProcessPreset_TargetRealtime_MaxQuality | aiProcess_GenBoundingBoxes); //aiProcess_Triangulate | aiProcess_OptimizeMeshes | aiProcess_FlipUVs | aiProcess_GenNormals | aiProcess_GenBoundingBoxes);
 	}
 	
 	
@@ -1947,7 +2086,7 @@ bool VulkanEngine::load_scene(const char* scene_path, glm::mat4 rootMatrix)
 
 	entt::registry& registry = render_registry;
 
-	std::function<void(aiNode * node, aiMatrix4x4 & parentmat)> process_node = [&mesh_descriptors,&loaded_meshes, &registry, &pipeline_id, &process_node](aiNode* node, aiMatrix4x4& parentmat) {
+	std::function<void(aiNode * node, aiMatrix4x4 & parentmat)> process_node = [&](aiNode* node, aiMatrix4x4& parentmat) {
 
 		aiMatrix4x4 node_mat = /*node->mTransformation */parentmat;
 		//std::cout << "node transforms: ";
@@ -1962,14 +2101,22 @@ bool VulkanEngine::load_scene(const char* scene_path, glm::mat4 rootMatrix)
 		//}
 		for (int msh = 0; msh < node->mNumMeshes; msh++) {
 			RenderMeshComponent renderable;
-			renderable.descriptor_entity = mesh_descriptors[node->mMeshes[msh]];
+			renderable.pass_descriptors[(size_t)MeshPasIndex::MainPass] = mesh_descriptors[node->mMeshes[msh]];			
 
 			renderable.mesh_resource_entity = loaded_meshes[node->mMeshes[msh]];// node->//mesh_id;
-			renderable.pipeline_entity = pipeline_id;
+			//renderable.pipeline_entity = pipeline_id;
+
+			renderable.pass_pipelines[(size_t)MeshPasIndex::MainPass] = pipeline_id;
+			//renderable.pass_pipelines[MeshPasIndex::ShadowPass] = shadowPipeline;
+
+
+			
+			
+
 
 			EntityID id = registry.create();
 			registry.assign<RenderMeshComponent>(id, renderable);
-
+			
 			glm::mat4 modelmat;
 			for (int y = 0; y < 4; y++)
 			{
@@ -1986,7 +2133,18 @@ bool VulkanEngine::load_scene(const char* scene_path, glm::mat4 rootMatrix)
 			registry.get<TransformComponent>(id).scale = glm::vec3{1.f};
 			registry.get<TransformComponent>(id).location = glm::vec3(0.0f, 0.0f, 0.0f);
 
+			ObjectBounds meshBounds = getResource<MeshResource>(renderable.mesh_resource_entity).bounds;
+
+			glm::vec4 center = meshBounds.center_rad;
+			center.w = 1;
+
+			center = modelmat * center;
 			
+			meshBounds.center_rad.x = center.x;
+			meshBounds.center_rad.y = center.y;
+			meshBounds.center_rad.z = center.z;
+
+			registry.assign<ObjectBounds>(id, meshBounds);
 		}
 		
 		for (int ch = 0; ch < node->mNumChildren; ch++)

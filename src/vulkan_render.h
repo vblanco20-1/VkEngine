@@ -27,12 +27,15 @@ const std::vector<const char*> deviceExtensions = {
 	//VK_NV_GLSL_SHADER_EXTENSION_NAME
 };
 
-
+struct Camera {
+	glm::vec3 eyeLoc;
+	glm::vec3 eyeDir;
+};
 
 struct VulkanEngine {
 
 	
-
+	Camera mainCam; 
 	vk::Instance instance;
 	vk::DebugUtilsMessengerEXT debugMessenger;
 	vk::PhysicalDevice physicalDevice;
@@ -121,6 +124,19 @@ struct VulkanEngine {
 		VmaAllocation depthImageAlloc;
 	} shadowPass;
 
+	struct GBufferPass {
+		int32_t width, height;
+		VkFramebuffer frameBuffer;
+		FrameBufferAttachment posdepth;
+		FrameBufferAttachment normal;
+		VkRenderPass renderPass;
+		VkSampler posdepthSampler;
+		VkSampler normalSampler;
+		VkDescriptorImageInfo posdepthDescriptor;
+		VkDescriptorImageInfo normalDescriptor;
+		VmaAllocation posdepthImageAlloc;
+		VmaAllocation normalImageAlloc;
+	} gbuffPass;
 
 
 	std::vector<const char*> get_extensions();
@@ -143,6 +159,8 @@ struct VulkanEngine {
 	void create_shadow_pipeline();
 
 	void create_render_pass();
+	void create_thin_gbuffer_pass();
+
 	void create_framebuffers();
 	void create_command_pool();
 
