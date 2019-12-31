@@ -136,6 +136,10 @@ void VulkanEngine::init_vulkan()
 
 	create_depth_resources();
 
+	create_shadow_framebuffer();
+
+	create_gbuffer_framebuffer(swapChainExtent.width, swapChainExtent.height);
+
 	create_framebuffers();
 
 	create_semaphores();
@@ -162,7 +166,7 @@ void VulkanEngine::init_vulkan()
 	//
 	create_descriptor_sets();
 	
-	create_shadow_framebuffer();
+	
 
 
 	blankTexture = load_texture(MAKE_ASSET_PATH("sprites/blank.png"), "blank");
@@ -175,12 +179,12 @@ void VulkanEngine::init_vulkan()
 	sceneParameters.fog_b.y = 10000.f;
 	sceneParameters.ambient = glm::vec4(0.1f);
 	//load_scene("E:/Gamedev/tps-demo/level/geometry/demolevel.blend");
-	load_scene(MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Interior.fbx"), glm::mat4(1.f));
-	load_scene(MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Exterior.fbx"), glm::mat4(1.f));
+	//load_scene(MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Interior.fbx"), glm::mat4(1.f));
+	//load_scene(MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Exterior.fbx"), glm::mat4(1.f));
 
 
-	//load_scene(MAKE_ASSET_PATH("models/SunTemple.fbx"),
-	//	glm::rotate(glm::mat4(1), glm::radians(90.f), glm::vec3(1, 0, 0)));
+	load_scene(MAKE_ASSET_PATH("models/SunTemple.fbx"),
+		glm::rotate(glm::mat4(1), glm::radians(90.f), glm::vec3(1, 0, 0)));
 
 	ImGui::CreateContext();
 
@@ -432,7 +436,7 @@ void VulkanEngine::create_gfx_pipeline()
 	gfxPipelineBuilder->data.inputAssembly = VkPipelineInitializers::build_input_assembly(vk::PrimitiveTopology::eTriangleList);
 	gfxPipelineBuilder->data.viewport = VkPipelineInitializers::build_viewport(swapChainExtent.width, swapChainExtent.height);
 	gfxPipelineBuilder->data.scissor = VkPipelineInitializers::build_rect2d(0, 0, swapChainExtent.width, swapChainExtent.height);
-	gfxPipelineBuilder->data.depthStencil = VkPipelineInitializers::build_depth_stencil(true, true);
+	gfxPipelineBuilder->data.depthStencil = VkPipelineInitializers::build_depth_stencil(true, true,vk::CompareOp::eEqual);
 	gfxPipelineBuilder->data.rasterizer = VkPipelineInitializers::build_rasterizer();
 	gfxPipelineBuilder->data.multisampling = VkPipelineInitializers::build_multisampling();
 	gfxPipelineBuilder->data.colorAttachmentStates.push_back(VkPipelineInitializers::build_color_blend_attachment_state());	
@@ -482,6 +486,48 @@ void VulkanEngine::create_shadow_pipeline()
 	shadowPipeline = shadowPipelineBuilder.build_pipeline(device, shadowPass.renderPass, 0, pipelineEffect);
 }
 
+
+void VulkanEngine::create_gbuffer_pipeline()
+{
+	std::vector<VkPipelineShaderStageCreateInfo> shaderStages;
+	ShaderEffect* pipelineEffect;
+	if (!doesResourceExist<ShaderEffectHandle>("basicgbuf")) {
+
+		ShaderEffectHandle newShader;
+		newShader.handle = new ShaderEffect();
+
+		newShader.handle->add_shader_from_file(MAKE_ASSET_PATH("shaders/gbuffer.vert"));
+		newShader.handle->add_shader_from_file(MAKE_ASSET_PATH("shaders/gbuffer.frag"));
+
+		newShader.handle->build_effect(device);
+
+		pipelineEffect = newShader.handle;
+
+		createResource<ShaderEffectHandle>("basicgbuf", newShader);
+	}
+	else
+	{
+		pipelineEffect = getResource<ShaderEffectHandle>("basicgbuf").handle;
+	}
+
+	gbufferPipelineBuilder = new GraphicsPipelineBuilder();
+
+
+	gbufferPipelineBuilder->data.vertexInputInfo = Vertex::getPipelineCreateInfo();
+	gbufferPipelineBuilder->data.inputAssembly = VkPipelineInitializers::build_input_assembly(vk::PrimitiveTopology::eTriangleList);
+	gbufferPipelineBuilder->data.viewport = VkPipelineInitializers::build_viewport(swapChainExtent.width, swapChainExtent.height);
+	gbufferPipelineBuilder->data.scissor = VkPipelineInitializers::build_rect2d(0, 0, swapChainExtent.width, swapChainExtent.height);
+	gbufferPipelineBuilder->data.depthStencil = VkPipelineInitializers::build_depth_stencil(true, true);
+	gbufferPipelineBuilder->data.rasterizer = VkPipelineInitializers::build_rasterizer();
+	gbufferPipelineBuilder->data.multisampling = VkPipelineInitializers::build_multisampling();
+	//2 oclor attachments
+	gbufferPipelineBuilder->data.colorAttachmentStates.push_back(VkPipelineInitializers::build_color_blend_attachment_state());
+	gbufferPipelineBuilder->data.colorAttachmentStates.push_back(VkPipelineInitializers::build_color_blend_attachment_state());
+
+	gbufferPipeline = gbufferPipelineBuilder->build_pipeline(device, gbuffPass.renderPass, 0, pipelineEffect);
+}
+
+
 void VulkanEngine::create_render_pass()
 {
 	vk::AttachmentDescription colorAttachment;
@@ -497,11 +543,11 @@ void VulkanEngine::create_render_pass()
 	vk::AttachmentDescription depthAttachment;
 	depthAttachment.format = findDepthFormat();
 	depthAttachment.samples = vk::SampleCountFlagBits::e1;
-	depthAttachment.loadOp = vk::AttachmentLoadOp::eClear;
+	depthAttachment.loadOp = vk::AttachmentLoadOp::eLoad;
 	depthAttachment.storeOp = vk::AttachmentStoreOp::eDontCare;
-	depthAttachment.stencilLoadOp = vk::AttachmentLoadOp::eDontCare;
+	depthAttachment.stencilLoadOp = vk::AttachmentLoadOp::eLoad;
 	depthAttachment.stencilStoreOp = vk::AttachmentStoreOp::eDontCare;
-	depthAttachment.initialLayout = vk::ImageLayout::eUndefined;
+	depthAttachment.initialLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
 	depthAttachment.finalLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
 
 	vk::AttachmentReference colorAttachmentRef;
@@ -543,7 +589,7 @@ void VulkanEngine::create_render_pass()
 void VulkanEngine::create_thin_gbuffer_pass()
 {
 	vk::AttachmentDescription posdepthAttachment;
-	posdepthAttachment.format = vk::Format::eR32G32B32A32Sfloat;
+	posdepthAttachment.format = GBufferPass::posdepth_format;
 	posdepthAttachment.samples = vk::SampleCountFlagBits::e1;
 	posdepthAttachment.loadOp = vk::AttachmentLoadOp::eClear;
 	posdepthAttachment.storeOp = vk::AttachmentStoreOp::eStore;
@@ -552,7 +598,7 @@ void VulkanEngine::create_thin_gbuffer_pass()
 	posdepthAttachment.finalLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
 
 	vk::AttachmentDescription normalAttachment;
-	normalAttachment.format = vk::Format::eR16G16B16A16Sfloat;
+	normalAttachment.format = GBufferPass::normal_format;
 	normalAttachment.samples = vk::SampleCountFlagBits::e1;
 	normalAttachment.loadOp = vk::AttachmentLoadOp::eClear;
 	normalAttachment.storeOp = vk::AttachmentStoreOp::eStore;
@@ -564,9 +610,9 @@ void VulkanEngine::create_thin_gbuffer_pass()
 	depthAttachment.format = findDepthFormat();
 	depthAttachment.samples = vk::SampleCountFlagBits::e1;
 	depthAttachment.loadOp = vk::AttachmentLoadOp::eClear;
-	depthAttachment.storeOp = vk::AttachmentStoreOp::eDontCare;
+	depthAttachment.storeOp = vk::AttachmentStoreOp::eStore;
 	depthAttachment.stencilLoadOp = vk::AttachmentLoadOp::eDontCare;
-	depthAttachment.stencilStoreOp = vk::AttachmentStoreOp::eDontCare;
+	depthAttachment.stencilStoreOp = vk::AttachmentStoreOp::eStore;
 	depthAttachment.initialLayout = vk::ImageLayout::eUndefined;
 	depthAttachment.finalLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
 
@@ -894,6 +940,27 @@ void  VulkanEngine::start_shadow_renderpass(vk::CommandBuffer buffer)
 	tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(buffer);
 	buffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
 }
+void  VulkanEngine::start_gbuffer_renderpass(vk::CommandBuffer buffer)
+{
+	std::array<vk::ClearValue, 3> clearValues = {};
+	clearValues[0].color = vk::ClearColorValue{ std::array<float,4> { 0.0f, 0.0f, 0.0f, 1.0f } };
+	clearValues[1].color = vk::ClearColorValue{ std::array<float,4> { 0.0f, 0.0f, 0.0f, 1.0f } };
+	clearValues[2].depthStencil = { 1.0f, 0 };
+
+	vk::RenderPassBeginInfo renderPassInfo;
+	renderPassInfo.renderPass = gbuffPass.renderPass;
+	renderPassInfo.framebuffer = gbuffPass.frameBuffer;
+	renderPassInfo.renderArea.offset = { 0, 0 };
+	renderPassInfo.renderArea.extent.width = swapChainExtent.width;
+	renderPassInfo.renderArea.extent.height = swapChainExtent.height;
+
+	renderPassInfo.clearValueCount = clearValues.size();
+	renderPassInfo.pClearValues = clearValues.data();
+
+
+	tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(buffer);
+	buffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
+}
 void VulkanEngine::start_frame_renderpass(vk::CommandBuffer buffer, vk::Framebuffer framebuffer)
 {
 	vk::RenderPassBeginInfo renderPassInfo;
@@ -902,9 +969,9 @@ void VulkanEngine::start_frame_renderpass(vk::CommandBuffer buffer, vk::Framebuf
 	renderPassInfo.renderArea.offset = { 0, 0 };
 	renderPassInfo.renderArea.extent = swapChainExtent;
 
-	std::array<vk::ClearValue, 2> clearValues = {};
+	std::array<vk::ClearValue, 1> clearValues = {};
 	clearValues[0].color = vk::ClearColorValue{ std::array<float,4> { 0.0f, 0.0f, 0.0f, 1.0f } };
-	clearValues[1].depthStencil = { 1.0f, 0 };
+	//clearValues[1].depthStencil = { 1.0f, 0 };
 
 	renderPassInfo.clearValueCount = clearValues.size();
 	renderPassInfo.pClearValues = clearValues.data();
@@ -999,6 +1066,10 @@ void VulkanEngine::draw_frame()
 		TracyVkZoneC(profilercontext, VkCommandBuffer(cmd), "Shadow pass", tracy::Color::Grey);
 		render_shadow_pass(cmd);
 	}
+	cmd.endRenderPass();
+
+	start_gbuffer_renderpass(cmd);
+	RenderGBufferPass(cmd);
 	cmd.endRenderPass();
 
 	start_frame_renderpass(cmd, swapChainFramebuffers[imageIndex]);
@@ -1305,6 +1376,128 @@ void VulkanEngine::RenderMainPass(const vk::CommandBuffer& cmd)
 		first_render = false;
 	}
 }
+
+void VulkanEngine::RenderGBufferPass(const vk::CommandBuffer& cmd)
+{
+	ZoneScopedNC("GBuffer Pass", tracy::Color::BlueViolet);
+	EntityID LastMesh = entt::null;
+
+	vk::Pipeline last_pipeline;
+	vk::PipelineLayout piplayout;
+	vk::Buffer last_vertex_buffer;
+	vk::Buffer last_index_buffer;
+	bool first_render = true;
+
+	static std::vector<DrawUnit> drawables;
+
+	drawables.clear();
+	drawables.reserve(render_registry.view<RenderMeshComponent>().size());
+	ShaderEffect* effect = getResource<ShaderEffectHandle>("basicgbuf").handle;
+	render_registry.group<RenderMeshComponent, TransformComponent, ObjectBounds>().each([&](RenderMeshComponent& renderable, TransformComponent& tf, ObjectBounds& bounds) {
+		const MeshResource& mesh = render_registry.get<MeshResource>(renderable.mesh_resource_entity);
+		//const PipelineResource& pipeline = render_registry.get<PipelineResource>(renderable.pass_pipelines[(size_t)MeshPasIndex::MainPass]);
+		const DescriptorResource& descriptor = render_registry.get<DescriptorResource>(renderable.pass_descriptors[(size_t)MeshPasIndex::MainPass]);
+
+		bool bVisible = false;
+
+		glm::vec3 bounds_center = glm::vec3(bounds.center_rad);
+		glm::vec3 dir = normalize(mainCam.eyeLoc - bounds_center);
+
+		float angle = glm::angle(dir, mainCam.eyeDir);
+
+		glm::vec3 bmin = bounds_center - glm::vec3(bounds.extent);
+		glm::vec3 bmax = bounds_center + glm::vec3(bounds.extent);
+
+		bVisible = mainCam.camfrustum.IsBoxVisible(bmin, bmax); //glm::degrees(angle) < 90.f;
+
+		if (bVisible) {
+			DrawUnit newDrawUnit;
+			newDrawUnit.indexBuffer = mesh.indexBuffer.buffer;
+			newDrawUnit.vertexBuffer = mesh.vertexBuffer.buffer;
+			newDrawUnit.index_count = mesh.indices.size();
+			//newDrawUnit.material_set = descriptor.materialSet;
+			newDrawUnit.object_idx = renderable.object_idx;
+			newDrawUnit.pipeline = gbufferPipeline;//pipeline.pipeline;
+			newDrawUnit.effect = effect;
+
+			drawables.push_back(newDrawUnit);
+		}
+		});
+
+	std::sort(drawables.begin(), drawables.end(), [](const DrawUnit& a, const DrawUnit& b) {
+		return a.vertexBuffer < b.vertexBuffer;
+		});
+
+	
+
+	for (const DrawUnit& unit : drawables) {
+
+		const bool bShouldBindPipeline = unit.pipeline != last_pipeline;
+
+		if (bShouldBindPipeline) {
+			cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, unit.pipeline);
+			piplayout = (vk::PipelineLayout)unit.effect->build_pipeline_layout(device);
+			last_pipeline = unit.pipeline;
+
+			DescriptorSetBuilder setBuilder{ unit.effect,&descriptorMegapool };
+
+			vk::DescriptorBufferInfo camBufferInfo;
+			if (config_parameters.ShadowView)
+			{
+				camBufferInfo.buffer = shadowDataBuffers[currentFrameIndex].buffer;
+			}
+			else
+			{
+				camBufferInfo.buffer = cameraDataBuffers[currentFrameIndex].buffer;
+			}
+
+			camBufferInfo.offset = 0;
+			camBufferInfo.range = sizeof(UniformBufferObject);
+
+			vk::DescriptorBufferInfo transformBufferInfo;
+			transformBufferInfo.buffer = object_buffers[currentFrameIndex].buffer;
+			transformBufferInfo.offset = 0;
+			transformBufferInfo.range = sizeof(glm::mat4) * 10000;
+
+						
+			setBuilder.bind_buffer("ubo", camBufferInfo);
+			
+			setBuilder.bind_buffer("MainObjectBuffer", transformBufferInfo);
+
+			std::array<vk::DescriptorSet, 2> descriptors;
+			descriptors[0] = setBuilder.build_descriptor(0, DescriptorLifetime::PerFrame);
+			//descriptors[1] = setBuilder.build_descriptor(1, DescriptorLifetime::PerFrame);
+
+			cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, piplayout, 0, 1, &descriptors[0], 0, nullptr);
+		}
+
+		if (last_vertex_buffer != unit.vertexBuffer) {
+			vk::Buffer meshbuffers[] = { unit.vertexBuffer };
+			vk::DeviceSize offsets[] = { 0 };
+
+			cmd.bindVertexBuffers(0, 1, meshbuffers, offsets);
+
+			last_vertex_buffer = unit.vertexBuffer;
+		}
+
+		if (last_index_buffer != unit.indexBuffer) {
+
+			cmd.bindIndexBuffer(unit.indexBuffer, 0, vk::IndexType::eUint32);
+
+			last_index_buffer = unit.indexBuffer;
+		}
+
+		//cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, piplayout, 2, 1, &unit.material_set, 0, nullptr);
+
+		cmd.pushConstants(piplayout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(int), &unit.object_idx);
+
+		cmd.drawIndexed(static_cast<uint32_t>(unit.index_count), 1, 0, 0, 0);
+		eng_stats.drawcalls++;
+
+		first_render = false;
+	}
+}
+
 //std::vector<UniformBufferObject> StagingCPUUBOArray;
 void VulkanEngine::update_uniform_buffer(uint32_t currentImage)
 {
@@ -1330,17 +1523,17 @@ void VulkanEngine::update_uniform_buffer(uint32_t currentImage)
 	UniformBufferObject ubo = {};
 	ubo.model = glm::mat4(1.0f);
 	ubo.view = glm::lookAt(eye, glm::vec3(0.0f, 400.0f, 0.0f), config_parameters.CamUp);
-	ubo.proj = glm::perspective(glm::radians(config_parameters.fov), swapChainExtent.width / (float)swapChainExtent.height, 0.1f, 10000.0f);
+	ubo.proj = glm::perspective(glm::radians(config_parameters.fov), swapChainExtent.width / (float)swapChainExtent.height, 0.1f, 5000.0f);
 	ubo.eye = glm::vec4(eye,0.0f);
 	//invert projection matrix couse glm is inverted y compared to vulkan
-	ubo.proj[1][1] *= -1;
 	
+	ubo.proj[1][1] *= -1;
 
 	mainCam.eyeLoc = eye;
 	mainCam.eyeDir = glm::normalize (eye - glm::vec3(0.0f, 400.0f, 0.0f));
 
 	mainCam.camfrustum = Frustum(ubo.proj * ubo.view);
-
+	
 
 	UniformBufferObject shadowubo = {};	
 
@@ -1601,6 +1794,112 @@ void VulkanEngine::create_shadow_framebuffer()
 
 	 create_shadow_pipeline();
 }
+
+
+void VulkanEngine::create_gbuffer_framebuffer(int width, int height)
+{
+	vk::ImageCreateInfo posImageInfo;
+	posImageInfo.imageType = vk::ImageType::e2D;
+	posImageInfo.extent.width = width;
+	posImageInfo.extent.height = height;
+	posImageInfo.extent.depth = 1;
+	posImageInfo.mipLevels = 1;
+	posImageInfo.arrayLayers = 1;
+	posImageInfo.samples = vk::SampleCountFlagBits::e1;
+	posImageInfo.tiling = vk::ImageTiling::eOptimal;
+	posImageInfo.format = GBufferPass::posdepth_format;
+	posImageInfo.usage = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled;
+
+	vk::ImageCreateInfo normImageInfo;
+	normImageInfo.imageType = vk::ImageType::e2D;
+	normImageInfo.extent.width = width;
+	normImageInfo.extent.height = height;
+	normImageInfo.extent.depth = 1;
+	normImageInfo.mipLevels = 1;
+	normImageInfo.arrayLayers = 1;
+	normImageInfo.samples = vk::SampleCountFlagBits::e1;
+	normImageInfo.tiling = vk::ImageTiling::eOptimal;
+	normImageInfo.format = GBufferPass::normal_format;
+	normImageInfo.usage = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled;
+
+
+	VmaAllocationCreateInfo vmaallocInfo = {};
+	vmaallocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+	vmaallocInfo.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+	VkImageCreateInfo imnfo1 = posImageInfo;
+	VkImageCreateInfo imnfo2 = normImageInfo;
+
+	VkImage gbufImage1;
+	VkImage gbufImage2;
+
+	vmaCreateImage(allocator, &imnfo1, &vmaallocInfo, &gbufImage1, &shadowPass.depthImageAlloc, nullptr);
+
+	vmaCreateImage(allocator, &imnfo2, &vmaallocInfo, &gbufImage2, &shadowPass.depthImageAlloc, nullptr);
+
+	gbuffPass.posdepth.image = gbufImage1;
+	gbuffPass.normal.image = gbufImage2;
+
+
+	vk::ImageViewCreateInfo posdepthView;
+	posdepthView.viewType = vk::ImageViewType::e2D;
+	posdepthView.format = GBufferPass::posdepth_format;
+	posdepthView.subresourceRange = {};
+	posdepthView.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+	posdepthView.subresourceRange.baseMipLevel = 0;
+	posdepthView.subresourceRange.levelCount = 1;
+	posdepthView.subresourceRange.baseArrayLayer = 0;
+	posdepthView.subresourceRange.layerCount = 1;
+	posdepthView.image = gbuffPass.posdepth.image;
+
+	gbuffPass.posdepth.view = device.createImageView(posdepthView);
+
+	vk::ImageViewCreateInfo normView;
+	normView.viewType = vk::ImageViewType::e2D;
+	normView.format = GBufferPass::normal_format;
+	normView.subresourceRange = {};
+	normView.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+	normView.subresourceRange.baseMipLevel = 0;
+	normView.subresourceRange.levelCount = 1;
+	normView.subresourceRange.baseArrayLayer = 0;
+	normView.subresourceRange.layerCount = 1;
+	normView.image = gbuffPass.normal.image;
+
+	gbuffPass.normal.view = device.createImageView(normView);
+
+	vk::SamplerCreateInfo sampler;
+	sampler.magFilter = vk::Filter::eLinear;
+	sampler.minFilter = vk::Filter::eLinear;
+	sampler.mipmapMode = vk::SamplerMipmapMode::eLinear;
+	sampler.addressModeU = vk::SamplerAddressMode::eClampToEdge;
+	sampler.addressModeV = sampler.addressModeU;
+	sampler.addressModeW = sampler.addressModeU;
+	sampler.mipLodBias = 0.0f;
+	sampler.maxAnisotropy = 1.0f;
+	sampler.minLod = 0.0f;
+	sampler.maxLod = 1.0f;
+	sampler.borderColor = vk::BorderColor::eFloatOpaqueWhite;
+
+	gbuffPass.normalSampler = device.createSampler(sampler);
+	gbuffPass.posdepthSampler = device.createSampler(sampler);
+
+	create_thin_gbuffer_pass();
+
+	vk::ImageView attachments[] = { gbuffPass.posdepth.view,gbuffPass.normal.view,depthImageView };
+
+	vk::FramebufferCreateInfo fbufCreateInfo;
+	fbufCreateInfo.renderPass = gbuffPass.renderPass;
+	fbufCreateInfo.attachmentCount = 3;
+	fbufCreateInfo.pAttachments = attachments;
+	fbufCreateInfo.width = width;
+	fbufCreateInfo.height =  height;
+	fbufCreateInfo.layers = 1;
+
+	gbuffPass.frameBuffer = device.createFramebuffer(fbufCreateInfo);
+
+	create_gbuffer_pipeline();
+}
+
 
 void VulkanEngine::create_shadow_renderpass()
 {

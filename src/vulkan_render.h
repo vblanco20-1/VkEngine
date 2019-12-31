@@ -64,6 +64,7 @@ struct VulkanEngine {
 	DescriptorMegaPool descriptorMegapool;
 
 	vk::PipelineLayout pipelineLayout;
+	vk::Pipeline gbufferPipeline;
 	vk::Pipeline graphicsPipeline;
 	vk::Pipeline shadowPipeline;
 
@@ -138,6 +139,9 @@ struct VulkanEngine {
 		VkDescriptorImageInfo normalDescriptor;
 		VmaAllocation posdepthImageAlloc;
 		VmaAllocation normalImageAlloc;
+
+		static constexpr vk::Format posdepth_format = vk::Format::eR32G32B32A32Sfloat;
+		static constexpr vk::Format normal_format = vk::Format::eR16G16B16A16Sfloat;
 	} gbuffPass;
 
 
@@ -160,6 +164,7 @@ struct VulkanEngine {
 	void create_gfx_pipeline();
 	void create_shadow_pipeline();
 
+	void create_gbuffer_pipeline();
 	void create_render_pass();
 	void create_thin_gbuffer_pass();
 
@@ -177,6 +182,7 @@ struct VulkanEngine {
 	void create_semaphores();
 	
 	void create_shadow_framebuffer();
+	void create_gbuffer_framebuffer(int width, int height);
 	void create_shadow_renderpass();
 
 	void rebuild_pipeline_resource(PipelineResource* resource);
@@ -197,6 +203,7 @@ struct VulkanEngine {
 
 	void start_shadow_renderpass(vk::CommandBuffer buffer);
 
+	void start_gbuffer_renderpass(vk::CommandBuffer buffer);
 	void start_frame_renderpass(vk::CommandBuffer buffer, vk::Framebuffer framebuffer);
 	void end_frame_command_buffer(vk::CommandBuffer buffer);
 
@@ -207,6 +214,7 @@ struct VulkanEngine {
 	void draw_frame();
 	void render_shadow_pass(const vk::CommandBuffer& cmd);
 	void RenderMainPass(const vk::CommandBuffer& cmd);
+	void RenderGBufferPass(const vk::CommandBuffer& cmd);
 	void update_uniform_buffer(uint32_t currentImage);
 
 	void clear_vulkan();
@@ -268,6 +276,7 @@ struct VulkanEngine {
 
 	GraphicsPipelineBuilder* gfxPipelineBuilder;
 	GraphicsPipelineBuilder* shadowPipelineBuilder;
+	GraphicsPipelineBuilder* gbufferPipelineBuilder;
 };
 
 
