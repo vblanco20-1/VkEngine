@@ -375,6 +375,11 @@ struct ShaderEffectPrivateData {
     std::array<ShaderDescriptorBindings,4> bindingSets;
     std::vector< VkPushConstantRange> pushConstantRanges;
 
+    std::array< VkDescriptorSetLayout, 4> builtSetLayouts;
+    bool bSetLayoutsBuilt {false} ;
+    VkPipelineLayout builtPipelineLayout;
+    bool bPipelineLayoutsBuilt{ false };
+
     BindReflection reflectionData;
 
     glslang::TProgram Program;
@@ -693,46 +698,56 @@ bool ShaderEffect::build_effect(VkDevice device)
 
 
 VkPipelineLayout ShaderEffect::build_pipeline_layout(VkDevice device)
-{
-    std::array< VkDescriptorSetLayout,4> descriptorSetLayouts = build_descriptor_layouts(device);
+{    
+    if (!privData->bPipelineLayoutsBuilt) {
+		std::array< VkDescriptorSetLayout, 4> descriptorSetLayouts = build_descriptor_layouts(device);
 
-    VkPipelineLayoutCreateInfo pipelineLayoutInfo;
-    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.pNext = nullptr;
-    pipelineLayoutInfo.setLayoutCount = 4;
-    pipelineLayoutInfo.pSetLayouts = &descriptorSetLayouts[0];
-    pipelineLayoutInfo.pushConstantRangeCount = privData->pushConstantRanges.size();
-    pipelineLayoutInfo.pPushConstantRanges = privData->pushConstantRanges.data();
+		VkPipelineLayoutCreateInfo pipelineLayoutInfo;
+		pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+		pipelineLayoutInfo.pNext = nullptr;
+		pipelineLayoutInfo.setLayoutCount = 4;
+		pipelineLayoutInfo.pSetLayouts = &descriptorSetLayouts[0];
+		pipelineLayoutInfo.pushConstantRangeCount = privData->pushConstantRanges.size();
+		pipelineLayoutInfo.pPushConstantRanges = privData->pushConstantRanges.data();
 
-    VkPipelineLayout pipelineLayout;
-    vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout);
+        
+		vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &privData->builtPipelineLayout);
 
-    return pipelineLayout;
+        privData->bPipelineLayoutsBuilt = true;
+    }
+    
+
+    return privData->builtPipelineLayout;
 }
 
 std::array<VkDescriptorSetLayout, 4> ShaderEffect::build_descriptor_layouts(VkDevice device)
 {
-    std::array< VkDescriptorSetLayout, 4> descriptorSetLayouts ;
+    if (!privData->bSetLayoutsBuilt) {
+		std::array< VkDescriptorSetLayout, 4> descriptorSetLayouts;
 
-    for (int i = 0; i < 4; i++) {
-        VkDescriptorSetLayoutCreateInfo layoutInfo;
+		for (int i = 0; i < 4; i++) {
+			VkDescriptorSetLayoutCreateInfo layoutInfo;
 
-        layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        layoutInfo.flags = 0;
-        layoutInfo.pNext = nullptr;
-        layoutInfo.pBindings = privData->bindingSets[i].descriptorBindings.data();
-        layoutInfo.bindingCount = privData->bindingSets[i].descriptorBindings.size();
+			layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+			layoutInfo.flags = 0;
+			layoutInfo.pNext = nullptr;
+			layoutInfo.pBindings = privData->bindingSets[i].descriptorBindings.data();
+			layoutInfo.bindingCount = privData->bindingSets[i].descriptorBindings.size();
 
-        VkDescriptorSetLayout descriptorSetLayout;
+			VkDescriptorSetLayout descriptorSetLayout;
 
-        auto result = vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout);
+			auto result = vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout);
 
-        if (result == VK_SUCCESS) {
-            descriptorSetLayouts[i] = descriptorSetLayout;
-        }
+			if (result == VK_SUCCESS) {
+				descriptorSetLayouts[i] = descriptorSetLayout;
+			}
+		}
+
+		privData->builtSetLayouts = descriptorSetLayouts;
+        privData->bSetLayoutsBuilt = true;
     }
 
-    return descriptorSetLayouts;
+    return privData->builtSetLayouts;
 }
 
 std::vector<VkPipelineShaderStageCreateInfo> ShaderEffect::get_stage_infos()
@@ -749,6 +764,8 @@ BindReflection* ShaderEffect::get_reflection()
 ShaderEffect::ShaderEffect()
 {
     privData = new ShaderEffectPrivateData;
+    privData->bPipelineLayoutsBuilt = false;
+    privData->bSetLayoutsBuilt = false;
 }
 
 ShaderEffect::~ShaderEffect()

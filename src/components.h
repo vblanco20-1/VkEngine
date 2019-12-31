@@ -25,4 +25,5 @@ struct MovementComponent {
 
 struct PlayerInputComponent {
 	Vec2f movement_input;
+
 };

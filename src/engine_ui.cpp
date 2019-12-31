@@ -34,6 +34,9 @@ void UI::DrawEngineUI(VulkanEngine* engine)
 	ImGui::InputFloat("Camera FOV", &engine->config_parameters.fov);
 
 	ImGui::Checkbox("show shadow viewpoint", &engine->config_parameters.ShadowView);
+	
+	(ImGui::Checkbox("custom camera", &engine->config_parameters.PlayerCam));
+	
 
 	ImGui::Separator();
 

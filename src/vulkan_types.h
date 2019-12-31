@@ -187,6 +187,7 @@ struct ConfigParams {
 	float shadow_sides;
 	float fov;
 	bool ShadowView;
+	bool PlayerCam;
 };
 
 struct EngineStats {

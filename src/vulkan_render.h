@@ -4,6 +4,7 @@
 #include "vulkan_types.h"
 #include "vulkan_descriptors.h"
 #include "frustum_cull.h"
+#include "player_camera.h"
 
 constexpr int MAX_FRAMES_IN_FLIGHT =2;
 constexpr int MAX_UNIFORM_BUFFER = 5000;
@@ -36,7 +37,7 @@ struct Camera {
 
 struct VulkanEngine {
 
-	
+	PlayerCamera playerCam;
 	Camera mainCam; 
 	vk::Instance instance;
 	vk::DebugUtilsMessengerEXT debugMessenger;

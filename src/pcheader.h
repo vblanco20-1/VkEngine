@@ -1,7 +1,11 @@
 #pragma once
+
+
+
 #define WIN32_LEAN_AND_MEAN
 #include <vk_mem_alloc.h>  //vk_mem_alloc.h"
 #include <vulkan/vulkan.hpp>
+
 
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE

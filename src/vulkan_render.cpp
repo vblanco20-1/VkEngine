@@ -58,8 +58,13 @@ void VulkanEngine::init_vulkan()
 
 	vk::InstanceCreateInfo createInfo;
 
-	createInfo.pApplicationInfo = &appInfo;
-	
+	createInfo.pApplicationInfo = &appInfo;	
+
+	playerCam.camera_location = glm::vec3(0, 100, 600);
+	playerCam.camera_forward = glm::vec3(0, 1, 0);
+	playerCam.camera_up = glm::vec3(0, 0, 1);
+
+	config_parameters.PlayerCam = false;
 	config_parameters.CamUp = glm::vec3(0, 0, 1);
 	config_parameters.fov = 90.f;
 	config_parameters.ShadowView = false;
@@ -179,12 +184,14 @@ void VulkanEngine::init_vulkan()
 	sceneParameters.fog_b.y = 10000.f;
 	sceneParameters.ambient = glm::vec4(0.1f);
 	//load_scene("E:/Gamedev/tps-demo/level/geometry/demolevel.blend");
-	//load_scene(MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Interior.fbx"), glm::mat4(1.f));
-	//load_scene(MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Exterior.fbx"), glm::mat4(1.f));
+	
+	load_scene(MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Interior.fbx"), glm::mat4(1.f));
+	
+	load_scene(MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Exterior.fbx"), glm::mat4(1.f));
 
 
-	load_scene(MAKE_ASSET_PATH("models/SunTemple.fbx"),
-		glm::rotate(glm::mat4(1), glm::radians(90.f), glm::vec3(1, 0, 0)));
+	//load_scene(MAKE_ASSET_PATH("models/SunTemple.fbx"),
+	//	glm::rotate(glm::mat4(1), glm::radians(90.f), glm::vec3(1, 0, 0)));
 
 	ImGui::CreateContext();
 
@@ -1067,9 +1074,13 @@ void VulkanEngine::draw_frame()
 		render_shadow_pass(cmd);
 	}
 	cmd.endRenderPass();
-
+	
 	start_gbuffer_renderpass(cmd);
-	RenderGBufferPass(cmd);
+	
+	{
+			TracyVkZoneC(profilercontext, VkCommandBuffer(cmd), "Gbuffer pass", tracy::Color::Grey);
+		RenderGBufferPass(cmd);
+	}
 	cmd.endRenderPass();
 
 	start_frame_renderpass(cmd, swapChainFramebuffers[imageIndex]);
@@ -1263,9 +1274,6 @@ void VulkanEngine::RenderMainPass(const vk::CommandBuffer& cmd)
 
 		bVisible = mainCam.camfrustum.IsBoxVisible(bmin,bmax); //glm::degrees(angle) < 90.f;
 
-
-
-
 		if (bVisible) {
 			DrawUnit newDrawUnit;
 			newDrawUnit.indexBuffer = mesh.indexBuffer.buffer;
@@ -1285,7 +1293,7 @@ void VulkanEngine::RenderMainPass(const vk::CommandBuffer& cmd)
 		});	
 
 	for(const DrawUnit& unit : drawables){		
-
+		
 		const bool bShouldBindPipeline = unit.pipeline != last_pipeline;
 
 		if (bShouldBindPipeline) {
@@ -1392,6 +1400,7 @@ void VulkanEngine::RenderGBufferPass(const vk::CommandBuffer& cmd)
 
 	drawables.clear();
 	drawables.reserve(render_registry.view<RenderMeshComponent>().size());
+
 	ShaderEffect* effect = getResource<ShaderEffectHandle>("basicgbuf").handle;
 	render_registry.group<RenderMeshComponent, TransformComponent, ObjectBounds>().each([&](RenderMeshComponent& renderable, TransformComponent& tf, ObjectBounds& bounds) {
 		const MeshResource& mesh = render_registry.get<MeshResource>(renderable.mesh_resource_entity);
@@ -1520,18 +1529,34 @@ void VulkanEngine::update_uniform_buffer(uint32_t currentImage)
 
 	auto eye = glm::vec3(camUp, 100, 600);
 
+
+	
+
 	UniformBufferObject ubo = {};
 	ubo.model = glm::mat4(1.0f);
-	ubo.view = glm::lookAt(eye, glm::vec3(0.0f, 400.0f, 0.0f), config_parameters.CamUp);
+
 	ubo.proj = glm::perspective(glm::radians(config_parameters.fov), swapChainExtent.width / (float)swapChainExtent.height, 0.1f, 5000.0f);
-	ubo.eye = glm::vec4(eye,0.0f);
-	//invert projection matrix couse glm is inverted y compared to vulkan
-	
 	ubo.proj[1][1] *= -1;
+	if (!config_parameters.PlayerCam) {
 
-	mainCam.eyeLoc = eye;
-	mainCam.eyeDir = glm::normalize (eye - glm::vec3(0.0f, 400.0f, 0.0f));
+		ubo.view = glm::lookAt(eye, glm::vec3(0.0f, 400.0f, 0.0f), config_parameters.CamUp);
+		
+		ubo.eye = glm::vec4(eye, 0.0f);
+		//invert projection matrix couse glm is inverted y compared to vulkan
 
+		
+
+		mainCam.eyeLoc = eye;
+		mainCam.eyeDir = glm::normalize(eye - glm::vec3(0.0f, 400.0f, 0.0f));
+	}
+	else {
+		ubo.view = glm::lookAt(playerCam.camera_location, playerCam.camera_location+ playerCam.camera_forward, playerCam.camera_up);
+		ubo.eye = glm::vec4(playerCam.camera_location, 0.0f);
+
+
+		mainCam.eyeLoc = ubo.eye;
+		mainCam.eyeDir = playerCam.camera_forward;
+	}
 	mainCam.camfrustum = Frustum(ubo.proj * ubo.view);
 	
 
