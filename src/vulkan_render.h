@@ -5,6 +5,7 @@
 #include "vulkan_descriptors.h"
 #include "frustum_cull.h"
 #include "player_camera.h"
+#include "framegraph.h"
 
 constexpr int MAX_FRAMES_IN_FLIGHT =2;
 constexpr int MAX_UNIFORM_BUFFER = 5000;
@@ -112,7 +113,7 @@ struct VulkanEngine {
 	ConfigParams config_parameters;
 	EngineStats eng_stats;
 
-
+	FrameGraph graph;
 	struct FrameBufferAttachment {
 		vk::Image image;
 		VkDeviceMemory mem;
@@ -275,9 +276,9 @@ struct VulkanEngine {
 	EntityID blackTexture;
 	EntityID testCubemap;
 
-	GraphicsPipelineBuilder* gfxPipelineBuilder;
-	GraphicsPipelineBuilder* shadowPipelineBuilder;
-	GraphicsPipelineBuilder* gbufferPipelineBuilder;
+	struct GraphicsPipelineBuilder* gfxPipelineBuilder;
+	struct GraphicsPipelineBuilder* shadowPipelineBuilder;
+	struct GraphicsPipelineBuilder* gbufferPipelineBuilder;
 };
 
 

@@ -14,7 +14,7 @@
 
 #include "engine_ui.h"
 #include "shader_processor.h"
-
+#include "framegraph.h"
 
 struct InputComponent {
 	glm::vec3 movement_input;
@@ -23,6 +23,8 @@ struct InputComponent {
 
 int main(int argc, char *argv[])
 {
+
+	
 	//compile_shader("C:/Programming/vkEngine/assets/shaders/basiclit.vert",nullptr);
 	//return 0;
 

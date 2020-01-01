@@ -24,6 +24,7 @@
 	//#define ASSET_PATH errorpath
     #define ASSET_PATH "K:/Programming/vkEngine/assets/"
 #endif
+#include <framegraph.h>
 
 #define MAKE_ASSET_PATH(path) ASSET_PATH ## path
 
@@ -54,7 +55,7 @@ static std::vector<char> readFile(const std::string& filename) {
 
 void VulkanEngine::init_vulkan()
  {
-	vk::ApplicationInfo appInfo{ "CrapEngine",VK_MAKE_VERSION(0,0,0),"CrapEngine",VK_MAKE_VERSION(0,0,0),VK_API_VERSION_1_1 };
+	vk::ApplicationInfo appInfo{ "VkEngine",VK_MAKE_VERSION(0,0,0),"VkEngine:Demo",VK_MAKE_VERSION(0,0,0),VK_API_VERSION_1_1 };
 
 	vk::InstanceCreateInfo createInfo;
 
@@ -131,6 +132,8 @@ void VulkanEngine::init_vulkan()
 
 	create_render_pass();
 
+	create_engine_graph(this);
+
 	create_gfx_pipeline();	
 
 	create_descriptor_pool();
@@ -185,14 +188,14 @@ void VulkanEngine::init_vulkan()
 	sceneParameters.ambient = glm::vec4(0.1f);
 	//load_scene("E:/Gamedev/tps-demo/level/geometry/demolevel.blend");
 	
-	load_scene(MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Interior.fbx"), glm::mat4(1.f));
-	
+#if 0
+	load_scene(MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Interior.fbx"), glm::mat4(1.f));	
 	load_scene(MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Exterior.fbx"), glm::mat4(1.f));
+#else
 
-
-	//load_scene(MAKE_ASSET_PATH("models/SunTemple.fbx"),
-	//	glm::rotate(glm::mat4(1), glm::radians(90.f), glm::vec3(1, 0, 0)));
-
+	load_scene(MAKE_ASSET_PATH("models/SunTemple.fbx"),
+		glm::rotate(glm::mat4(1), glm::radians(90.f), glm::vec3(1, 0, 0)));
+#endif
 	ImGui::CreateContext();
 
 	ImGui_ImplSDL2_InitForVulkan(sdl_get_window());
@@ -352,21 +355,7 @@ EntityID VulkanEngine::create_basic_descriptor_sets(EntityID pipelineID, std::st
 			imageInfo.imageView = texture.imageView;
 			imageInfo.sampler = texture.textureSampler;
 
-			//if (j == 0)
-			//{
-			//	vk::DescriptorImageInfo imageInfo = {};
-			//	imageInfo.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-			//	imageInfo.imageView = shadowPass.depth.view;
-			//	imageInfo.sampler = shadowPass.depthSampler;
-			//
-			//
-			//	setBuilder.bind_image(2, 6 + j, imageInfo);
-			//}
-			//else
-			{
-				setBuilder.bind_image(2, 6 + j, imageInfo);
-			}
-			
+			setBuilder.bind_image(2, 6 + j, imageInfo);			
 		}	
 		else {
 			const TextureResource& texture = render_registry.get<TextureResource>(blankTexture);
@@ -1467,15 +1456,12 @@ void VulkanEngine::RenderGBufferPass(const vk::CommandBuffer& cmd)
 			transformBufferInfo.buffer = object_buffers[currentFrameIndex].buffer;
 			transformBufferInfo.offset = 0;
 			transformBufferInfo.range = sizeof(glm::mat4) * 10000;
-
 						
-			setBuilder.bind_buffer("ubo", camBufferInfo);
-			
+			setBuilder.bind_buffer("ubo", camBufferInfo);			
 			setBuilder.bind_buffer("MainObjectBuffer", transformBufferInfo);
 
 			std::array<vk::DescriptorSet, 2> descriptors;
 			descriptors[0] = setBuilder.build_descriptor(0, DescriptorLifetime::PerFrame);
-			//descriptors[1] = setBuilder.build_descriptor(1, DescriptorLifetime::PerFrame);
 
 			cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, piplayout, 0, 1, &descriptors[0], 0, nullptr);
 		}
@@ -1751,72 +1737,78 @@ void VulkanEngine::create_shadow_framebuffer()
 	shadowPass.width = SHADOWMAP_DIM;
 	shadowPass.height = SHADOWMAP_DIM;
 
+	FrameGraph::GraphAttachment* shadowAttachment = &graph.attachments["shadow_buffer_1"];
+	RenderPass* pass = &graph.pass_definitions["ShadowPass"];
 
-	VkFormat fbColorFormat = VK_FORMAT_R8G8B8A8_UNORM;
+	shadowPass.depth.image = shadowAttachment->image;
+	shadowPass.depth.view = shadowAttachment->view;
+	shadowPass.depthSampler = shadowAttachment->sampler;
+	shadowPass.frameBuffer = pass->framebuffer;
+	shadowPass.renderPass = pass->built_pass;
 
-	vk::ImageCreateInfo image;
-	image.imageType = vk::ImageType::e2D;
-	image.extent.width = shadowPass.width;
-	image.extent.height = shadowPass.height;
-	image.extent.depth = 1;
-	image.mipLevels = 1;
-	image.arrayLayers = 1;
-	image.samples = vk::SampleCountFlagBits::e1;
-	image.tiling = vk::ImageTiling::eOptimal;
-	image.format = vk::Format::eD16Unorm;
-	image.usage = vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled;
-
-
-	VmaAllocationCreateInfo vmaallocInfo = {};
-	vmaallocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-	vmaallocInfo.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-	VkImageCreateInfo imnfo = image;
-
-	VkImage shadowdepthImage;
-
-	vmaCreateImage(allocator, &imnfo, &vmaallocInfo, &shadowdepthImage, &shadowPass.depthImageAlloc, nullptr);
-	shadowPass.depth.image = shadowdepthImage;
-	vk::ImageViewCreateInfo depthStencilView;
-	depthStencilView.viewType = vk::ImageViewType::e2D;
-	depthStencilView.format = vk::Format::eD16Unorm;
-	depthStencilView.subresourceRange = {};
-	depthStencilView.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eDepth;
-	depthStencilView.subresourceRange.baseMipLevel = 0;
-	depthStencilView.subresourceRange.levelCount = 1;
-	depthStencilView.subresourceRange.baseArrayLayer = 0;
-	depthStencilView.subresourceRange.layerCount = 1;
-	depthStencilView.image = shadowPass.depth.image;
-
-	 shadowPass.depth.view = device.createImageView(depthStencilView);
-
-	 vk::SamplerCreateInfo sampler;
-	 sampler.magFilter = vk::Filter::eLinear;
-	 sampler.minFilter = vk::Filter::eLinear;
-	 sampler.mipmapMode = vk::SamplerMipmapMode::eLinear;
-	 sampler.addressModeU = vk::SamplerAddressMode::eClampToEdge;
-	 sampler.addressModeV = sampler.addressModeU;
-	 sampler.addressModeW = sampler.addressModeU;
-	 sampler.mipLodBias = 0.0f;
-	 sampler.maxAnisotropy = 1.0f;
-	 sampler.minLod = 0.0f;
-	 sampler.maxLod = 1.0f;
-	 sampler.borderColor = vk::BorderColor::eFloatOpaqueWhite;
-
-	 shadowPass.depthSampler = device.createSampler(sampler);
-
-	 create_shadow_renderpass();
-
-	 vk::FramebufferCreateInfo fbufCreateInfo;
-	 fbufCreateInfo.renderPass = shadowPass.renderPass;
-	 fbufCreateInfo.attachmentCount = 1;
-	 fbufCreateInfo.pAttachments = &shadowPass.depth.view;
-	 fbufCreateInfo.width = shadowPass.width;
-	 fbufCreateInfo.height = shadowPass.height;
-	 fbufCreateInfo.layers = 1;
-
-	 shadowPass.frameBuffer = device.createFramebuffer(fbufCreateInfo);
-
+	//vk::ImageCreateInfo image;
+	//image.imageType = vk::ImageType::e2D;
+	//image.extent.width = shadowPass.width;
+	//image.extent.height = shadowPass.height;
+	//image.extent.depth = 1;
+	//image.mipLevels = 1;
+	//image.arrayLayers = 1;
+	//image.samples = vk::SampleCountFlagBits::e1;
+	//image.tiling = vk::ImageTiling::eOptimal;
+	//image.format = vk::Format::eD16Unorm;
+	//image.usage = vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled;
+	//
+	//
+	//VmaAllocationCreateInfo vmaallocInfo = {};
+	//vmaallocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+	//vmaallocInfo.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	//
+	//VkImageCreateInfo imnfo = image;
+	//
+	//VkImage shadowdepthImage;
+	//
+	//vmaCreateImage(allocator, &imnfo, &vmaallocInfo, &shadowdepthImage, &shadowPass.depthImageAlloc, nullptr);
+	//shadowPass.depth.image = shadowdepthImage;
+	//vk::ImageViewCreateInfo depthStencilView;
+	//depthStencilView.viewType = vk::ImageViewType::e2D;
+	//depthStencilView.format = vk::Format::eD16Unorm;
+	//depthStencilView.subresourceRange = {};
+	//depthStencilView.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eDepth;
+	//depthStencilView.subresourceRange.baseMipLevel = 0;
+	//depthStencilView.subresourceRange.levelCount = 1;
+	//depthStencilView.subresourceRange.baseArrayLayer = 0;
+	//depthStencilView.subresourceRange.layerCount = 1;
+	//depthStencilView.image = shadowPass.depth.image;
+	//
+	// shadowPass.depth.view = device.createImageView(depthStencilView);
+	//
+	// vk::SamplerCreateInfo sampler;
+	// sampler.magFilter = vk::Filter::eLinear;
+	// sampler.minFilter = vk::Filter::eLinear;
+	// sampler.mipmapMode = vk::SamplerMipmapMode::eLinear;
+	// sampler.addressModeU = vk::SamplerAddressMode::eClampToEdge;
+	// sampler.addressModeV = sampler.addressModeU;
+	// sampler.addressModeW = sampler.addressModeU;
+	// sampler.mipLodBias = 0.0f;
+	// sampler.maxAnisotropy = 1.0f;
+	// sampler.minLod = 0.0f;
+	// sampler.maxLod = 1.0f;
+	// sampler.borderColor = vk::BorderColor::eFloatOpaqueWhite;
+	//
+	// shadowPass.depthSampler = device.createSampler(sampler);
+	//
+	// create_shadow_renderpass();
+	//
+	// vk::FramebufferCreateInfo fbufCreateInfo;
+	// fbufCreateInfo.renderPass = shadowPass.renderPass;
+	// fbufCreateInfo.attachmentCount = 1;
+	// fbufCreateInfo.pAttachments = &shadowPass.depth.view;
+	// fbufCreateInfo.width = shadowPass.width;
+	// fbufCreateInfo.height = shadowPass.height;
+	// fbufCreateInfo.layers = 1;
+	//
+	// shadowPass.frameBuffer = device.createFramebuffer(fbufCreateInfo);
+	//
 	 create_shadow_pipeline();
 }
 
