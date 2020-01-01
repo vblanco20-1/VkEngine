@@ -168,7 +168,6 @@ struct VulkanEngine {
 
 	void create_gbuffer_pipeline();
 	void create_render_pass();
-	void create_thin_gbuffer_pass();
 
 	void create_framebuffers();
 	void create_command_pool();
@@ -185,7 +184,6 @@ struct VulkanEngine {
 	
 	void create_shadow_framebuffer();
 	void create_gbuffer_framebuffer(int width, int height);
-	void create_shadow_renderpass();
 
 	void rebuild_pipeline_resource(PipelineResource* resource);
 

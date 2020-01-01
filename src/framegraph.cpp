@@ -654,7 +654,7 @@ void create_engine_graph(VulkanEngine* engine)
 	gbuffer_normal.format = VK_FORMAT_R16G16B16A16_SFLOAT;
 
 	AttachmentInfo gbuffer_depth = gbuffer_position;
-	gbuffer_depth.format = VK_FORMAT_D16_UNORM;
+	gbuffer_depth.format = (VkFormat)engine->findDepthFormat();
 
 
 	AttachmentInfo ssao_pre = gbuffer_position;

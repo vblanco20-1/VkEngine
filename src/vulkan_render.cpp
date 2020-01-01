@@ -292,15 +292,9 @@ void VulkanEngine::createImageViews()
 
 void VulkanEngine::create_depth_resources()
 {
-	auto depthFormat = findDepthFormat();
-
-	createImage(swapChainExtent.width, swapChainExtent.height, depthFormat, vk::ImageTiling::eOptimal, 
-		vk::ImageUsageFlagBits::eDepthStencilAttachment, vk::MemoryPropertyFlagBits::eDeviceLocal, depthImage);
-
-
-	depthImageView = createImageView(depthImage.image, depthFormat, vk::ImageAspectFlagBits::eDepth);
-
-	transitionImageLayout(depthImage.image, depthFormat, vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthStencilAttachmentOptimal);
+	FrameGraph::GraphAttachment* norm_attachment = &graph.attachments["depth_prepass"];
+	depthImageView = norm_attachment->view;
+	depthImage.image  =(vk::Image) norm_attachment->image;
 }
 
 
@@ -582,89 +576,6 @@ void VulkanEngine::create_render_pass()
 	renderPass = device.createRenderPass(renderPassInfo);
 }
 
-void VulkanEngine::create_thin_gbuffer_pass()
-{
-	vk::AttachmentDescription posdepthAttachment;
-	posdepthAttachment.format = GBufferPass::posdepth_format;
-	posdepthAttachment.samples = vk::SampleCountFlagBits::e1;
-	posdepthAttachment.loadOp = vk::AttachmentLoadOp::eClear;
-	posdepthAttachment.storeOp = vk::AttachmentStoreOp::eStore;
-
-	posdepthAttachment.initialLayout = vk::ImageLayout::eUndefined;
-	posdepthAttachment.finalLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-
-	vk::AttachmentDescription normalAttachment;
-	normalAttachment.format = GBufferPass::normal_format;
-	normalAttachment.samples = vk::SampleCountFlagBits::e1;
-	normalAttachment.loadOp = vk::AttachmentLoadOp::eClear;
-	normalAttachment.storeOp = vk::AttachmentStoreOp::eStore;
-
-	normalAttachment.initialLayout = vk::ImageLayout::eUndefined;
-	normalAttachment.finalLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-
-	vk::AttachmentDescription depthAttachment;
-	depthAttachment.format = findDepthFormat();
-	depthAttachment.samples = vk::SampleCountFlagBits::e1;
-	depthAttachment.loadOp = vk::AttachmentLoadOp::eClear;
-	depthAttachment.storeOp = vk::AttachmentStoreOp::eStore;
-	depthAttachment.stencilLoadOp = vk::AttachmentLoadOp::eDontCare;
-	depthAttachment.stencilStoreOp = vk::AttachmentStoreOp::eStore;
-	depthAttachment.initialLayout = vk::ImageLayout::eUndefined;
-	depthAttachment.finalLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
-
-	vk::AttachmentReference posdepthAttachmentRef;
-	posdepthAttachmentRef.attachment = 0;
-	posdepthAttachmentRef.layout = vk::ImageLayout::eColorAttachmentOptimal;
-
-	vk::AttachmentReference normalAttachmentRef;
-	normalAttachmentRef.attachment = 1;
-	normalAttachmentRef.layout = vk::ImageLayout::eColorAttachmentOptimal;
-
-	vk::AttachmentReference depthAttachmentRef;
-	depthAttachmentRef.attachment = 2;
-	depthAttachmentRef.layout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
-
-	vk::AttachmentReference attachrefs[] = { posdepthAttachmentRef,normalAttachmentRef };
-
-	vk::SubpassDescription subpass;
-	subpass.pipelineBindPoint = vk::PipelineBindPoint::eGraphics;
-	subpass.colorAttachmentCount = 2;
-	subpass.pColorAttachments = attachrefs;
-	subpass.pDepthStencilAttachment = &depthAttachmentRef;
-
-	std::array < vk::SubpassDependency, 2> dependencies;
-	dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
-	dependencies[0].dstSubpass = 0;
-
-	dependencies[0].srcStageMask = vk::PipelineStageFlagBits::eFragmentShader;
-	dependencies[0].dstStageMask = vk::PipelineStageFlagBits::eEarlyFragmentTests;
-
-	dependencies[0].srcAccessMask = vk::AccessFlagBits::eShaderRead;
-	dependencies[0].dstAccessMask = vk::AccessFlagBits::eDepthStencilAttachmentWrite;
-
-	dependencies[0].dependencyFlags = vk::DependencyFlagBits::eByRegion;
-
-	dependencies[1].srcSubpass = 0;
-	dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
-
-	dependencies[1].srcStageMask = vk::PipelineStageFlagBits::eLateFragmentTests;
-	dependencies[1].dstStageMask = vk::PipelineStageFlagBits::eFragmentShader;
-
-	dependencies[1].srcAccessMask = vk::AccessFlagBits::eDepthStencilAttachmentWrite;
-	dependencies[1].dstAccessMask = vk::AccessFlagBits::eShaderRead;
-	dependencies[1].dependencyFlags = vk::DependencyFlagBits::eByRegion;
-
-	std::array<vk::AttachmentDescription, 3> attachments = { posdepthAttachment, normalAttachment, depthAttachment };
-	vk::RenderPassCreateInfo renderPassInfo;
-	renderPassInfo.attachmentCount = static_cast<uint32_t>(attachments.size());;
-	renderPassInfo.pAttachments = attachments.data();
-	renderPassInfo.subpassCount = 1;
-	renderPassInfo.pSubpasses = &subpass;
-	renderPassInfo.dependencyCount = static_cast<uint32_t>(dependencies.size());;
-	renderPassInfo.pDependencies = dependencies.data();
-
-	gbuffPass.renderPass = device.createRenderPass(renderPassInfo);
-}
 
 void VulkanEngine::create_framebuffers()
 {
@@ -1737,6 +1648,7 @@ void VulkanEngine::create_shadow_framebuffer()
 	shadowPass.width = SHADOWMAP_DIM;
 	shadowPass.height = SHADOWMAP_DIM;
 
+	//copy all the parameters from framegraph into the manual vrsion
 	FrameGraph::GraphAttachment* shadowAttachment = &graph.attachments["shadow_buffer_1"];
 	RenderPass* pass = &graph.pass_definitions["ShadowPass"];
 
@@ -1746,233 +1658,29 @@ void VulkanEngine::create_shadow_framebuffer()
 	shadowPass.frameBuffer = pass->framebuffer;
 	shadowPass.renderPass = pass->built_pass;
 
-	//vk::ImageCreateInfo image;
-	//image.imageType = vk::ImageType::e2D;
-	//image.extent.width = shadowPass.width;
-	//image.extent.height = shadowPass.height;
-	//image.extent.depth = 1;
-	//image.mipLevels = 1;
-	//image.arrayLayers = 1;
-	//image.samples = vk::SampleCountFlagBits::e1;
-	//image.tiling = vk::ImageTiling::eOptimal;
-	//image.format = vk::Format::eD16Unorm;
-	//image.usage = vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled;
-	//
-	//
-	//VmaAllocationCreateInfo vmaallocInfo = {};
-	//vmaallocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-	//vmaallocInfo.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	//
-	//VkImageCreateInfo imnfo = image;
-	//
-	//VkImage shadowdepthImage;
-	//
-	//vmaCreateImage(allocator, &imnfo, &vmaallocInfo, &shadowdepthImage, &shadowPass.depthImageAlloc, nullptr);
-	//shadowPass.depth.image = shadowdepthImage;
-	//vk::ImageViewCreateInfo depthStencilView;
-	//depthStencilView.viewType = vk::ImageViewType::e2D;
-	//depthStencilView.format = vk::Format::eD16Unorm;
-	//depthStencilView.subresourceRange = {};
-	//depthStencilView.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eDepth;
-	//depthStencilView.subresourceRange.baseMipLevel = 0;
-	//depthStencilView.subresourceRange.levelCount = 1;
-	//depthStencilView.subresourceRange.baseArrayLayer = 0;
-	//depthStencilView.subresourceRange.layerCount = 1;
-	//depthStencilView.image = shadowPass.depth.image;
-	//
-	// shadowPass.depth.view = device.createImageView(depthStencilView);
-	//
-	// vk::SamplerCreateInfo sampler;
-	// sampler.magFilter = vk::Filter::eLinear;
-	// sampler.minFilter = vk::Filter::eLinear;
-	// sampler.mipmapMode = vk::SamplerMipmapMode::eLinear;
-	// sampler.addressModeU = vk::SamplerAddressMode::eClampToEdge;
-	// sampler.addressModeV = sampler.addressModeU;
-	// sampler.addressModeW = sampler.addressModeU;
-	// sampler.mipLodBias = 0.0f;
-	// sampler.maxAnisotropy = 1.0f;
-	// sampler.minLod = 0.0f;
-	// sampler.maxLod = 1.0f;
-	// sampler.borderColor = vk::BorderColor::eFloatOpaqueWhite;
-	//
-	// shadowPass.depthSampler = device.createSampler(sampler);
-	//
-	// create_shadow_renderpass();
-	//
-	// vk::FramebufferCreateInfo fbufCreateInfo;
-	// fbufCreateInfo.renderPass = shadowPass.renderPass;
-	// fbufCreateInfo.attachmentCount = 1;
-	// fbufCreateInfo.pAttachments = &shadowPass.depth.view;
-	// fbufCreateInfo.width = shadowPass.width;
-	// fbufCreateInfo.height = shadowPass.height;
-	// fbufCreateInfo.layers = 1;
-	//
-	// shadowPass.frameBuffer = device.createFramebuffer(fbufCreateInfo);
-	//
-	 create_shadow_pipeline();
+	create_shadow_pipeline();
 }
 
 
 void VulkanEngine::create_gbuffer_framebuffer(int width, int height)
 {
-	vk::ImageCreateInfo posImageInfo;
-	posImageInfo.imageType = vk::ImageType::e2D;
-	posImageInfo.extent.width = width;
-	posImageInfo.extent.height = height;
-	posImageInfo.extent.depth = 1;
-	posImageInfo.mipLevels = 1;
-	posImageInfo.arrayLayers = 1;
-	posImageInfo.samples = vk::SampleCountFlagBits::e1;
-	posImageInfo.tiling = vk::ImageTiling::eOptimal;
-	posImageInfo.format = GBufferPass::posdepth_format;
-	posImageInfo.usage = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled;
+	//copy all the parameters from framegraph into the manual vrsion
+	FrameGraph::GraphAttachment* pos_attachment = &graph.attachments["gbuf_pos"];
+	FrameGraph::GraphAttachment* norm_attachment = &graph.attachments["gbuf_normal"];
+	RenderPass* pass = &graph.pass_definitions["GBuffer"];
 
-	vk::ImageCreateInfo normImageInfo;
-	normImageInfo.imageType = vk::ImageType::e2D;
-	normImageInfo.extent.width = width;
-	normImageInfo.extent.height = height;
-	normImageInfo.extent.depth = 1;
-	normImageInfo.mipLevels = 1;
-	normImageInfo.arrayLayers = 1;
-	normImageInfo.samples = vk::SampleCountFlagBits::e1;
-	normImageInfo.tiling = vk::ImageTiling::eOptimal;
-	normImageInfo.format = GBufferPass::normal_format;
-	normImageInfo.usage = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled;
-
-
-	VmaAllocationCreateInfo vmaallocInfo = {};
-	vmaallocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-	vmaallocInfo.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-	VkImageCreateInfo imnfo1 = posImageInfo;
-	VkImageCreateInfo imnfo2 = normImageInfo;
-
-	VkImage gbufImage1;
-	VkImage gbufImage2;
-
-	vmaCreateImage(allocator, &imnfo1, &vmaallocInfo, &gbufImage1, &shadowPass.depthImageAlloc, nullptr);
-
-	vmaCreateImage(allocator, &imnfo2, &vmaallocInfo, &gbufImage2, &shadowPass.depthImageAlloc, nullptr);
-
-	gbuffPass.posdepth.image = gbufImage1;
-	gbuffPass.normal.image = gbufImage2;
-
-
-	vk::ImageViewCreateInfo posdepthView;
-	posdepthView.viewType = vk::ImageViewType::e2D;
-	posdepthView.format = GBufferPass::posdepth_format;
-	posdepthView.subresourceRange = {};
-	posdepthView.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
-	posdepthView.subresourceRange.baseMipLevel = 0;
-	posdepthView.subresourceRange.levelCount = 1;
-	posdepthView.subresourceRange.baseArrayLayer = 0;
-	posdepthView.subresourceRange.layerCount = 1;
-	posdepthView.image = gbuffPass.posdepth.image;
-
-	gbuffPass.posdepth.view = device.createImageView(posdepthView);
-
-	vk::ImageViewCreateInfo normView;
-	normView.viewType = vk::ImageViewType::e2D;
-	normView.format = GBufferPass::normal_format;
-	normView.subresourceRange = {};
-	normView.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
-	normView.subresourceRange.baseMipLevel = 0;
-	normView.subresourceRange.levelCount = 1;
-	normView.subresourceRange.baseArrayLayer = 0;
-	normView.subresourceRange.layerCount = 1;
-	normView.image = gbuffPass.normal.image;
-
-	gbuffPass.normal.view = device.createImageView(normView);
-
-	vk::SamplerCreateInfo sampler;
-	sampler.magFilter = vk::Filter::eLinear;
-	sampler.minFilter = vk::Filter::eLinear;
-	sampler.mipmapMode = vk::SamplerMipmapMode::eLinear;
-	sampler.addressModeU = vk::SamplerAddressMode::eClampToEdge;
-	sampler.addressModeV = sampler.addressModeU;
-	sampler.addressModeW = sampler.addressModeU;
-	sampler.mipLodBias = 0.0f;
-	sampler.maxAnisotropy = 1.0f;
-	sampler.minLod = 0.0f;
-	sampler.maxLod = 1.0f;
-	sampler.borderColor = vk::BorderColor::eFloatOpaqueWhite;
-
-	gbuffPass.normalSampler = device.createSampler(sampler);
-	gbuffPass.posdepthSampler = device.createSampler(sampler);
-
-	create_thin_gbuffer_pass();
-
-	vk::ImageView attachments[] = { gbuffPass.posdepth.view,gbuffPass.normal.view,depthImageView };
-
-	vk::FramebufferCreateInfo fbufCreateInfo;
-	fbufCreateInfo.renderPass = gbuffPass.renderPass;
-	fbufCreateInfo.attachmentCount = 3;
-	fbufCreateInfo.pAttachments = attachments;
-	fbufCreateInfo.width = width;
-	fbufCreateInfo.height =  height;
-	fbufCreateInfo.layers = 1;
-
-	gbuffPass.frameBuffer = device.createFramebuffer(fbufCreateInfo);
-
+	gbuffPass.normal.view = norm_attachment->view;
+	gbuffPass.posdepth.image = pos_attachment->image;
+	gbuffPass.normal.image = norm_attachment->image;
+	gbuffPass.posdepth.view = pos_attachment->view;
+	gbuffPass.normalSampler = norm_attachment->sampler;
+	gbuffPass.posdepthSampler = pos_attachment->sampler;
+	gbuffPass.frameBuffer = pass->framebuffer;
+	gbuffPass.renderPass = pass->built_pass;
+	
 	create_gbuffer_pipeline();
 }
 
-
-void VulkanEngine::create_shadow_renderpass()
-{
-	vk::AttachmentDescription attachmentDescription;
-	attachmentDescription.format = vk::Format::eD16Unorm;
-	attachmentDescription.samples = vk::SampleCountFlagBits::e1;
-	attachmentDescription.loadOp = vk::AttachmentLoadOp::eClear;
-	attachmentDescription.storeOp = vk::AttachmentStoreOp::eStore;
-	attachmentDescription.stencilLoadOp = vk::AttachmentLoadOp::eDontCare;
-	attachmentDescription.stencilStoreOp = vk::AttachmentStoreOp::eDontCare;
-	attachmentDescription.initialLayout = vk::ImageLayout::eUndefined;
-	attachmentDescription.finalLayout = vk::ImageLayout::eDepthStencilReadOnlyOptimal;
-
-
-	vk::AttachmentReference depthReference;
-	depthReference.attachment = 0;
-	depthReference.layout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
-
-	vk::SubpassDescription subpass;
-	subpass.pipelineBindPoint = vk::PipelineBindPoint::eGraphics;
-	subpass.colorAttachmentCount = 0;
-	subpass.pDepthStencilAttachment = &depthReference;
-
-	std::array < vk::SubpassDependency,2> dependencies;
-	dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
-	dependencies[0].dstSubpass = 0;
-
-	dependencies[0].srcStageMask = vk::PipelineStageFlagBits::eFragmentShader;
-	dependencies[0].dstStageMask = vk::PipelineStageFlagBits::eEarlyFragmentTests;
-
-	dependencies[0].srcAccessMask = vk::AccessFlagBits::eShaderRead;	
-	dependencies[0].dstAccessMask = vk::AccessFlagBits::eDepthStencilAttachmentWrite;
-
-	dependencies[0].dependencyFlags = vk::DependencyFlagBits::eByRegion;
-
-	dependencies[1].srcSubpass = 0;
-	dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
-
-	dependencies[1].srcStageMask = vk::PipelineStageFlagBits::eLateFragmentTests;
-	dependencies[1].dstStageMask = vk::PipelineStageFlagBits::eFragmentShader;
-
-	dependencies[1].srcAccessMask = vk::AccessFlagBits::eDepthStencilAttachmentWrite;
-	dependencies[1].dstAccessMask = vk::AccessFlagBits::eShaderRead;
-	dependencies[1].dependencyFlags = vk::DependencyFlagBits::eByRegion;
-
-	
-	vk::RenderPassCreateInfo renderPassInfo;
-	renderPassInfo.attachmentCount = 1;
-	renderPassInfo.pAttachments = &attachmentDescription;
-	renderPassInfo.subpassCount = 1;
-	renderPassInfo.pSubpasses = &subpass;
-	renderPassInfo.dependencyCount = 2;
-	renderPassInfo.pDependencies = &dependencies[0];
-
-	shadowPass.renderPass = device.createRenderPass(renderPassInfo);
-}
 
 void VulkanEngine::rebuild_pipeline_resource(PipelineResource* resource)
 {
