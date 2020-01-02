@@ -68,7 +68,9 @@ void main() {
 
 	gl_Position = ubo.proj * ubo.view * objectMatrix * vec4(inPosition, 1.0);
     fragColor = inColor;
-    fragTexCoord = inTexCoord;
+	vec2 texcoord = inTexCoord;
+	texcoord.y = 1-texcoord.y;
+    fragTexCoord = texcoord;
 	fragNormal = normalize(objectMatrix * vec4(inNormal, 0.0)).xyz;
 	fragPos = (objectMatrix * vec4(inPosition, 1.0)).xyz;
 

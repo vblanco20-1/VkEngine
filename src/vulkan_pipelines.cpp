@@ -45,7 +45,7 @@ vk::PipelineDepthStencilStateCreateInfo VkPipelineInitializers::build_depth_sten
 	vk::PipelineDepthStencilStateCreateInfo depthStencil;
 	depthStencil.depthTestEnable = bTestEnable ? VK_TRUE : VK_FALSE;
 	depthStencil.depthWriteEnable = bWriteEnable ? VK_TRUE : VK_FALSE;
-	depthStencil.depthCompareOp = compareOP;
+	depthStencil.depthCompareOp = bTestEnable ? compareOP : vk::CompareOp::eAlways;
 	depthStencil.depthBoundsTestEnable = VK_FALSE;
 	depthStencil.minDepthBounds = 0.0f; // Optional
 	depthStencil.maxDepthBounds = 1.0f; // Optional

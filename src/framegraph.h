@@ -23,6 +23,12 @@ struct AttachmentInfo
 	
 	bool persistent{true};
 };
+
+struct ClearPassSet {
+	//5 max
+	std::array<vk::ClearValue, 5> clearValues;
+	int num;
+};
 class FrameGraph;
 struct RenderPass{
 
@@ -51,6 +57,10 @@ struct RenderPass{
 	std::unordered_map<std::string,PhysicalAttachment > real_attachments;
 	vk::RenderPass built_pass;
 	vk::Framebuffer framebuffer;
+
+	std::function<ClearPassSet()> clear_callback;
+
+	std::function<void(vk::CommandBuffer,RenderPass*)> draw_callback;
 
 	int render_width = 0;
 	int render_height = 0;
@@ -89,6 +99,7 @@ public:
 
 	RenderPass * add_pass(std::string pass_name);
 
+	void execute(vk::CommandBuffer cmd);
 
 	FrameGraphPriv* priv;
 

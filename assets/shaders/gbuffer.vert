@@ -45,6 +45,11 @@ void main() {
 	gl_Position = ubo.proj * ubo.view * objectMatrix * vec4(inPosition, 1.0);
     fragColor = inColor;
     fragTexCoord = inTexCoord;
+#if 0 // WORLD SPACE
 	fragNormal = normalize(objectMatrix * vec4(inNormal, 0.0)).xyz;
 	fragPos = (objectMatrix * vec4(inPosition, 1.0)).xyz;
+#else
+	fragPos = vec3(ubo.view * objectMatrix * vec4(inPosition, 1.0));
+	fragNormal = vec3(ubo.view * objectMatrix * vec4(inNormal, 0.0));
+#endif
 }

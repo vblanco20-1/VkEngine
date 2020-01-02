@@ -1,3 +1,4 @@
+layout(set = 0, binding = 5) uniform sampler2D ssaoMap;
 layout(set = 0, binding = 6) uniform samplerCube ambientCubemap;
 layout(set = 0, binding = 7) uniform sampler2D shadowMap;
 layout(set = 2, binding = 6) uniform sampler2D tex1;

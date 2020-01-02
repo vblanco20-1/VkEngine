@@ -69,6 +69,7 @@ struct VulkanEngine {
 	vk::Pipeline gbufferPipeline;
 	vk::Pipeline graphicsPipeline;
 	vk::Pipeline shadowPipeline;
+	AllocatedBuffer ssaoSamples;
 
 	std::vector<vk::Framebuffer> swapChainFramebuffers;
 
@@ -165,6 +166,7 @@ struct VulkanEngine {
 	void* get_profiler_context(vk::CommandBuffer cmd);
 	void create_gfx_pipeline();
 	void create_shadow_pipeline();
+	void create_ssao_pipelines();
 
 	void create_gbuffer_pipeline();
 	void create_render_pass();
@@ -212,7 +214,8 @@ struct VulkanEngine {
 	size_t align_dynamic_descriptor(size_t initial_alignement);
 
 	void draw_frame();
-	void render_shadow_pass(const vk::CommandBuffer& cmd);
+	void render_shadow_pass(const vk::CommandBuffer& cmd,int height, int width);
+	void render_ssao_pass(const vk::CommandBuffer& cmd, int height, int width);
 	void RenderMainPass(const vk::CommandBuffer& cmd);
 	void RenderGBufferPass(const vk::CommandBuffer& cmd);
 	void update_uniform_buffer(uint32_t currentImage);
@@ -277,6 +280,8 @@ struct VulkanEngine {
 	struct GraphicsPipelineBuilder* gfxPipelineBuilder;
 	struct GraphicsPipelineBuilder* shadowPipelineBuilder;
 	struct GraphicsPipelineBuilder* gbufferPipelineBuilder;
+
+	struct GraphicsPipelineBuilder* ssaoPipelineBuilder;
 };
 
 

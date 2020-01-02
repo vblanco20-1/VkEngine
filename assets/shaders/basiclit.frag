@@ -115,6 +115,12 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0)
     return F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
 } 
 void main() {
+
+	vec2 screenspace = vec2(0.f);
+	screenspace.y = gl_FragCoord.y / 900.f;
+	screenspace.x = gl_FragCoord.x / 1700.f;
+
+	float ssao = texture(ssaoMap,screenspace).r;
 	//vec3 ambient = sceneParams.ambient.xyz * sceneParams.ambient.w;
 	vec3 light_dir = normalize(vec3(100.0f, 600.0f, 800.0f)) * 1.f;
 
@@ -169,11 +175,12 @@ void main() {
 	vec3 diffuse    = albedo;//irradiance * albedo;
 	//vec3 ambient    = (kD * diffuse) * ao; 
 
-	vec3 ambient = (kD * diffuse) * sceneParams.ambient.w;
+	vec3 ambient = (kD * diffuse) * sceneParams.ambient.w * ssao;
     vec3 color = ambient + Lo;
 	
     color = color / (color + vec3(1.0));
     //color = pow(color, vec3(1.0/2.2));  
    
-    outColor = vec4(color, 1.0) + emmisive;
+    //outColor = vec4(ssao);//
+	outColor = vec4(color, 1.0) + emmisive;
 }

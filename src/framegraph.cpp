@@ -591,6 +591,9 @@ void FrameGraph::build(VkDevice device,VmaAllocator allocator)
 				height = this->attachments[n].real_height;
 			}
 		}
+
+		pass->render_height = height;
+		pass->render_width = width;
 		//vk::ImageView attachments[] = { gbuffPass.posdepth.view,gbuffPass.normal.view,depthImageView };
 
 		vk::FramebufferCreateInfo fbufCreateInfo;
@@ -619,8 +622,34 @@ RenderPass* FrameGraph::add_pass(std::string pass_name)
 
 	return ptr;
 }
+
+void FrameGraph::execute(vk::CommandBuffer cmd)
+{
+	for (auto pass : passes) {
+
+		if (pass->draw_callback && pass->clear_callback)
+		{
+			ClearPassSet clear = pass->clear_callback();
+			vk::RenderPassBeginInfo renderPassInfo;
+			renderPassInfo.renderPass = pass->built_pass;//shadowPass.renderPass;
+			renderPassInfo.framebuffer = pass->framebuffer;
+			renderPassInfo.renderArea.offset = { 0, 0 };
+			renderPassInfo.renderArea.extent.width = pass->render_width;//shadowPass.width;
+			renderPassInfo.renderArea.extent.height = pass->render_height;//shadowPass.height;
+
+			renderPassInfo.clearValueCount = clear.num;
+			renderPassInfo.pClearValues = clear.clearValues.data();
+
+			cmd.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
+
+			pass->draw_callback(cmd,pass);
+
+			cmd.endRenderPass();
+		}	
+	}
+}
+
 void create_engine_graph(VulkanEngine* engine)
-//void create_engine_graph(FrameGraph& graph,VkDevice device, VmaAllocator allocator, VkExtent2D swapChainSize)
 {
 	FrameGraph& graph = engine->graph;
 	VkDevice device = (VkDevice)engine->device;
@@ -672,6 +701,8 @@ void create_engine_graph(VulkanEngine* engine)
 	ssao0_pass->add_color_attachment("gbuf_pos", gbuffer_position, RenderGraphResourceAccess::Read);
 	ssao0_pass->add_color_attachment("gbuf_normal", gbuffer_normal, RenderGraphResourceAccess::Read);
 	ssao0_pass->add_color_attachment("ssao_pre", ssao_pre, RenderGraphResourceAccess::Write);
+	ssao0_pass->add_depth_attachment("depth_prepass", gbuffer_depth, RenderGraphResourceAccess::Write);
+
 
 	ssao1_pass->add_color_attachment("ssao_pre", ssao_pre, RenderGraphResourceAccess::Read);
 	ssao1_pass->add_color_attachment("ssao_post", ssao_post, RenderGraphResourceAccess::Write);
@@ -684,9 +715,7 @@ void create_engine_graph(VulkanEngine* engine)
 	forward_pass->add_color_attachment("ssao_post", ssao_post, RenderGraphResourceAccess::Read);
 
 	AttachmentInfo render_output = gbuffer_position;
-	//undefined means "choose best automatically"
-	//shadowbuffer.format = VK_FORMAT_UNDEFINED;
-	
+		
 	//_output_ is special case
 	forward_pass->add_color_attachment("_output_", render_output, RenderGraphResourceAccess::Write);
 

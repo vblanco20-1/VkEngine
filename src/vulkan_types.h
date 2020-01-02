@@ -122,6 +122,7 @@ struct PipelineResource : public ResourceComponent {
 	vk::Pipeline pipeline;
 	struct ShaderEffect* effect;
 	struct GraphicsPipelineBuilder* pipelineBuilder;
+	std::string renderPassName;
 };
 
 enum class MeshPasIndex : uint8_t {
