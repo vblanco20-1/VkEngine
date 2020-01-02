@@ -155,9 +155,12 @@ void UI::DrawEngineUI(VulkanEngine* engine)
 				if (found(K) && engine->render_registry.has<PipelineResource>(V)) {
 
 					PipelineResource& pip = engine->render_registry.get<PipelineResource>(V);
-					ImGui::Text(K.c_str());
-					ImGui::SameLine();
-					if (ImGui::Button("Reload"))
+
+					std::string bton = "Reload: " + K;
+
+					//ImGui::Text(K.c_str());
+					//ImGui::SameLine();
+					if (ImGui::Button(bton.c_str()))
 					{
 						engine->rebuild_pipeline_resource(&pip);
 					}

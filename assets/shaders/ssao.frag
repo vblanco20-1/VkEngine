@@ -4,9 +4,9 @@ layout (set = 0,binding = 0) uniform sampler2D samplerPositionDepth;
 layout (set = 0,binding = 1) uniform sampler2D samplerNormal;
 layout (set = 0,binding = 2) uniform sampler2D ssaoNoise;
 
-const int SSAO_KERNEL_SIZE = 64;
-const float SSAO_RADIUS = 100.f;
-//layout (constant_id = 0) const int SSAO_KERNEL_SIZE = 64;
+//const int SSAO_KERNEL_SIZE = 32;
+const float SSAO_RADIUS = 200.f;
+layout (constant_id = 0) const int SSAO_KERNEL_SIZE = 64;
 //layout (constant_id = 1) const float SSAO_RADIUS = 0.5;
 
 layout (set = 0,binding = 3) uniform UBOSSAOKernel
@@ -41,8 +41,8 @@ void main()
 	const vec2 noiseUV = vec2(float(texDim.x)/float(noiseDim.x), float(texDim.y)/(noiseDim.y)) * inUV;  
 	float randx = rand2D(noiseUV.xy);
 	float randy = rand2D(noiseUV.yx);
-	vec3 randomVec = vec3(randx,randy,0) * 2.0 - 1.0;
-    //vec3 randomVec = vec3(1,2)//texture(ssaoNoise, noiseUV).xyz * 2.0 - 1.0;
+	//vec3 randomVec = vec3(randx,randy,0) * 2.0 - 1.0;
+    vec3 randomVec = texture(ssaoNoise, noiseUV).xyz * 2.0 - 1.0;
 	
 	// Create TBN matrix
 	vec3 tangent = normalize(randomVec - normal * dot(randomVec, normal));
@@ -57,7 +57,7 @@ void main()
 	// Calculate occlusion value
 	float occlusion = 0.0f;
 	// remove banding
-	const float bias = 1.f;
+	const float bias = 5.f;
 
 	for(int i = 0; i < SSAO_KERNEL_SIZE; i++)
 	{		

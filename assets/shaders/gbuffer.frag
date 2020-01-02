@@ -11,7 +11,7 @@ layout(location = 3) in vec3 fragPos;
 layout(location = 0) out vec4 posDepth;
 layout(location = 1) out vec4 normal;
 
-const float NEAR_PLANE = 0.1f; //todo: specialization const
+const float NEAR_PLANE = 5.f; //todo: specialization const
 const float FAR_PLANE =  5000.0f; //todo: specialization const 
 
 float linearDepth(float depth)

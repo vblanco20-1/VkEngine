@@ -181,6 +181,20 @@ void VulkanEngine::init_vulkan()
 		return clearSet;
 	};
 
+	graph.pass_definitions["SSAO-blur"].draw_callback = [&](vk::CommandBuffer cmd, RenderPass* pass) {
+		tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(cmd);
+		TracyVkZoneC(profilercontext, VkCommandBuffer(cmd), "SSAO blur", tracy::Color::Red);
+		render_ssao_blur(cmd, pass->render_height, pass->render_width);
+	};
+
+	graph.pass_definitions["SSAO-blur"].clear_callback = [&]() {
+		ClearPassSet clearSet;
+
+		clearSet.clearValues[0].color = vk::ClearColorValue{ std::array<float,4> { .2f, 0.2f, 0.2f, 1.0f } };
+		clearSet.num = 1;
+		return clearSet;
+	};
+
 	create_gfx_pipeline();	
 
 	create_ssao_pipelines();
@@ -229,6 +243,8 @@ void VulkanEngine::init_vulkan()
 	blankTexture = load_texture(MAKE_ASSET_PATH("sprites/blank.png"), "blank");
 	blackTexture = load_texture(MAKE_ASSET_PATH("sprites/black.png"), "black");
 	testCubemap = load_texture(MAKE_ASSET_PATH("models/SunTemple_Skybox.hdr"), "cubemap", true);
+
+	bluenoiseTexture = load_texture(MAKE_ASSET_PATH("sprites/bluenoise256.png"), "blunoise");
 	//testCubemap = load_texture(MAKE_ASSET_PATH("sprites/cubemap_yokohama_bc3_unorm.ktx"), "cubemap",true);
 
 	sceneParameters.fog_a = glm::vec4(1);
@@ -237,7 +253,7 @@ void VulkanEngine::init_vulkan()
 	sceneParameters.ambient = glm::vec4(0.1f);
 	//load_scene("E:/Gamedev/tps-demo/level/geometry/demolevel.blend");
 	
-#if 1
+#if 0
 	load_scene(MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Interior.fbx"), glm::mat4(1.f));	
 	load_scene(MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Exterior.fbx"), glm::mat4(1.f));
 #else
@@ -550,31 +566,27 @@ void VulkanEngine::create_ssao_pipelines()
 	else
 	{
 		pipelineEffect = getResource<ShaderEffectHandle>("ssao").handle;
-
 	}
+
+	FrameGraph::GraphAttachment* ssaoAttachment = &graph.attachments["ssao_pre"];
+
+	int sizex = ssaoAttachment->real_width;
+	int sizey = ssaoAttachment->real_height;
 
 	ssaoPipelineBuilder = new GraphicsPipelineBuilder();
 	ssaoPipelineBuilder->data.vertexInputInfo = vk::PipelineVertexInputStateCreateInfo{};// = Vertex::getPipelineCreateInfo();
 	ssaoPipelineBuilder->data.inputAssembly = VkPipelineInitializers::build_input_assembly(vk::PrimitiveTopology::eTriangleList);
-	ssaoPipelineBuilder->data.viewport = VkPipelineInitializers::build_viewport(swapChainExtent.width, swapChainExtent.height);
-	ssaoPipelineBuilder->data.scissor = VkPipelineInitializers::build_rect2d(0, 0, swapChainExtent.width, swapChainExtent.height);
-	ssaoPipelineBuilder->data.depthStencil = VkPipelineInitializers::build_depth_stencil(false, false);
-	ssaoPipelineBuilder->data.rasterizer = VkPipelineInitializers::build_rasterizer();
+	ssaoPipelineBuilder->data.viewport = VkPipelineInitializers::build_viewport(sizex, sizey);
+	ssaoPipelineBuilder->data.scissor = VkPipelineInitializers::build_rect2d(0, 0, sizex, sizey);
 	ssaoPipelineBuilder->data.multisampling = VkPipelineInitializers::build_multisampling();
-
-
 	ssaoPipelineBuilder->data.depthStencil = VkPipelineInitializers::build_depth_stencil(true, false, vk::CompareOp::eAlways);
 	ssaoPipelineBuilder->data.rasterizer = VkPipelineInitializers::build_rasterizer();
 	ssaoPipelineBuilder->data.rasterizer.cullMode = vk::CullModeFlagBits::eNone;
 	//1 color attachments
 	ssaoPipelineBuilder->data.colorAttachmentStates.push_back(VkPipelineInitializers::build_color_blend_attachment_state());
 
-	//ssaoPipelineBuilder->data.dynamicStates = {
-	//	vk::DynamicState::eViewport,
-	//	vk::DynamicState::eScissor
-	//};
 
-	FrameGraph::GraphAttachment* ssaoAttachment = &graph.attachments["shadow_buffer_1"];
+	//FrameGraph::GraphAttachment* ssaoAttachment = &graph.attachments["shadow_buffer_1"];
 	RenderPass* pass = &graph.pass_definitions["SSAO-pre"];
 	
 	vk::Pipeline ssaoPipeline = ssaoPipelineBuilder->build_pipeline(device, pass->built_pass, 0, pipelineEffect);
@@ -592,7 +604,7 @@ void VulkanEngine::create_ssao_pipelines()
 	
 
 
-	const int SSAO_KERNEL_SIZE = 64;
+	const int SSAO_KERNEL_SIZE = 32;
 	const int SSAO_NOISE_DIM = 4;
 	//cam buffer
 	createBuffer(sizeof(glm::vec4) * SSAO_KERNEL_SIZE, vk::BufferUsageFlagBits::eUniformBuffer,
@@ -632,7 +644,53 @@ void VulkanEngine::create_ssao_pipelines()
 		ssaoNoise[i] = glm::vec4(rndDist(rndEngine) * 2.0f - 1.0f, rndDist(rndEngine) * 2.0f - 1.0f, 0.0f, 0.0f);
 	}
 
+	// BLUR--------------
 
+	
+	if (!doesResourceExist<ShaderEffectHandle>("ssao-blur")) {
+
+		ShaderEffectHandle newShader;
+		newShader.handle = new ShaderEffect();
+
+		newShader.handle->add_shader_from_file(MAKE_ASSET_PATH("shaders/fullscreen.vert"));
+		newShader.handle->add_shader_from_file(MAKE_ASSET_PATH("shaders/blur.frag"));
+
+		newShader.handle->build_effect(device);
+
+		pipelineEffect = newShader.handle;
+
+		createResource<ShaderEffectHandle>("ssao-blur", newShader);
+	}
+	else
+	{
+		pipelineEffect = getResource<ShaderEffectHandle>("ssao-blur").handle;
+	}
+
+	blurPipelineBuilder = new GraphicsPipelineBuilder();
+	blurPipelineBuilder->data.vertexInputInfo = vk::PipelineVertexInputStateCreateInfo{};// = Vertex::getPipelineCreateInfo();
+	blurPipelineBuilder->data.inputAssembly = VkPipelineInitializers::build_input_assembly(vk::PrimitiveTopology::eTriangleList);
+	blurPipelineBuilder->data.viewport = VkPipelineInitializers::build_viewport(swapChainExtent.width, swapChainExtent.height);
+	blurPipelineBuilder->data.scissor = VkPipelineInitializers::build_rect2d(0, 0, swapChainExtent.width, swapChainExtent.height);
+	blurPipelineBuilder->data.multisampling = VkPipelineInitializers::build_multisampling();
+	blurPipelineBuilder->data.depthStencil = VkPipelineInitializers::build_depth_stencil(true, false, vk::CompareOp::eAlways);
+	blurPipelineBuilder->data.rasterizer = VkPipelineInitializers::build_rasterizer();
+	blurPipelineBuilder->data.rasterizer.cullMode = vk::CullModeFlagBits::eNone;
+	//1 color attachments
+	blurPipelineBuilder->data.colorAttachmentStates.push_back(VkPipelineInitializers::build_color_blend_attachment_state());
+
+
+	//FrameGraph::GraphAttachment* ssaoAttachment = &graph.attachments["shadow_buffer_1"];
+	pass = &graph.pass_definitions["SSAO-blur"];
+
+	ssaoPipeline = blurPipelineBuilder->build_pipeline(device, pass->built_pass, 0, pipelineEffect);
+
+
+	//PipelineResource pipeline;
+	pipeline.pipeline = ssaoPipeline;
+	pipeline.effect = pipelineEffect;
+	pipeline.pipelineBuilder = ssaoPipelineBuilder;
+	pipeline.renderPassName = "SSAO-blur";
+	pipeline_id = createResource("pipeline_ssao_blur", pipeline);
 }
 
 
@@ -1251,6 +1309,7 @@ void VulkanEngine::render_ssao_pass(const vk::CommandBuffer& cmd, int height, in
 
 	ZoneScopedNC("SSAO Pass", tracy::Color::BlueViolet);
 
+	TextureResource bluenoise = getResource<TextureResource>(bluenoiseTexture);
 	PipelineResource ssaopip = getResource<PipelineResource>("pipeline_ssao");
 
 	ShaderEffect* effect = ssaopip.effect;
@@ -1301,7 +1360,10 @@ void VulkanEngine::render_ssao_pass(const vk::CommandBuffer& cmd, int height, in
 	normalImage.imageView = graph.attachments["gbuf_normal"].view;
 	normalImage.sampler = graph.attachments["gbuf_normal"].sampler;
 
-	vk::DescriptorImageInfo noiseImage = normalImage;
+	vk::DescriptorImageInfo noiseImage = {};
+	noiseImage.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+	noiseImage.imageView = bluenoise.imageView;
+	noiseImage.sampler = bluenoise.textureSampler;//bluenoise.textureSampler;
 
 	setBuilder.bind_buffer("ubo", camBufferInfo);
 	setBuilder.bind_buffer("uboSSAOKernel", ssaoSamplesbuffer);
@@ -1319,10 +1381,39 @@ void VulkanEngine::render_ssao_pass(const vk::CommandBuffer& cmd, int height, in
 	
 }
 
+void VulkanEngine::render_ssao_blur(const vk::CommandBuffer& cmd, int height, int width)
+{
+	ZoneScopedNC("SSAO Blur", tracy::Color::BlueViolet);
+
+	PipelineResource ssaopip = getResource<PipelineResource>("pipeline_ssao_blur");
+
+	ShaderEffect* effect = ssaopip.effect;
+
+	VkPipelineLayout layout = effect->build_pipeline_layout((VkDevice)device);
+
+	cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, ssaopip.pipeline);
+
+	DescriptorSetBuilder setBuilder{ effect,&descriptorMegapool };	
+
+	vk::DescriptorImageInfo positionImage = {};
+	positionImage.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+	positionImage.imageView = graph.attachments["ssao_pre"].view;
+	positionImage.sampler = graph.attachments["ssao_pre"].sampler;
+	
+	setBuilder.bind_image(0, 0, positionImage);	
+
+	std::array<vk::DescriptorSet, 2> descriptors;
+	descriptors[0] = setBuilder.build_descriptor(0, DescriptorLifetime::PerFrame);
+
+	cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, layout, 0, 1, &descriptors[0], 0, nullptr);
+
+	cmd.draw(3, 1, 0, 0);
+}
+
 constexpr int MULTIDRAW = 1;
 void VulkanEngine::RenderMainPass(const vk::CommandBuffer& cmd)
 {
-	
+	TextureResource bluenoise = getResource<TextureResource>(bluenoiseTexture);
 
 	ZoneScopedNC("Main Pass", tracy::Color::BlueViolet);
 	EntityID LastMesh = entt::null;
@@ -1413,6 +1504,8 @@ void VulkanEngine::RenderMainPass(const vk::CommandBuffer& cmd)
 			transformBufferInfo.offset = 0;
 			transformBufferInfo.range = sizeof(glm::mat4) * 10000;
 
+
+
 			const TextureResource& texture = render_registry.get<TextureResource>(testCubemap);
 
 			vk::DescriptorImageInfo imageInfo = {};
@@ -1423,13 +1516,18 @@ void VulkanEngine::RenderMainPass(const vk::CommandBuffer& cmd)
 			vk::DescriptorImageInfo shadowInfo = {};
 			shadowInfo.imageLayout = vk::ImageLayout::eDepthStencilReadOnlyOptimal;
 			shadowInfo.imageView = shadowPass.depth.view;
-			shadowInfo.sampler = shadowPass.depthSampler;
+			shadowInfo.sampler = bluenoise.textureSampler;//shadowPass.depthSampler;
+
+			vk::DescriptorImageInfo noiseImage = {};
+			noiseImage.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+			noiseImage.imageView = bluenoise.imageView;
+			noiseImage.sampler = bluenoise.textureSampler;
 
 			vk::DescriptorImageInfo ssaoImage = {};
 			ssaoImage.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-			ssaoImage.imageView = graph.attachments["ssao_pre"].view;
-			ssaoImage.sampler = graph.attachments["ssao_pre"].sampler;
-
+			ssaoImage.imageView = graph.attachments["ssao_post"].view;
+			ssaoImage.sampler = graph.attachments["ssao_post"].sampler;
+			setBuilder.bind_image("blueNoise", noiseImage);
 			setBuilder.bind_image("ssaoMap", ssaoImage);
 			setBuilder.bind_image("shadowMap", shadowInfo);
 			setBuilder.bind_image("ambientCubemap", imageInfo);
@@ -1621,7 +1719,7 @@ void VulkanEngine::update_uniform_buffer(uint32_t currentImage)
 	UniformBufferObject ubo = {};
 	ubo.model = glm::mat4(1.0f);
 
-	ubo.proj = glm::perspective(glm::radians(config_parameters.fov), swapChainExtent.width / (float)swapChainExtent.height, 0.1f, 5000.0f);
+	ubo.proj = glm::perspective(glm::radians(config_parameters.fov), swapChainExtent.width / (float)swapChainExtent.height, 5.f, 5000.0f);
 	ubo.proj[1][1] *= -1;
 	if (!config_parameters.PlayerCam) {
 
@@ -2275,12 +2373,19 @@ bool VulkanEngine::load_scene(const char* scene_path, glm::mat4 rootMatrix)
 
 	}
 
-	PipelineResource pipeline;
-	pipeline.pipeline = graphicsPipeline;
-	pipeline.effect = getResource<ShaderEffectHandle>("basiclit").handle;
-	pipeline.pipelineBuilder = gfxPipelineBuilder;
-	pipeline.renderPassName = "MainPass";
-	auto pipeline_id = createResource("pipeline_basiclit", pipeline);
+	EntityID pipeline_id;
+	if (!doesResourceExist<PipelineResource>("pipeline_basiclit")) {
+		PipelineResource pipeline;
+		pipeline.pipeline = graphicsPipeline;
+		pipeline.effect = getResource<ShaderEffectHandle>("basiclit").handle;
+		pipeline.pipelineBuilder = gfxPipelineBuilder;
+		pipeline.renderPassName = "MainPass";
+		pipeline_id = createResource("pipeline_basiclit", pipeline);
+	}
+	else {
+		pipeline_id = resourceMap["pipeline_basiclit"];
+	}
+	
 
 	
 	auto blank_descriptor = create_basic_descriptor_sets(pipeline_id,"blank" ,blank_textures);

@@ -688,6 +688,8 @@ void create_engine_graph(VulkanEngine* engine)
 
 	AttachmentInfo ssao_pre = gbuffer_position;
 	ssao_pre.format = VK_FORMAT_R8_UNORM;
+	ssao_pre.size_x =0.5f;
+	ssao_pre.size_y =0.5f;
 
 	AttachmentInfo ssao_post = gbuffer_position;
 

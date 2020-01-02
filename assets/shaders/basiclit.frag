@@ -50,28 +50,46 @@ float textureProj(vec4 shadowCoord, vec2 off)
 	}
 	return shadow;
 }
+vec3 screenBluenoise()
+{
+	// Get a random vector using a noise lookup
+	ivec2 noiseDim = textureSize(blueNoise, 0);
+	const vec2 noiseUV = gl_FragCoord.xy / noiseDim;  
 
+    vec3 randomVec = texture(blueNoise, noiseUV).xyz * 2.0 - 1.0;
+	return randomVec;
+}
 
 float filterPCF(vec4 sc)
 {
 	ivec2 texDim = textureSize(shadowMap, 0);
-	float scale = 1.5;
+	float scale = 0.5;
 	float dx = scale * 1.0 / float(texDim.x);
 	float dy = scale * 1.0 / float(texDim.y);
 
 	float shadowFactor = 0.0;
 	int count = 0;
-	int range = 1;
+	int range = 3;
+
+    vec3 rand = (screenBluenoise());
 	
+	sc.x += dx * rand.z;
+    sc.y += dx * rand.y;
+	vec2 dirA = rand.xy;
+	vec2 dirB = vec2(-dirA.y,dirA.x);
+	
+	dirA *= dx;
+	dirB *= dy;
 	for (int x = -range; x <= range; x++)
 	{
 		for (int y = -range; y <= range; y++)
 		{
 			shadowFactor += textureProj(sc, vec2(dx*x, dy*y));
+			//shadowFactor += textureProj(sc, dirA*x + dirB*y);
 			count++;
-		}
-	
+		}	
 	}
+	//return shadowFactor += textureProj(sc, vec2(0));
 	return shadowFactor / count;
 }
 
@@ -110,6 +128,8 @@ float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
     return ggx1 * ggx2;
 }
 
+
+
 vec3 fresnelSchlick(float cosTheta, vec3 F0)
 {
     return F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
@@ -125,9 +145,19 @@ void main() {
 	vec3 light_dir = normalize(vec3(100.0f, 600.0f, 800.0f)) * 1.f;
 
     float ao = 1.f;
-	vec3 albedo = texture(tex1, fragTexCoord).rgb;
-	float metallic =  texture(tex3, fragTexCoord).b;
-	float roughness =  texture(tex3, fragTexCoord).g;
+	vec3 albedo = clamp(texture(tex1, fragTexCoord).rgb,vec3(0.01),vec3(1.f));
+
+	float metallic = 0;
+	float roughness = 0.9;
+
+	vec3 tex3 = texture(tex3, fragTexCoord).xyz;
+	if(tex3 != vec3(1)){
+ 	 metallic = tex3.b;
+	 roughness =  tex3.g;
+	}
+
+	//float metallic = texture(tex3, fragTexCoord).b;
+	//float roughness =  texture(tex3, fragTexCoord).g;
 	vec4 emmisive = texture(tex4, fragTexCoord);
 
     vec3 N = normalize(fragNormal);
@@ -175,12 +205,14 @@ void main() {
 	vec3 diffuse    = albedo;//irradiance * albedo;
 	//vec3 ambient    = (kD * diffuse) * ao; 
 
-	vec3 ambient = (kD * diffuse) * sceneParams.ambient.w * ssao;
+	vec3 ambient = (kD * diffuse) * sceneParams.ambient.w * (pow(ssao,2));
+	//Lo *= pow(ssao,4);
     vec3 color = ambient + Lo;
 	
     color = color / (color + vec3(1.0));
     //color = pow(color, vec3(1.0/2.2));  
    
-    //outColor = vec4(ssao);//
+   //outColor = vec4(roughness);
+   outColor = vec4(ssao);//
 	outColor = vec4(color, 1.0) + emmisive;
 }
