@@ -63,6 +63,9 @@ void UI::DrawEngineUI(VulkanEngine* engine)
 	//ImGui::InputFloat3("Ambient Color", (float*)&engine->sceneParameters.ambient[0]);
 	ImGui::SliderFloat("Ambient Power", (float*)&engine->sceneParameters.ambient.w, 0.0f,3.f);
 
+	ImGui::SliderFloat("SSAO Blur Roughness", (float*)&engine->sceneParameters.ssao_roughness, 0.0f, 1000.f);
+	ImGui::SliderFloat("SSAO Blur Size", (float*)&engine->sceneParameters.kernel_width, 0.0f, 20.f);
+
 	struct GPUSceneParams {
 		glm::vec4 fog_a; //xyz color, w power
 		glm::vec4 fog_b; //x min, y far, zw unused

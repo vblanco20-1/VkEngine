@@ -162,7 +162,7 @@ void VulkanEngine::init_vulkan()
 
 		clearSet.clearValues[0].color = vk::ClearColorValue{ std::array<float,4> { 0.0f, 0.0f, 0.0f, 1.0f } };
 		clearSet.clearValues[1].color = vk::ClearColorValue{ std::array<float,4> { 0.0f, 0.0f, 0.0f, 1.0f } };
-		clearSet.clearValues[2].depthStencil = { 1.0f, 0 };
+		clearSet.clearValues[2].depthStencil = { 0.0f, 0 };
 		clearSet.num = 3;
 		return clearSet;
 	};
@@ -181,13 +181,25 @@ void VulkanEngine::init_vulkan()
 		return clearSet;
 	};
 
-	graph.pass_definitions["SSAO-blur"].draw_callback = [&](vk::CommandBuffer cmd, RenderPass* pass) {
+	graph.pass_definitions["SSAO-blurx"].draw_callback = [&](vk::CommandBuffer cmd, RenderPass* pass) {
 		tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(cmd);
 		TracyVkZoneC(profilercontext, VkCommandBuffer(cmd), "SSAO blur", tracy::Color::Red);
-		render_ssao_blur(cmd, pass->render_height, pass->render_width);
+		render_ssao_blurx(cmd, pass->render_height, pass->render_width);
+	};
+	graph.pass_definitions["SSAO-blury"].draw_callback = [&](vk::CommandBuffer cmd, RenderPass* pass) {
+		tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(cmd);
+		TracyVkZoneC(profilercontext, VkCommandBuffer(cmd), "SSAO blur", tracy::Color::Red);
+		render_ssao_blury(cmd, pass->render_height, pass->render_width);
 	};
 
-	graph.pass_definitions["SSAO-blur"].clear_callback = [&]() {
+	graph.pass_definitions["SSAO-blurx"].clear_callback = [&]() {
+		ClearPassSet clearSet;
+
+		clearSet.clearValues[0].color = vk::ClearColorValue{ std::array<float,4> { .2f, 0.2f, 0.2f, 1.0f } };
+		clearSet.num = 1;
+		return clearSet;
+	};
+	graph.pass_definitions["SSAO-blury"].clear_callback = [&]() {
 		ClearPassSet clearSet;
 
 		clearSet.clearValues[0].color = vk::ClearColorValue{ std::array<float,4> { .2f, 0.2f, 0.2f, 1.0f } };
@@ -251,9 +263,11 @@ void VulkanEngine::init_vulkan()
 	sceneParameters.fog_b.x = 0.f;
 	sceneParameters.fog_b.y = 10000.f;
 	sceneParameters.ambient = glm::vec4(0.1f);
+	sceneParameters.kernel_width = 10;
+	sceneParameters.ssao_roughness = 600;
 	//load_scene("E:/Gamedev/tps-demo/level/geometry/demolevel.blend");
 	
-#if 0
+#if 1
 	load_scene(MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Interior.fbx"), glm::mat4(1.f));	
 	load_scene(MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Exterior.fbx"), glm::mat4(1.f));
 #else
@@ -680,17 +694,24 @@ void VulkanEngine::create_ssao_pipelines()
 
 
 	//FrameGraph::GraphAttachment* ssaoAttachment = &graph.attachments["shadow_buffer_1"];
-	pass = &graph.pass_definitions["SSAO-blur"];
+	pass = &graph.pass_definitions["SSAO-blurx"];
 
-	ssaoPipeline = blurPipelineBuilder->build_pipeline(device, pass->built_pass, 0, pipelineEffect);
-
+	vk::Pipeline blurx = blurPipelineBuilder->build_pipeline(device, graph.pass_definitions["SSAO-blurx"].built_pass, 0, pipelineEffect);
+	vk::Pipeline blury = blurPipelineBuilder->build_pipeline(device, graph.pass_definitions["SSAO-blury"].built_pass, 0, pipelineEffect);
 
 	//PipelineResource pipeline;
-	pipeline.pipeline = ssaoPipeline;
+	pipeline.pipeline = blurx;
 	pipeline.effect = pipelineEffect;
-	pipeline.pipelineBuilder = ssaoPipelineBuilder;
-	pipeline.renderPassName = "SSAO-blur";
-	pipeline_id = createResource("pipeline_ssao_blur", pipeline);
+	pipeline.pipelineBuilder = blurPipelineBuilder;
+	pipeline.renderPassName = "SSAO-blurx";
+	pipeline_id = createResource("pipeline_ssao_blurx", pipeline);
+
+	
+	pipeline.pipeline = blury;
+	pipeline.effect = pipelineEffect;
+	pipeline.pipelineBuilder = blurPipelineBuilder;
+	pipeline.renderPassName = "SSAO-blury";
+	pipeline_id = createResource("pipeline_ssao_blury", pipeline);
 }
 
 
@@ -724,7 +745,7 @@ void VulkanEngine::create_gbuffer_pipeline()
 	gbufferPipelineBuilder->data.inputAssembly = VkPipelineInitializers::build_input_assembly(vk::PrimitiveTopology::eTriangleList);
 	gbufferPipelineBuilder->data.viewport = VkPipelineInitializers::build_viewport(swapChainExtent.width, swapChainExtent.height);
 	gbufferPipelineBuilder->data.scissor = VkPipelineInitializers::build_rect2d(0, 0, swapChainExtent.width, swapChainExtent.height);
-	gbufferPipelineBuilder->data.depthStencil = VkPipelineInitializers::build_depth_stencil(true, true);
+	gbufferPipelineBuilder->data.depthStencil = VkPipelineInitializers::build_depth_stencil(true, true,vk::CompareOp::eGreaterOrEqual);
 	gbufferPipelineBuilder->data.rasterizer = VkPipelineInitializers::build_rasterizer();
 	gbufferPipelineBuilder->data.multisampling = VkPipelineInitializers::build_multisampling();
 	//2 oclor attachments
@@ -1381,11 +1402,11 @@ void VulkanEngine::render_ssao_pass(const vk::CommandBuffer& cmd, int height, in
 	
 }
 
-void VulkanEngine::render_ssao_blur(const vk::CommandBuffer& cmd, int height, int width)
+void VulkanEngine::render_ssao_blurx(const vk::CommandBuffer& cmd, int height, int width)
 {
-	ZoneScopedNC("SSAO Blur", tracy::Color::BlueViolet);
+	ZoneScopedNC("SSAO Blur X", tracy::Color::BlueViolet);
 
-	PipelineResource ssaopip = getResource<PipelineResource>("pipeline_ssao_blur");
+	PipelineResource ssaopip = getResource<PipelineResource>("pipeline_ssao_blurx");
 
 	ShaderEffect* effect = ssaopip.effect;
 
@@ -1399,18 +1420,72 @@ void VulkanEngine::render_ssao_blur(const vk::CommandBuffer& cmd, int height, in
 	positionImage.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
 	positionImage.imageView = graph.attachments["ssao_pre"].view;
 	positionImage.sampler = graph.attachments["ssao_pre"].sampler;
+
+	vk::DescriptorImageInfo depthImage = {};
+	depthImage.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+	depthImage.imageView = graph.attachments["gbuf_pos"].view;
+	depthImage.sampler = graph.attachments["gbuf_pos"].sampler;
 	
 	setBuilder.bind_image(0, 0, positionImage);	
-
+	setBuilder.bind_image(0, 1, depthImage);
 	std::array<vk::DescriptorSet, 2> descriptors;
 	descriptors[0] = setBuilder.build_descriptor(0, DescriptorLifetime::PerFrame);
 
 	cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, layout, 0, 1, &descriptors[0], 0, nullptr);
 
+	glm::vec4 blur_dir;
+	blur_dir.x = (1.f /(float) swapChainExtent.width) * 2.f;;
+	blur_dir.y = 0;
+	blur_dir.z = sceneParameters.ssao_roughness;
+	blur_dir.w = sceneParameters.kernel_width;
+	cmd.pushConstants(layout, vk::ShaderStageFlagBits::eFragment, 0, sizeof(glm::vec4) * 4, &blur_dir);
+
 	cmd.draw(3, 1, 0, 0);
 }
 
 constexpr int MULTIDRAW = 1;
+
+void VulkanEngine::render_ssao_blury(const vk::CommandBuffer& cmd, int height, int width)
+{
+	ZoneScopedNC("SSAO Blur Y", tracy::Color::BlueViolet);
+
+	PipelineResource ssaopip = getResource<PipelineResource>("pipeline_ssao_blury");
+
+	ShaderEffect* effect = ssaopip.effect;
+
+	VkPipelineLayout layout = effect->build_pipeline_layout((VkDevice)device);
+
+	cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, ssaopip.pipeline);
+
+	DescriptorSetBuilder setBuilder{ effect,&descriptorMegapool };
+
+	vk::DescriptorImageInfo positionImage = {};
+	positionImage.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+	positionImage.imageView = graph.attachments["ssao_mid"].view;
+	positionImage.sampler = graph.attachments["ssao_mid"].sampler;
+
+	vk::DescriptorImageInfo depthImage = {};
+	depthImage.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+	depthImage.imageView = graph.attachments["gbuf_pos"].view;
+	depthImage.sampler = graph.attachments["gbuf_pos"].sampler;
+
+	setBuilder.bind_image(0, 0, positionImage);
+	setBuilder.bind_image(0, 1, depthImage);
+	std::array<vk::DescriptorSet, 2> descriptors;
+	descriptors[0] = setBuilder.build_descriptor(0, DescriptorLifetime::PerFrame);
+
+	cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, layout, 0, 1, &descriptors[0], 0, nullptr);
+
+	glm::vec4 blur_dir;
+	blur_dir.y = (1.f / (float)swapChainExtent.height)*2.f;
+	blur_dir.x = 0;
+	blur_dir.z = sceneParameters.ssao_roughness;
+	blur_dir.w = sceneParameters.kernel_width;
+	cmd.pushConstants(layout, vk::ShaderStageFlagBits::eFragment, 0, sizeof(float) * 4, &blur_dir);
+
+	cmd.draw(3, 1, 0, 0);
+}
+
 void VulkanEngine::RenderMainPass(const vk::CommandBuffer& cmd)
 {
 	TextureResource bluenoise = getResource<TextureResource>(bluenoiseTexture);
@@ -1719,7 +1794,8 @@ void VulkanEngine::update_uniform_buffer(uint32_t currentImage)
 	UniformBufferObject ubo = {};
 	ubo.model = glm::mat4(1.0f);
 
-	ubo.proj = glm::perspective(glm::radians(config_parameters.fov), swapChainExtent.width / (float)swapChainExtent.height, 5.f, 5000.0f);
+	ubo.proj = glm::perspective(glm::radians(config_parameters.fov), swapChainExtent.width / (float)swapChainExtent.height,  50000.0f, 0.1f);
+	glm::mat4 revproj = glm::perspective(glm::radians(config_parameters.fov), swapChainExtent.width / (float)swapChainExtent.height, 0.1f, 50000.0f);
 	ubo.proj[1][1] *= -1;
 	if (!config_parameters.PlayerCam) {
 
@@ -1740,7 +1816,7 @@ void VulkanEngine::update_uniform_buffer(uint32_t currentImage)
 		mainCam.eyeLoc = ubo.eye;
 		mainCam.eyeDir = playerCam.camera_forward;
 	}
-	mainCam.camfrustum = Frustum(ubo.proj * ubo.view);
+	mainCam.camfrustum = Frustum(revproj * ubo.view);
 	
 
 	UniformBufferObject shadowubo = {};	

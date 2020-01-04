@@ -205,9 +205,9 @@ void main() {
 	vec3 diffuse    = albedo;//irradiance * albedo;
 	//vec3 ambient    = (kD * diffuse) * ao; 
 
-	vec3 ambient = (kD * diffuse) * sceneParams.ambient.w * (pow(ssao,2));
+	vec3 ambient = (kD * diffuse) * sceneParams.ambient.w;
 	//Lo *= pow(ssao,4);
-    vec3 color = ambient + Lo;
+    vec3 color = (ambient + Lo)  * (pow(ssao,4));
 	
     color = color / (color + vec3(1.0));
     //color = pow(color, vec3(1.0/2.2));  

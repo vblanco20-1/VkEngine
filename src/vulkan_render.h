@@ -216,7 +216,8 @@ struct VulkanEngine {
 	void draw_frame();
 	void render_shadow_pass(const vk::CommandBuffer& cmd,int height, int width);
 	void render_ssao_pass(const vk::CommandBuffer& cmd, int height, int width);
-	void render_ssao_blur(const vk::CommandBuffer& cmd, int height, int width);
+	void render_ssao_blurx(const vk::CommandBuffer& cmd, int height, int width);
+	void render_ssao_blury(const vk::CommandBuffer& cmd, int height, int width);
 	void RenderMainPass(const vk::CommandBuffer& cmd);
 	void RenderGBufferPass(const vk::CommandBuffer& cmd);
 	void update_uniform_buffer(uint32_t currentImage);

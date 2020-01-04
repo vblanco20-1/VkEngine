@@ -5,7 +5,7 @@ layout (set = 0,binding = 1) uniform sampler2D samplerNormal;
 layout (set = 0,binding = 2) uniform sampler2D ssaoNoise;
 
 //const int SSAO_KERNEL_SIZE = 32;
-const float SSAO_RADIUS = 200.f;
+const float SSAO_RADIUS = 100.f;
 layout (constant_id = 0) const int SSAO_KERNEL_SIZE = 64;
 //layout (constant_id = 1) const float SSAO_RADIUS = 0.5;
 
@@ -38,19 +38,13 @@ void main()
 	// Get a random vector using a noise lookup
 	ivec2 texDim = textureSize(samplerPositionDepth, 0); 
 	ivec2 noiseDim = textureSize(ssaoNoise, 0);
-	const vec2 noiseUV = vec2(float(texDim.x)/float(noiseDim.x), float(texDim.y)/(noiseDim.y)) * inUV;  
-	float randx = rand2D(noiseUV.xy);
-	float randy = rand2D(noiseUV.yx);
-	//vec3 randomVec = vec3(randx,randy,0) * 2.0 - 1.0;
+	const vec2 noiseUV = vec2(float(texDim.x)/float(noiseDim.x), float(texDim.y)/(noiseDim.y)) * inUV;
+
     vec3 randomVec = texture(ssaoNoise, noiseUV).xyz * 2.0 - 1.0;
 	
 	// Create TBN matrix
 	vec3 tangent = normalize(randomVec - normal * dot(randomVec, normal));
 	vec3 bitangent = cross(tangent, normal);
-
-   // normal = vec3(0,1,0);
-   // vec3 tangent = vec3(0,0,1);
-	//vec3 bitangent = cross(tangent, normal);
 
 	mat3 TBN = mat3(tangent, bitangent, normal);
 

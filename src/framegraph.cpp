@@ -662,7 +662,8 @@ void create_engine_graph(VulkanEngine* engine)
 	auto shadow_pass = graph.add_pass("ShadowPass");
 	auto gbuffer_pass = graph.add_pass("GBuffer");
 	auto ssao0_pass = graph.add_pass("SSAO-pre");
-	auto ssao1_pass = graph.add_pass("SSAO-blur");
+	auto blurx_pass = graph.add_pass("SSAO-blurx");
+	auto blury_pass = graph.add_pass("SSAO-blury");
 	auto forward_pass = graph.add_pass("MainPass");
 
 	AttachmentInfo shadowbuffer;
@@ -691,6 +692,7 @@ void create_engine_graph(VulkanEngine* engine)
 	ssao_pre.size_x =0.5f;
 	ssao_pre.size_y =0.5f;
 
+	AttachmentInfo ssao_midblur = gbuffer_position;
 	AttachmentInfo ssao_post = gbuffer_position;
 
 	shadow_pass->add_depth_attachment("shadow_buffer_1", shadowbuffer,RenderGraphResourceAccess::Write);
@@ -706,8 +708,11 @@ void create_engine_graph(VulkanEngine* engine)
 	ssao0_pass->add_depth_attachment("depth_prepass", gbuffer_depth, RenderGraphResourceAccess::Write);
 
 
-	ssao1_pass->add_color_attachment("ssao_pre", ssao_pre, RenderGraphResourceAccess::Read);
-	ssao1_pass->add_color_attachment("ssao_post", ssao_post, RenderGraphResourceAccess::Write);
+	blurx_pass->add_color_attachment("ssao_pre", ssao_pre, RenderGraphResourceAccess::Read);
+	blurx_pass->add_color_attachment("ssao_mid", ssao_midblur, RenderGraphResourceAccess::Write);
+
+	blury_pass->add_color_attachment("ssao_mid", ssao_midblur, RenderGraphResourceAccess::Read);
+	blury_pass->add_color_attachment("ssao_post", ssao_post, RenderGraphResourceAccess::Write);
 
 	forward_pass->add_color_attachment("gbuf_pos", gbuffer_position, RenderGraphResourceAccess::Read);
 	forward_pass->add_color_attachment("gbuf_normal", gbuffer_normal, RenderGraphResourceAccess::Read);
