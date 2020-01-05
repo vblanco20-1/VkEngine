@@ -13,104 +13,104 @@ enum class RenderGraphResourceAccess {
 enum class SizeClass {
 	SwapchainRelative,
 	Absolute
+}; 
+
+enum class PassType : uint8_t {
+	Graphics,
+	Compute,
+	CPU
 };
-struct AttachmentInfo
+struct RenderAttachmentInfo
 {
-	SizeClass size_class{ SizeClass::SwapchainRelative};
-	float size_x{1.0f};
-	float size_y{1.0f};
+	SizeClass size_class{ SizeClass::SwapchainRelative };
+	float size_x{ 1.0f };
+	float size_y{ 1.0f };
 	VkFormat format{ VK_FORMAT_UNDEFINED };
-	
-	bool persistent{true};
+	VkClearValue clearValue;
+	bool bClear{ false };
+
+	void set_clear_color(std::array<float, 4> col);
+	void set_clear_depth(float depth, uint32_t stencil);
 };
 
-struct ClearPassSet {
-	//5 max
-	std::array<vk::ClearValue, 5> clearValues;
-	int num;
-};
-class FrameGraph;
-struct RenderPass{
-
+class RenderPass
+{
+public:
 	struct PassAttachment {
-		AttachmentInfo info;
-		std::string name;
-		bool bIsDepth;
-		bool bWrite;
+		RenderAttachmentInfo info{};
+		std::string name{ "" };
 	};
-
 	struct PhysicalAttachment
 	{
-		vk::AttachmentDescription desc;
+		VkAttachmentDescription desc;
 		int index;
 		bool bIsDepth;
+		std::string name;
 	};
 
-	void add_color_attachment(std::string name, const AttachmentInfo& info, RenderGraphResourceAccess access);
-	void add_depth_attachment(std::string name, const AttachmentInfo& info, RenderGraphResourceAccess access);
-
-
+	std::vector<VkClearValue> clearValues;
+	std::vector<std::string> image_dependencies;
 	std::vector<PassAttachment > color_attachments;
-	std::vector<PassAttachment > depth_attachments;
+	std::vector<PhysicalAttachment> physical_attachments;
 
-	//true attachments by name
-	std::unordered_map<std::string,PhysicalAttachment > real_attachments;
+	PassAttachment depth_attachment;
+
 	vk::RenderPass built_pass;
 	vk::Framebuffer framebuffer;
 
-	std::function<ClearPassSet()> clear_callback;
-
-	std::function<void(vk::CommandBuffer,RenderPass*)> draw_callback;
+	std::function<void(vk::CommandBuffer, RenderPass*)> draw_callback;
 
 	int render_width = 0;
 	int render_height = 0;
-	bool bIsOutputPass = false;
-	FrameGraph* owner;
+	class FrameGraph* owner;
 	std::string name;
+
+	void add_image_dependency(std::string name);
+
+	void add_color_attachment(std::string name, const RenderAttachmentInfo& info);
+	void set_depth_attachment(std::string name, const RenderAttachmentInfo& info);
 };
 
 class FrameGraph {
 public:
-	struct FrameGraphPriv;
 	struct GraphAttachment {
-		AttachmentInfo info;
-		int reads{0};
-		int writes{0};
-		bool bIsDepth{false};
-		//bool bIsColor{ false };
+		RenderAttachmentInfo info;
+		int reads{ 0 };
+		int writes{ 0 };
+		bool bIsDepth{ false };
 		std::string name;
-
-
 		int real_height;
 		int real_width;
-		vk::ImageUsageFlags usageFlags;
-		VkSampler sampler;
+		VkImageUsageFlags usageFlags;
 		VkDescriptorImageInfo descriptor;
 		VmaAllocation imageAlloc;
-		vk::Image image;
+		VkImage image;
 		VkDeviceMemory mem;
-		vk::ImageView view;
+
+
+		//pass that creates this
+		std::string creator_pass{ "" };
+		//last pass that writes this
+		std::string last_writer_pass{ "" };
+		//last pass to read from this
+		std::string last_read_pass{ "" };
 	};
 
+	bool build(struct VulkanEngine* engine);
 
-	FrameGraph();
-	void build(VkDevice device, VmaAllocator allocator);
-	//void register_resource(std::string name, const AttachmentInfo &attachment);
-
-	RenderPass * add_pass(std::string pass_name);
+	RenderPass* add_pass(std::string pass_name, std::function<void(vk::CommandBuffer, RenderPass*)> execution, PassType type);
+	RenderPass* get_pass(std::string name);
+	VkDescriptorImageInfo get_image_descriptor(std::string name);
+	GraphAttachment* get_attachment(std::string name);
 
 	void execute(vk::CommandBuffer cmd);
-
-	FrameGraphPriv* priv;
-
-	std::unordered_map<std::string, GraphAttachment > attachments;
+	std::vector<RenderPass*> passes;
 	std::unordered_map<std::string, RenderPass > pass_definitions;
+	std::unordered_map<std::string, GraphAttachment> graph_attachments;
 
 	VkExtent2D swapchainSize;
-
-	std::vector<RenderPass*> passes;
-
 	std::vector<const char*> attachmentNames;
 };
 
-void create_engine_graph(struct VulkanEngine* engine);
+std::array < vk::SubpassDependency, 2> build_basic_subpass_dependencies();
+

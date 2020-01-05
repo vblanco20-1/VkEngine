@@ -114,7 +114,7 @@ struct VulkanEngine {
 	ConfigParams config_parameters;
 	EngineStats eng_stats;
 
-	FrameGraph graph;
+	FrameGraph render_graph;
 	struct FrameBufferAttachment {
 		vk::Image image;
 		VkDeviceMemory mem;
@@ -152,6 +152,7 @@ struct VulkanEngine {
 	void cleanup_swap_chain();
 
 	bool check_layer_support();
+	void create_engine_graph();
 	void init_vulkan();
 	void init_vulkan_debug();
 	void create_device();

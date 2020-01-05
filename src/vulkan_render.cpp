@@ -51,6 +51,111 @@ static std::vector<char> readFile(const std::string& filename) {
 	return buffer;
 }
 
+void VulkanEngine::create_engine_graph()
+{
+	VulkanEngine* engine = this;
+	FrameGraph& graph = engine->render_graph;
+	VkDevice device = (VkDevice)engine->device;
+	VmaAllocator allocator = engine->allocator;
+	VkExtent2D swapChainSize = engine->swapChainExtent;
+
+	graph.swapchainSize = swapChainSize;
+
+	//order is very important
+	auto shadow_pass = graph.add_pass("ShadowPass", [&](vk::CommandBuffer cmd, RenderPass* pass) {
+		
+		this->render_shadow_pass(cmd, pass->render_height, pass->render_width);
+		}, PassType::Graphics);
+
+
+	auto gbuffer_pass = graph.add_pass("GBuffer", [&](vk::CommandBuffer cmd, RenderPass* pass) {
+		
+		RenderGBufferPass(cmd);
+		}, PassType::Graphics);
+
+	auto ssao0_pass = graph.add_pass("SSAO-pre", [&](vk::CommandBuffer cmd, RenderPass* pass) {
+		
+		render_ssao_pass(cmd, pass->render_height, pass->render_width);
+		}, PassType::Graphics);
+
+	auto blurx_pass = graph.add_pass("SSAO-blurx", [&](vk::CommandBuffer cmd, RenderPass* pass) {
+		
+		render_ssao_blurx(cmd, pass->render_height, pass->render_width);
+		}, PassType::Graphics);
+
+	auto blury_pass = graph.add_pass("SSAO-blury", [&](vk::CommandBuffer cmd, RenderPass* pass) {
+	
+		render_ssao_blury(cmd, pass->render_height, pass->render_width);
+		}, PassType::Graphics);
+
+	auto forward_pass = graph.add_pass("MainPass", [&](vk::CommandBuffer cmd, RenderPass* pass) {
+
+		RenderMainPass(cmd);
+		}, PassType::Graphics);
+
+	auto display_pass = graph.add_pass("DisplayPass", [](vk::CommandBuffer cmd, RenderPass* pass) {}, PassType::Graphics);
+
+	RenderAttachmentInfo shadowbuffer;
+	shadowbuffer.format = VK_FORMAT_D16_UNORM;
+	shadowbuffer.size_class = SizeClass::Absolute;
+	shadowbuffer.size_x = 2048;
+	shadowbuffer.size_y = 2048;
+	shadowbuffer.set_clear_depth(1.0f, 0);
+
+	RenderAttachmentInfo gbuffer_position;
+	gbuffer_position.format = VK_FORMAT_R32G32B32A32_SFLOAT;
+	gbuffer_position.set_clear_color({ 0.0f, 0.0f, 0.0f, 1.0f });
+
+	RenderAttachmentInfo gbuffer_normal;
+	gbuffer_normal.format = VK_FORMAT_R16G16B16A16_SFLOAT;
+	gbuffer_position.set_clear_color({ 0.0f, 0.0f, 0.0f, 1.0f });
+
+	RenderAttachmentInfo gbuffer_depth;
+	gbuffer_depth.format = (VkFormat)engine->findDepthFormat();
+	gbuffer_depth.set_clear_depth(0.0f, 0);
+
+
+	RenderAttachmentInfo ssao_pre;
+	ssao_pre.format = VK_FORMAT_R8_UNORM;
+	ssao_pre.size_x = 0.5f;
+	ssao_pre.size_y = 0.5f;
+	ssao_pre.set_clear_color({ 0.0f, 0.0f, 0.0f, 1.0f });
+
+	RenderAttachmentInfo ssao_midblur = gbuffer_position;
+	ssao_midblur.format = VK_FORMAT_R8_UNORM;
+	RenderAttachmentInfo ssao_post = ssao_midblur;
+
+	RenderAttachmentInfo render_output = gbuffer_position;
+
+	shadow_pass->set_depth_attachment("shadow_buffer_1", shadowbuffer);
+
+	gbuffer_pass->add_color_attachment("gbuf_pos", gbuffer_position);
+	gbuffer_pass->add_color_attachment("gbuf_normal", gbuffer_normal);
+	gbuffer_pass->set_depth_attachment("depth_prepass", gbuffer_depth);
+
+	ssao0_pass->add_image_dependency("gbuf_pos");
+	ssao0_pass->add_image_dependency("gbuf_normal");
+	ssao0_pass->add_color_attachment("ssao_pre", ssao_pre);
+
+	blurx_pass->add_image_dependency("ssao_pre");
+	blurx_pass->add_color_attachment("ssao_mid", ssao_midblur);
+
+	blury_pass->add_image_dependency("ssao_mid");
+	blury_pass->add_color_attachment("ssao_post", ssao_post);
+
+	forward_pass->add_image_dependency("gbuf_pos");
+	forward_pass->add_image_dependency("gbuf_normal");
+	forward_pass->add_image_dependency("shadow_buffer_1");
+	forward_pass->add_image_dependency("ssao_post");
+
+	forward_pass->add_color_attachment("main_image", render_output);
+	forward_pass->set_depth_attachment("depth_prepass", gbuffer_depth);
+
+	display_pass->add_image_dependency("main_image");
+	display_pass->add_color_attachment("_output_", render_output);
+
+	graph.build(engine);
+}
 
 
 void VulkanEngine::init_vulkan()
@@ -132,96 +237,11 @@ void VulkanEngine::init_vulkan()
 
 	create_render_pass();
 
-	create_engine_graph(this);
-
+	//create_engine_graph(this);
+	create_engine_graph();
+	
 	
 
-	graph.pass_definitions["ShadowPass"].draw_callback = [&](vk::CommandBuffer cmd, RenderPass* pass) {
-		tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(cmd);
-		TracyVkZoneC(profilercontext, VkCommandBuffer(cmd), "Shadow pass", tracy::Color::Blue);
-		this->render_shadow_pass(cmd,pass->render_height,pass->render_width);
-	};
-
-	graph.pass_definitions["ShadowPass"].clear_callback = [&]() {
-		ClearPassSet clearSet;
-
-		clearSet.clearValues[0].depthStencil = { 1.0f, 0 };
-		clearSet.num = 1;
-
-		return clearSet;
-	};
-
-	graph.pass_definitions["GBuffer"].draw_callback = [&](vk::CommandBuffer cmd, RenderPass* pass) {
-		tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(cmd);
-		TracyVkZoneC(profilercontext, VkCommandBuffer(cmd), "Gbuffer pass", tracy::Color::Grey);
-		RenderGBufferPass(cmd);
-	};
-
-	graph.pass_definitions["GBuffer"].clear_callback = [&]() {
-		ClearPassSet clearSet;
-
-		clearSet.clearValues[0].color = vk::ClearColorValue{ std::array<float,4> { 0.0f, 0.0f, 0.0f, 1.0f } };
-		clearSet.clearValues[1].color = vk::ClearColorValue{ std::array<float,4> { 0.0f, 0.0f, 0.0f, 1.0f } };
-		clearSet.clearValues[2].depthStencil = { 0.0f, 0 };
-		clearSet.num = 3;
-		return clearSet;
-	};
-
-	graph.pass_definitions["SSAO-pre"].draw_callback = [&](vk::CommandBuffer cmd, RenderPass* pass) {
-		tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(cmd);
-		TracyVkZoneC(profilercontext, VkCommandBuffer(cmd), "SSAO pass", tracy::Color::Red);
-		render_ssao_pass(cmd, pass->render_height, pass->render_width);
-	};
-	
-	graph.pass_definitions["SSAO-pre"].clear_callback = [&]() {
-		ClearPassSet clearSet;
-	
-		clearSet.clearValues[0].color = vk::ClearColorValue{ std::array<float,4> { .2f, 0.2f, 0.2f, 1.0f } };		
-		clearSet.num = 1;
-		return clearSet;
-	};
-
-	graph.pass_definitions["SSAO-blurx"].draw_callback = [&](vk::CommandBuffer cmd, RenderPass* pass) {
-		tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(cmd);
-		TracyVkZoneC(profilercontext, VkCommandBuffer(cmd), "SSAO blur", tracy::Color::Red);
-		render_ssao_blurx(cmd, pass->render_height, pass->render_width);
-	};
-	graph.pass_definitions["SSAO-blury"].draw_callback = [&](vk::CommandBuffer cmd, RenderPass* pass) {
-		tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(cmd);
-		TracyVkZoneC(profilercontext, VkCommandBuffer(cmd), "SSAO blur", tracy::Color::Red);
-		render_ssao_blury(cmd, pass->render_height, pass->render_width);
-	};
-
-	graph.pass_definitions["SSAO-blurx"].clear_callback = [&]() {
-		ClearPassSet clearSet;
-
-		clearSet.clearValues[0].color = vk::ClearColorValue{ std::array<float,4> { .2f, 0.2f, 0.2f, 1.0f } };
-		clearSet.num = 1;
-		return clearSet;
-	};
-	graph.pass_definitions["SSAO-blury"].clear_callback = [&]() {
-		ClearPassSet clearSet;
-
-		clearSet.clearValues[0].color = vk::ClearColorValue{ std::array<float,4> { .2f, 0.2f, 0.2f, 1.0f } };
-		clearSet.num = 1;
-		return clearSet;
-	};
-
-
-	graph.pass_definitions["MainPass"].draw_callback = [&](vk::CommandBuffer cmd, RenderPass* pass) {
-		tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(cmd);
-		TracyVkZoneC(profilercontext, VkCommandBuffer(cmd), "Forward Pass", tracy::Color::Red);
-		//render_ssao_blury(cmd, pass->render_height, pass->render_width);
-		RenderMainPass(cmd);
-	};
-
-	graph.pass_definitions["MainPass"].clear_callback = [&]() {
-		ClearPassSet clearSet;
-
-		clearSet.clearValues[0].color = vk::ClearColorValue{ std::array<float,4> { .2f, 0.2f, 0.2f, 1.0f } };
-		clearSet.num = 1;
-		return clearSet;
-	};
 
 	DisplayImage = "main_image";
 
@@ -285,7 +305,7 @@ void VulkanEngine::init_vulkan()
 	sceneParameters.ssao_roughness = 600;
 	//load_scene("E:/Gamedev/tps-demo/level/geometry/demolevel.blend");
 	
-#if 1
+#if 0
 	load_scene(MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Interior.fbx"), glm::mat4(1.f));	
 	load_scene(MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Exterior.fbx"), glm::mat4(1.f));
 #else
@@ -389,8 +409,8 @@ void VulkanEngine::createImageViews()
 
 void VulkanEngine::create_depth_resources()
 {
-	FrameGraph::GraphAttachment* norm_attachment = &graph.attachments["depth_prepass"];
-	depthImageView = norm_attachment->view;
+	FrameGraph::GraphAttachment* norm_attachment = render_graph.get_attachment("depth_prepass");
+	depthImageView = norm_attachment->descriptor.imageView;
 	depthImage.image  =(vk::Image) norm_attachment->image;
 }
 
@@ -489,7 +509,7 @@ PipelineResource* VulkanEngine::GetBlitPipeline()
 	if (!doesResourceExist<PipelineResource>("output_blit")) {
 
 		auto blitPipelineBuilder = GetOutputBlitPipeline();
-		auto &pass = graph.pass_definitions["DisplayPass"];
+		//auto &pass = graph.pass_definitions["DisplayPass"];
 		auto pipelineEffect = getResource<ShaderEffectHandle>("output").handle;
 
 		vk::Pipeline pipeline = blitPipelineBuilder->build_pipeline(device, renderPass, 0, pipelineEffect);
@@ -594,7 +614,7 @@ void VulkanEngine::create_gfx_pipeline()
 	gfxPipelineBuilder->data.multisampling = VkPipelineInitializers::build_multisampling();
 	gfxPipelineBuilder->data.colorAttachmentStates.push_back(VkPipelineInitializers::build_color_blend_attachment_state());	
 
-	RenderPass* pass = &graph.pass_definitions["MainPass"];
+	RenderPass* pass = render_graph.get_pass("MainPass");
 
 	graphicsPipeline = gfxPipelineBuilder->build_pipeline(device, pass->built_pass, 0, pipelineEffect);
 }
@@ -668,7 +688,7 @@ void VulkanEngine::create_ssao_pipelines()
 		pipelineEffect = getResource<ShaderEffectHandle>("ssao").handle;
 	}
 
-	FrameGraph::GraphAttachment* ssaoAttachment = &graph.attachments["ssao_pre"];
+	FrameGraph::GraphAttachment* ssaoAttachment = render_graph.get_attachment("ssao_pre");// &graph.attachments["ssao_pre"];
 
 	int sizex = ssaoAttachment->real_width;
 	int sizey = ssaoAttachment->real_height;
@@ -685,10 +705,8 @@ void VulkanEngine::create_ssao_pipelines()
 	//1 color attachments
 	ssaoPipelineBuilder->data.colorAttachmentStates.push_back(VkPipelineInitializers::build_color_blend_attachment_state());
 
-
-	//FrameGraph::GraphAttachment* ssaoAttachment = &graph.attachments["shadow_buffer_1"];
-	RenderPass* pass = &graph.pass_definitions["SSAO-pre"];
 	
+	RenderPass* pass = render_graph.get_pass("SSAO-pre");
 	vk::Pipeline ssaoPipeline = ssaoPipelineBuilder->build_pipeline(device, pass->built_pass, 0, pipelineEffect);
 
 	
@@ -779,11 +797,8 @@ void VulkanEngine::create_ssao_pipelines()
 	blurPipelineBuilder->data.colorAttachmentStates.push_back(VkPipelineInitializers::build_color_blend_attachment_state());
 
 
-	//FrameGraph::GraphAttachment* ssaoAttachment = &graph.attachments["shadow_buffer_1"];
-	pass = &graph.pass_definitions["SSAO-blurx"];
-
-	vk::Pipeline blurx = blurPipelineBuilder->build_pipeline(device, graph.pass_definitions["SSAO-blurx"].built_pass, 0, pipelineEffect);
-	vk::Pipeline blury = blurPipelineBuilder->build_pipeline(device, graph.pass_definitions["SSAO-blury"].built_pass, 0, pipelineEffect);
+	vk::Pipeline blurx = blurPipelineBuilder->build_pipeline(device, render_graph.get_pass("SSAO-blurx")->built_pass, 0, pipelineEffect);
+	vk::Pipeline blury = blurPipelineBuilder->build_pipeline(device, render_graph.get_pass("SSAO-blury")->built_pass, 0, pipelineEffect);
 
 	//PipelineResource pipeline;
 	pipeline.pipeline = blurx;
@@ -1249,7 +1264,7 @@ void VulkanEngine::draw_frame()
 		//	}, entt::std_sort{});
 	}
 
-	graph.execute(cmd);
+	render_graph.execute(cmd);
 
 	
 
@@ -1276,14 +1291,9 @@ void VulkanEngine::draw_frame()
 
 		cmd.setScissor(0, scissor);
 
-		vk::DescriptorImageInfo renderImage = {};
-		renderImage.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-		renderImage.imageView = graph.attachments[DisplayImage].view;
-		renderImage.sampler = graph.attachments[DisplayImage].sampler;
-
 		DescriptorSetBuilder setBuilder{ blit->effect,&descriptorMegapool };
 
-		setBuilder.bind_image(0,0, renderImage);
+		setBuilder.bind_image(0,0, render_graph.get_image_descriptor(DisplayImage));
 
 		std::array<vk::DescriptorSet, 2> descriptors;
 		descriptors[0] = setBuilder.build_descriptor(0, DescriptorLifetime::PerFrame);
@@ -1336,6 +1346,9 @@ void VulkanEngine::draw_frame()
 }
 void VulkanEngine::render_shadow_pass(const vk::CommandBuffer& cmd, int height, int width)
 {
+	tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(cmd);
+	TracyVkZoneC(profilercontext, VkCommandBuffer(cmd), "Shadow pass", tracy::Color::Blue);
+
 	vk::Viewport viewport;
 	viewport.height = height;
 	viewport.width = width;
@@ -1422,6 +1435,8 @@ void VulkanEngine::render_shadow_pass(const vk::CommandBuffer& cmd, int height, 
 
 void VulkanEngine::render_ssao_pass(const vk::CommandBuffer& cmd, int height, int width)
 {
+	tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(cmd);
+	TracyVkZoneC(profilercontext, VkCommandBuffer(cmd), "SSAO pass", tracy::Color::Red);
 
 	ZoneScopedNC("SSAO Pass", tracy::Color::BlueViolet);
 
@@ -1466,16 +1481,6 @@ void VulkanEngine::render_ssao_pass(const vk::CommandBuffer& cmd, int height, in
 	ssaoSamplesbuffer.offset = 0;
 	ssaoSamplesbuffer.range = sizeof(glm::vec4) * 64;
 
-	vk::DescriptorImageInfo positionImage = {};
-	positionImage.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-	positionImage.imageView = graph.attachments["gbuf_pos"].view;
-	positionImage.sampler = graph.attachments["gbuf_pos"].sampler;
-
-	vk::DescriptorImageInfo normalImage = {};
-	normalImage.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-	normalImage.imageView = graph.attachments["gbuf_normal"].view;
-	normalImage.sampler = graph.attachments["gbuf_normal"].sampler;
-
 	vk::DescriptorImageInfo noiseImage = {};
 	noiseImage.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
 	noiseImage.imageView = bluenoise.imageView;
@@ -1484,8 +1489,8 @@ void VulkanEngine::render_ssao_pass(const vk::CommandBuffer& cmd, int height, in
 	setBuilder.bind_buffer("ubo", camBufferInfo);
 	setBuilder.bind_buffer("uboSSAOKernel", ssaoSamplesbuffer);
 
-	setBuilder.bind_image(0, 0, positionImage);
-	setBuilder.bind_image(0, 1, normalImage);
+	setBuilder.bind_image(0, 0, render_graph.get_image_descriptor("gbuf_pos"));
+	setBuilder.bind_image(0, 1, render_graph.get_image_descriptor("gbuf_normal"));
 	setBuilder.bind_image(0, 2, noiseImage);
 
 	std::array<vk::DescriptorSet, 2> descriptors;
@@ -1499,6 +1504,9 @@ void VulkanEngine::render_ssao_pass(const vk::CommandBuffer& cmd, int height, in
 
 void VulkanEngine::render_ssao_blurx(const vk::CommandBuffer& cmd, int height, int width)
 {
+	tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(cmd);
+	TracyVkZoneC(profilercontext, VkCommandBuffer(cmd), "SSAO blurX", tracy::Color::Red);
+
 	ZoneScopedNC("SSAO Blur X", tracy::Color::BlueViolet);
 
 	PipelineResource ssaopip = getResource<PipelineResource>("pipeline_ssao_blurx");
@@ -1510,19 +1518,12 @@ void VulkanEngine::render_ssao_blurx(const vk::CommandBuffer& cmd, int height, i
 	cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, ssaopip.pipeline);
 
 	DescriptorSetBuilder setBuilder{ effect,&descriptorMegapool };	
-
-	vk::DescriptorImageInfo positionImage = {};
-	positionImage.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-	positionImage.imageView = graph.attachments["ssao_pre"].view;
-	positionImage.sampler = graph.attachments["ssao_pre"].sampler;
-
-	vk::DescriptorImageInfo depthImage = {};
-	depthImage.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-	depthImage.imageView = graph.attachments["gbuf_pos"].view;
-	depthImage.sampler = graph.attachments["gbuf_pos"].sampler;
 	
-	setBuilder.bind_image(0, 0, positionImage);	
-	setBuilder.bind_image(0, 1, depthImage);
+
+	setBuilder.bind_image(0, 0, render_graph.get_image_descriptor("ssao_pre"));
+	setBuilder.bind_image(0, 1, render_graph.get_image_descriptor("gbuf_pos"));
+
+
 	std::array<vk::DescriptorSet, 2> descriptors;
 	descriptors[0] = setBuilder.build_descriptor(0, DescriptorLifetime::PerFrame);
 
@@ -1542,6 +1543,8 @@ constexpr int MULTIDRAW = 1;
 
 void VulkanEngine::render_ssao_blury(const vk::CommandBuffer& cmd, int height, int width)
 {
+	tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(cmd);
+	TracyVkZoneC(profilercontext, VkCommandBuffer(cmd), "SSAO blurY", tracy::Color::Red);
 	ZoneScopedNC("SSAO Blur Y", tracy::Color::BlueViolet);
 
 	PipelineResource ssaopip = getResource<PipelineResource>("pipeline_ssao_blury");
@@ -1554,18 +1557,11 @@ void VulkanEngine::render_ssao_blury(const vk::CommandBuffer& cmd, int height, i
 
 	DescriptorSetBuilder setBuilder{ effect,&descriptorMegapool };
 
-	vk::DescriptorImageInfo positionImage = {};
-	positionImage.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-	positionImage.imageView = graph.attachments["ssao_mid"].view;
-	positionImage.sampler = graph.attachments["ssao_mid"].sampler;
 
-	vk::DescriptorImageInfo depthImage = {};
-	depthImage.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-	depthImage.imageView = graph.attachments["gbuf_pos"].view;
-	depthImage.sampler = graph.attachments["gbuf_pos"].sampler;
 
-	setBuilder.bind_image(0, 0, positionImage);
-	setBuilder.bind_image(0, 1, depthImage);
+	setBuilder.bind_image(0, 0, render_graph.get_image_descriptor("ssao_mid"));
+	setBuilder.bind_image(0, 1, render_graph.get_image_descriptor("gbuf_pos"));
+
 	std::array<vk::DescriptorSet, 2> descriptors;
 	descriptors[0] = setBuilder.build_descriptor(0, DescriptorLifetime::PerFrame);
 
@@ -1583,6 +1579,8 @@ void VulkanEngine::render_ssao_blury(const vk::CommandBuffer& cmd, int height, i
 
 void VulkanEngine::RenderMainPass(const vk::CommandBuffer& cmd)
 {
+	tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(cmd);
+	TracyVkZoneC(profilercontext, VkCommandBuffer(cmd), "Forward Pass", tracy::Color::Red);
 	TextureResource bluenoise = getResource<TextureResource>(bluenoiseTexture);
 
 	ZoneScopedNC("Main Pass", tracy::Color::BlueViolet);
@@ -1693,12 +1691,11 @@ void VulkanEngine::RenderMainPass(const vk::CommandBuffer& cmd)
 			noiseImage.imageView = bluenoise.imageView;
 			noiseImage.sampler = bluenoise.textureSampler;
 
-			vk::DescriptorImageInfo ssaoImage = {};
-			ssaoImage.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-			ssaoImage.imageView = graph.attachments["ssao_post"].view;
-			ssaoImage.sampler = graph.attachments["ssao_post"].sampler;
+			setBuilder.bind_image("ssaoMap", render_graph.get_image_descriptor("ssao_post"));
+
+
 			setBuilder.bind_image("blueNoise", noiseImage);
-			setBuilder.bind_image("ssaoMap", ssaoImage);
+			//setBuilder.bind_image("ssaoMap", ssaoImage);
 			setBuilder.bind_image("shadowMap", shadowInfo);
 			setBuilder.bind_image("ambientCubemap", imageInfo);
 			setBuilder.bind_buffer("ubo", camBufferInfo);
@@ -1744,6 +1741,9 @@ void VulkanEngine::RenderMainPass(const vk::CommandBuffer& cmd)
 
 void VulkanEngine::RenderGBufferPass(const vk::CommandBuffer& cmd)
 {
+	tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(cmd);
+	TracyVkZoneC(profilercontext, VkCommandBuffer(cmd), "Gbuffer pass", tracy::Color::Grey);
+
 	ZoneScopedNC("GBuffer Pass", tracy::Color::BlueViolet);
 	EntityID LastMesh = entt::null;
 
@@ -2106,12 +2106,12 @@ void VulkanEngine::create_shadow_framebuffer()
 	shadowPass.height = SHADOWMAP_DIM;
 
 	//copy all the parameters from framegraph into the manual vrsion
-	FrameGraph::GraphAttachment* shadowAttachment = &graph.attachments["shadow_buffer_1"];
-	RenderPass* pass = &graph.pass_definitions["ShadowPass"];
+	FrameGraph::GraphAttachment* shadowAttachment = render_graph.get_attachment("shadow_buffer_1");//&graph.attachments["shadow_buffer_1"];
+	RenderPass* pass = render_graph.get_pass("ShadowPass"); //&graph.pass_definitions["ShadowPass"];
 
 	shadowPass.depth.image = shadowAttachment->image;
-	shadowPass.depth.view = shadowAttachment->view;
-	shadowPass.depthSampler = shadowAttachment->sampler;
+	shadowPass.depth.view = shadowAttachment->descriptor.imageView;
+	shadowPass.depthSampler = shadowAttachment->descriptor.sampler;
 	shadowPass.frameBuffer = pass->framebuffer;
 	shadowPass.renderPass = pass->built_pass;
 
@@ -2122,16 +2122,16 @@ void VulkanEngine::create_shadow_framebuffer()
 void VulkanEngine::create_gbuffer_framebuffer(int width, int height)
 {
 	//copy all the parameters from framegraph into the manual vrsion
-	FrameGraph::GraphAttachment* pos_attachment = &graph.attachments["gbuf_pos"];
-	FrameGraph::GraphAttachment* norm_attachment = &graph.attachments["gbuf_normal"];
-	RenderPass* pass = &graph.pass_definitions["GBuffer"];
+	FrameGraph::GraphAttachment* pos_attachment = render_graph.get_attachment("gbuf_pos");
+	FrameGraph::GraphAttachment* norm_attachment = render_graph.get_attachment("gbuf_normal");
+	RenderPass* pass = render_graph.get_pass("GBuffer");
 
-	gbuffPass.normal.view = norm_attachment->view;
+	gbuffPass.normal.view = norm_attachment->descriptor.imageView;
 	gbuffPass.posdepth.image = pos_attachment->image;
 	gbuffPass.normal.image = norm_attachment->image;
-	gbuffPass.posdepth.view = pos_attachment->view;
-	gbuffPass.normalSampler = norm_attachment->sampler;
-	gbuffPass.posdepthSampler = pos_attachment->sampler;
+	gbuffPass.posdepth.view = pos_attachment->descriptor.imageView;
+	gbuffPass.normalSampler = norm_attachment->descriptor.sampler;
+	gbuffPass.posdepthSampler = pos_attachment->descriptor.sampler;
 	gbuffPass.frameBuffer = pass->framebuffer;
 	gbuffPass.renderPass = pass->built_pass;
 	
@@ -2145,9 +2145,10 @@ void VulkanEngine::rebuild_pipeline_resource(PipelineResource* resource)
 
 	if (resource->renderPassName != "") {
 
-		RenderPass &pass = graph.pass_definitions[resource->renderPassName];
+		//RenderPass &pass = graph.pass_definitions[resource->renderPassName];
 
-		resource->pipeline = resource->pipelineBuilder->build_pipeline(device, pass.built_pass, 0, resource->effect);
+		resource->pipeline = resource->pipelineBuilder->build_pipeline(device, render_graph.get_pass(resource->renderPassName)->built_pass, 
+			0, resource->effect);
 	}	
 }
 

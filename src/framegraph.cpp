@@ -4,129 +4,6 @@
 #include "vulkan_render.h"
 
 
-struct FrameGraph::FrameGraphPriv {
-	std::unordered_map<std::string, std::vector<vk::AttachmentDescription>> pass_attachments;
-};
-
-vk::AttachmentDescription make_attachment_description(const AttachmentInfo& info, RenderGraphResourceAccess access, vk::ImageLayout initialLayout, vk::ImageLayout finalLayout) {
-
-	vk::AttachmentDescription attachment;
-	attachment.format = (vk::Format)info.format;
-	attachment.samples = vk::SampleCountFlagBits::e1;
-
-	//todo: add dontcare?
-	attachment.loadOp = (access == RenderGraphResourceAccess::Write) ? vk::AttachmentLoadOp::eClear : vk::AttachmentLoadOp::eLoad;
-
-	//attachment.storeOp = store ? vk::AttachmentStoreOp::eStore : vk::AttachmentStoreOp::eDontCare;
-	
-	//if (display) {
-	//	attachment.initialLayout = vk::ImageLayout::eUndefined;
-	//	attachment.finalLayout = vk::ImageLayout::ePresentSrcKHR;
-	//}
-	//else if (store) {
-	//	attachment.initialLayout = vk::ImageLayout::eUndefined;
-	//	attachment.finalLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-	//}
-	//else {
-	//
-	//}
-	return attachment;
-	
-}
-
-void RenderPass::add_depth_attachment(std::string name, const AttachmentInfo& info, RenderGraphResourceAccess access)
-{
-	PassAttachment addinfo;
-	addinfo.name = name;
-	addinfo.info = info;
-	addinfo.bIsDepth = true;
-	addinfo.bWrite = (access == RenderGraphResourceAccess::Write);
-
-	depth_attachments.push_back(addinfo);
-}
-
-void RenderPass::add_color_attachment(std::string name,const AttachmentInfo& info, RenderGraphResourceAccess access)
-{
-	PassAttachment addinfo;
-	addinfo.name = name;
-	addinfo.info = info;
-	addinfo.bIsDepth = false;
-	addinfo.bWrite = access == RenderGraphResourceAccess::Write;
-
-	color_attachments.push_back(addinfo);
-}
-
-
-FrameGraph::FrameGraph()
-{
-	priv = new FrameGraphPriv();
-}
-
-//void FrameGraph::register_resource(std::string name, const AttachmentInfo& attachment)
-//{
-//	//GraphAttachment attach;
-//
-//}
-vk::AttachmentDescription make_color_attachment(AttachmentInfo* info, bool bFirstWrite ,bool bReadAfter, bool toDisplay) {
-
-	vk::AttachmentDescription attachment;
-	attachment.format = (vk::Format)info->format;
-	attachment.samples = vk::SampleCountFlagBits::e1;
-
-	//todo: add dontcare?
-	attachment.loadOp = bFirstWrite ? vk::AttachmentLoadOp::eClear : vk::AttachmentLoadOp::eLoad;
-
-	attachment.storeOp = bReadAfter ? vk::AttachmentStoreOp::eStore : vk::AttachmentStoreOp::eDontCare;
-
-	
-	if (bFirstWrite) {
-		attachment.initialLayout = vk::ImageLayout::eUndefined;
-	}
-	else {
-		attachment.initialLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-	}
-	
-	if (toDisplay) {
-		attachment.finalLayout = vk::ImageLayout::ePresentSrcKHR;
-	}
-	else {
-		attachment.finalLayout = bReadAfter ? vk::ImageLayout::eShaderReadOnlyOptimal : vk::ImageLayout::eUndefined;
-	}
-
-	return attachment;
-}
-
-
-vk::AttachmentDescription make_depth_attachment(AttachmentInfo* info, bool bFirstWrite, bool bReadAfter,bool bWrittenNext) {
-
-	vk::AttachmentDescription attachment;
-	attachment.format = (vk::Format)info->format;
-	attachment.samples = vk::SampleCountFlagBits::e1;
-
-	//todo: add dontcare?
-	attachment.loadOp = bFirstWrite ? vk::AttachmentLoadOp::eClear : vk::AttachmentLoadOp::eLoad;
-
-	attachment.storeOp = (bReadAfter || bWrittenNext) ? vk::AttachmentStoreOp::eStore : vk::AttachmentStoreOp::eDontCare;
-
-
-	if (bFirstWrite) {
-		attachment.initialLayout = vk::ImageLayout::eUndefined;
-	}
-	else {
-		attachment.initialLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
-	}
-
-	if (bWrittenNext) {
-		attachment.finalLayout =vk::ImageLayout::eDepthStencilAttachmentOptimal;
-	}
-	else {
-		attachment.finalLayout = bReadAfter ? vk::ImageLayout::eDepthStencilReadOnlyOptimal : vk::ImageLayout::eUndefined;
-	}
-
-	return attachment;
-}
-
-
 std::array < vk::SubpassDependency, 2> build_basic_subpass_dependencies()
 {
 	std::array < vk::SubpassDependency, 2> dependencies;
@@ -155,7 +32,99 @@ std::array < vk::SubpassDependency, 2> build_basic_subpass_dependencies()
 }
 
 
-void build_render_pass(RenderPass* pass, VkDevice device)
+
+
+void RenderPass::add_image_dependency(std::string name)
+{
+	image_dependencies.push_back(name);
+}
+
+void RenderPass::add_color_attachment(std::string name, const RenderAttachmentInfo& info)
+{
+	PassAttachment addinfo;
+	addinfo.name = name;
+	addinfo.info = info;
+
+	color_attachments.push_back(addinfo);
+}
+
+void RenderPass::set_depth_attachment(std::string name, const RenderAttachmentInfo& info)
+{
+	PassAttachment addinfo;
+	addinfo.name = name;
+	addinfo.info = info;
+
+	depth_attachment = addinfo;
+}
+
+
+
+vk::AttachmentDescription make_color_attachment(const RenderAttachmentInfo* info, bool bFirstWrite, bool bReadAfter) {
+
+	vk::AttachmentDescription attachment;
+	attachment.format = (vk::Format)info->format;
+	attachment.samples = vk::SampleCountFlagBits::e1;
+
+
+	if (bFirstWrite) {
+		attachment.loadOp = info->bClear ? vk::AttachmentLoadOp::eClear : vk::AttachmentLoadOp::eDontCare;
+	}
+	else {
+		attachment.loadOp = vk::AttachmentLoadOp::eLoad;
+	}
+
+
+	attachment.storeOp = bReadAfter ? vk::AttachmentStoreOp::eStore : vk::AttachmentStoreOp::eDontCare;
+
+
+	if (bFirstWrite) {
+		attachment.initialLayout = vk::ImageLayout::eUndefined;
+	}
+	else {
+		attachment.initialLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+	}
+
+	attachment.finalLayout = bReadAfter ? vk::ImageLayout::eShaderReadOnlyOptimal : vk::ImageLayout::eUndefined;
+
+	return attachment;
+}
+
+
+vk::AttachmentDescription make_depth_attachment(const RenderAttachmentInfo* info, bool bFirstWrite, bool bReadAfter, bool bWrittenNext) {
+
+	vk::AttachmentDescription attachment;
+	attachment.format = (vk::Format)info->format;
+	attachment.samples = vk::SampleCountFlagBits::e1;
+
+	if (bFirstWrite) {
+		attachment.loadOp = info->bClear ? vk::AttachmentLoadOp::eClear : vk::AttachmentLoadOp::eDontCare;
+	}
+	else {
+		attachment.loadOp = vk::AttachmentLoadOp::eLoad;
+	}
+
+	attachment.storeOp = (bReadAfter || bWrittenNext) ? vk::AttachmentStoreOp::eStore : vk::AttachmentStoreOp::eDontCare;
+
+
+	if (bFirstWrite) {
+		attachment.initialLayout = vk::ImageLayout::eUndefined;
+	}
+	else {
+		attachment.initialLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
+	}
+
+	if (bWrittenNext) {
+		attachment.finalLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
+	}
+	else {
+		attachment.finalLayout = bReadAfter ? vk::ImageLayout::eDepthStencilReadOnlyOptimal : vk::ImageLayout::eUndefined;
+	}
+
+	return attachment;
+}
+
+
+void build_render_pass(RenderPass* pass, VulkanEngine* eng)
 {
 	std::cout << "Pass Building : " << pass->name << "-----------------" << std::endl;
 
@@ -163,27 +132,21 @@ void build_render_pass(RenderPass* pass, VkDevice device)
 	std::vector<vk::AttachmentDescription> attachments;
 	int color_attachments = 0;
 	int depth_attachments = 0;
-	attachments.resize(pass->real_attachments.size());
+
 	bool bScreenOutput = 0;
-	for (auto [n, attachment] : pass->real_attachments) {
+	int index = 0;
+	for (auto attachment : pass->physical_attachments) {
 
 		vk::AttachmentReference athref;
 		athref.attachment = attachment.index;
 		athref.layout = attachment.bIsDepth ? vk::ImageLayout::eDepthStencilAttachmentOptimal : vk::ImageLayout::eColorAttachmentOptimal;
-
 		if (attachment.bIsDepth) {
 			depth_attachments++;
 		}
 		else {
 			color_attachments++;
 		}
-
-		if (attachment.desc.finalLayout == vk::ImageLayout::ePresentSrcKHR)
-		{
-			bScreenOutput = true;
-		}
-		attachments[attachment.index] = attachment.desc;
-
+		attachments.push_back(attachment.desc);
 		references.push_back(athref);
 	}
 
@@ -201,304 +164,131 @@ void build_render_pass(RenderPass* pass, VkDevice device)
 	renderPassInfo.pAttachments = attachments.data();
 	renderPassInfo.subpassCount = 1;
 	renderPassInfo.pSubpasses = &subpass;
-	if (!bScreenOutput) {
-		std::array < vk::SubpassDependency, 2> pass_dependencies = build_basic_subpass_dependencies();
-		renderPassInfo.dependencyCount = static_cast<uint32_t>(pass_dependencies.size());
-		renderPassInfo.pDependencies = pass_dependencies.data();
 
-	}
-	else {
-		vk::SubpassDependency dependency;
-		dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-		dependency.dstSubpass = 0;
+	std::array < vk::SubpassDependency, 2> pass_dependencies = build_basic_subpass_dependencies();
+	renderPassInfo.dependencyCount = static_cast<uint32_t>(pass_dependencies.size());
+	renderPassInfo.pDependencies = pass_dependencies.data();
 
-		dependency.srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
-		dependency.srcAccessMask = vk::AccessFlags{};
-
-		dependency.dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
-		dependency.dstAccessMask = vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite;
-
-		renderPassInfo.dependencyCount = 1;
-		renderPassInfo.pDependencies = &dependency;
-	}
-
-	pass->built_pass = ((vk::Device)device).createRenderPass(renderPassInfo);
+	pass->built_pass = eng->device.createRenderPass(renderPassInfo);
+	//assert(pass->built_pass != VkRenderPass{});
 }
 
-void FrameGraph::build(VkDevice device,VmaAllocator allocator)
+bool FrameGraph::build(struct VulkanEngine* engine)
 {
-	//grab all attachments
+	//grab all render targets
 	for (auto pass : passes) {
-		for (const auto & coloratch : pass->color_attachments) {
+		for (const auto& coloratch : pass->color_attachments) {
 
-			if (attachments.find(coloratch.name) != attachments.end())
-			{				
-				if (coloratch.bWrite) {
-					//attachments[coloratch.name].usageFlags |= vk::ImageUsageFlagBits::eColorAttachment;
-					attachments[coloratch.name].writes++;
-				}	
-				else {
-					//attachments[coloratch.name].usageFlags |= vk::ImageUsageFlagBits::eColorAttachment;
-					attachments[coloratch.name].reads++;
-				}
-			}
-			else {
-				
-					GraphAttachment attachment;
-					attachment.info = coloratch.info;
-					attachment.name = coloratch.name;
-					//attachment.bIsDepth = false;					
-					attachment.writes = coloratch.bWrite? 1: 0;					
-					attachment.reads = coloratch.bWrite ? 0 : 1;
-					attachment.usageFlags = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled;
-					attachments[coloratch.name] = attachment;					
-			}			
-		}
-		for (const auto& coloratch : pass->depth_attachments) {
-
-			if (attachments.find(coloratch.name) != attachments.end())
+			if (graph_attachments.find(coloratch.name) != graph_attachments.end())
 			{
-				if (coloratch.bWrite) {
-					attachments[coloratch.name].usageFlags = vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled;;
-					attachments[coloratch.name].writes++;
-					attachments[coloratch.name].bIsDepth = true;
-				}
-				else {
-					attachments[coloratch.name].reads++;
-				}
+				graph_attachments[coloratch.name].writes++;
+				graph_attachments[coloratch.name].last_writer_pass = pass->name;
 			}
 			else {
 
 				GraphAttachment attachment;
 				attachment.info = coloratch.info;
 				attachment.name = coloratch.name;
-				attachment.bIsDepth = true;
-				attachment.writes = coloratch.bWrite ? 1 : 0;
-				attachment.reads = coloratch.bWrite ? 0 : 1;
-				attachment.usageFlags = vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled;
-				attachments[coloratch.name] = attachment;
+				attachment.bIsDepth = false;
+				attachment.writes = 1;
+				attachment.reads = 0;
+				attachment.usageFlags = (VkImageUsageFlags)vk::ImageUsageFlagBits::eColorAttachment;
+				attachment.creator_pass = pass->name;
+				attachment.last_writer_pass = pass->name;
+				graph_attachments[coloratch.name] = attachment;
 			}
 		}
-	}
+		auto& dp = pass->depth_attachment;
 
-	for (auto [n, v] : attachments) {
-		std::cout << (v.bIsDepth ?  " Depth Attachment: ":" Color Attachment: ")<< n << " -- Reads " << v.reads << " Writes " << v.writes<<std::endl;
-	}
-
-	//setup attachments per pass
-	for (int i = 0; i < passes.size(); i++) {
-		RenderPass* pass = passes[i];
-		std::cout << "Pass: " << pass->name << "-----------------" << std::endl;
-
-		bool bIsFirst = i == 0;
-		bool bIsLast = (i == (passes.size() - 1));
-
-		int attachmentIndex = 0;
-
-		//check depth attachment
-		RenderPass::PassAttachment* writtenDepth = nullptr;
-		std::vector<RenderPass::PassAttachment*> readDepthImages;
-		bool bReadsDepthImage = false;
-		for (RenderPass::PassAttachment& attach : pass->depth_attachments) {
-			if (attach.bWrite) {
-				writtenDepth = &attach;
-				readDepthImages.push_back(&attach);
+		if (dp.name != "") {
+			if (graph_attachments.find(dp.name) != graph_attachments.end())
+			{
+				graph_attachments[dp.name].writes++;
+				graph_attachments[dp.name].last_writer_pass = pass->name;
 			}
 			else {
-				readDepthImages.push_back(&attach);
+
+				GraphAttachment attachment;
+				attachment.info = dp.info;
+				attachment.name = dp.name;
+				attachment.bIsDepth = true;
+				attachment.writes = 1;
+				attachment.reads = 0;
+				attachment.usageFlags = (VkImageUsageFlags)vk::ImageUsageFlagBits::eDepthStencilAttachment;
+				attachment.creator_pass = pass->name;
+				attachment.last_writer_pass = pass->name;
+				graph_attachments[dp.name] = attachment;
 			}
 		}
-		{
 
-			for (auto ath : pass->color_attachments) {
-				bool bAlsoWrittenBefore = false;
-				bool bAccessedAsReadAfter = false;
-
-
-				//check preconditions of those resources
-				if (!bIsFirst) {
-					//iterate passes before this one to find it
-					for (int j = i - 1; j >= 0; j--) {
-
-						RenderPass* otherpass = passes[j];
-
-						for (RenderPass::PassAttachment& attach : otherpass->depth_attachments) {
-							if (attach.name == ath.name) {
-								if (attach.bWrite) {
-									bAlsoWrittenBefore = true;
-									break;
-								}
-							}
-						}
-						for (RenderPass::PassAttachment& attach : otherpass->color_attachments) {
-							if (attach.name == ath.name) {
-								if (attach.bWrite) {
-									bAlsoWrittenBefore = true;
-									break;
-								}
-							}
-						}
-					}
-				}
-				//postconditions
-				if (!bIsLast) {
-					//iterate passes after this one to find it
-					for (int j = i + 1; j < passes.size(); j++) {
-
-						RenderPass* otherpass = passes[j];
-
-						for (RenderPass::PassAttachment& attach : otherpass->depth_attachments) {
-							if (attach.name == ath.name) {
-								if (!attach.bWrite) {
-
-									bAccessedAsReadAfter = true;
-									break;
-								}
-							}
-						}
-						for (RenderPass::PassAttachment& attach : otherpass->color_attachments) {
-							if (attach.name == ath.name) {
-								if (!attach.bWrite) {
-
-									bAccessedAsReadAfter = true;
-									break;
-								}
-							}
-						}
-					}
-				}
-
-
-				auto wasread = (bAlsoWrittenBefore ? " was written before " : " not written before ");
-				auto asread = (bAccessedAsReadAfter ? " is accessed as read after " : " not accessed as read after");
-				bool first_use = ((!bAlsoWrittenBefore || bIsFirst) && ath.bWrite);
-				if (first_use) wasread = " First Create ";
-
-				bool output = false;
-				if (ath.name == "_output_") {
-					wasread = "";
-					asread = " outputs to the screen ";
-					output = true;
-				}
-				if (ath.bWrite) {
-					RenderPass::PhysicalAttachment physAttachment;
-					physAttachment.bIsDepth = false;
-					physAttachment.desc = make_color_attachment(&ath.info, first_use, bAccessedAsReadAfter, output);
-					physAttachment.index = attachmentIndex;
-
-					pass->real_attachments[ath.name] = physAttachment;
-
-					attachmentIndex++;
-
-
-					std::cout << "  W  Color attachment " << ath.name << wasread << asread << std::endl;
-				}
-				else {
-					std::cout << "  R  Color image " << ath.name << wasread << asread << std::endl;
-				}
-
-			}
-		}
-		{			
-
-			if (pass->name == "SSAO-pre") {
-				std::cout << "ssao";
-			}
-
-			for (auto ath : readDepthImages) {
-				bool bAlsoWrittenBefore = false;
-				bool bAccessedAsReadAfter = false;
-				//check preconditions of those resources
-				if (!bIsFirst) {
-					//iterate passes before this one to find it
-					for (int j = i - 1; j >= 0; j--) {
-
-						RenderPass* otherpass = passes[j];
-
-						for (RenderPass::PassAttachment& attach : otherpass->depth_attachments) {
-							if (attach.name == ath->name) {
-								if (attach.bWrite) {
-									bAlsoWrittenBefore = true;
-									break;
-								}
-							}
-						}
-						for (RenderPass::PassAttachment& attach : otherpass->color_attachments) {
-							if (attach.name == ath->name) {
-								if (attach.bWrite) {
-									bAlsoWrittenBefore = true;
-									break;
-								}
-							}
-						}
-					}
-				}
-				bool bNextWrite = false;
-				
-				//postconditions
-				if (!bIsLast) {
-					//iterate passes before this one to find it
-					for (int j = i + 1; j < passes.size(); j++) {
-
-						RenderPass* otherpass = passes[j];
-
-						for (RenderPass::PassAttachment& attach : otherpass->depth_attachments) {
-							if (attach.name == ath->name) {
-								if (!attach.bWrite) {
-									bReadsDepthImage = true;
-									bAccessedAsReadAfter = true;
-									break;
-								}
-								else {
-									bNextWrite = true;
-									break;
-								}
-							}
-						}
-						for (RenderPass::PassAttachment& attach : otherpass->color_attachments) {
-							if (attach.name == ath->name) {
-								if (!attach.bWrite) {
-									bReadsDepthImage = true;
-									bAccessedAsReadAfter = true;
-									break;
-								}
-							}
-						}
-					}
-				}
-
-
-				auto wasread = (bAlsoWrittenBefore ? " was written before " : " not written before ");
-				auto asread = (bAccessedAsReadAfter ? " is accessed as read after " : " not accessed as read");
-
-				auto first_use = ((!bAlsoWrittenBefore || bIsFirst) && ath->bWrite);
-				if (first_use) wasread = " First Create ";
-
-				bool output = false;
-				if (ath->name == "_output_") {
-					wasread = "";
-					asread = " outputs to the screen ";
-					output = true;
-				}
-
-				if (writtenDepth!= nullptr && writtenDepth->name == ath->name) {
-					RenderPass::PhysicalAttachment physAttachment;
-					physAttachment.bIsDepth = true;
-					physAttachment.desc = make_depth_attachment(&ath->info, first_use, bAccessedAsReadAfter, bNextWrite);
-					physAttachment.index = attachmentIndex;
-
-					pass->real_attachments[ath->name] = physAttachment;
-
-					std::cout << "   W Depth attachment " << ath->name << wasread << asread << std::endl;
-				}
-				else {
-					std::cout << "   R Depth Image " << ath->name << wasread << asread << std::endl;
-				}
-				
-			}
-		}	
 	}
 
+	//find reads
+	for (auto pass : passes) {
+		for (const auto& image : pass->image_dependencies) {
+			if (graph_attachments.find(image) != graph_attachments.end())
+			{
+				graph_attachments[image].last_writer_pass = pass->name;
+				graph_attachments[image].reads++;
+				graph_attachments[image].usageFlags |= (VkImageUsageFlags)vk::ImageUsageFlagBits::eSampled;
+			}
+		}
+	}
+
+	for (auto [n, v] : graph_attachments) {
+		std::cout << (v.bIsDepth ? " Depth Attachment: " : " Color Attachment: ") << n << " -- Reads " << v.reads << " Writes " << v.writes << std::endl;
+	}
+
+
+	//make attachments real
+	for (auto pass : passes) {
+		int attachmentIndex = 0;
+		//color attachments
+		for (const auto& ath : pass->color_attachments) {
+
+			GraphAttachment* graphAth = &graph_attachments[ath.name];
+			bool bAccessedAsReadAfter = graphAth->reads > 0 && graphAth->last_read_pass != pass->name;
+			bool first_use = graphAth->creator_pass == pass->name;
+
+			RenderPass::PhysicalAttachment physAttachment;
+			physAttachment.bIsDepth = false;
+			physAttachment.desc = make_color_attachment(&ath.info, first_use, bAccessedAsReadAfter);
+			physAttachment.index = attachmentIndex;
+			physAttachment.name = ath.name;
+
+
+			pass->clearValues.push_back(ath.info.clearValue);
+
+			pass->physical_attachments.push_back(physAttachment);
+
+			//if (ath.info.bClear) {
+			//	ath.
+			//}
+
+			attachmentIndex++;
+		}
+
+		if (pass->depth_attachment.name != "") {
+
+			GraphAttachment* graphAth = &graph_attachments[pass->depth_attachment.name];
+			bool bAccessedAsReadAfter = graphAth->reads > 0 && graphAth->last_read_pass != pass->name;
+			bool first_use = graphAth->creator_pass == pass->name;
+			bool bNextWrite = graphAth->last_writer_pass != pass->name;
+
+			RenderPass::PhysicalAttachment physAttachment;
+			physAttachment.bIsDepth = true;
+			physAttachment.desc = make_depth_attachment(&pass->depth_attachment.info, first_use, bAccessedAsReadAfter, bNextWrite);
+			physAttachment.index = attachmentIndex;
+			physAttachment.name = pass->depth_attachment.name;
+
+
+			pass->clearValues.push_back(pass->depth_attachment.info.clearValue);
+
+			pass->physical_attachments.push_back(physAttachment);
+
+			attachmentIndex++;
+		}
+	}
 
 	//one sampler to rule them all
 	vk::SamplerCreateInfo sampler;
@@ -514,15 +304,15 @@ void FrameGraph::build(VkDevice device,VmaAllocator allocator)
 	sampler.maxLod = 1.0f;
 	sampler.borderColor = vk::BorderColor::eFloatOpaqueWhite;
 
-	vk::Sampler mainSampler = ((vk::Device)device).createSampler(sampler);
+	VkSampler mainSampler = engine->device.createSampler(sampler);
 
 	//build images
-	for (auto [n, atch] : attachments) 
+	for (auto [n, atch] : graph_attachments)
 	{
-		GraphAttachment &v = attachments[n];
+		GraphAttachment& v = graph_attachments[n];
 		vk::ImageCreateInfo imageCreateInfo;
 		imageCreateInfo.imageType = vk::ImageType::e2D;
-		
+
 		if (v.info.size_class == SizeClass::SwapchainRelative) {
 			imageCreateInfo.extent.width = v.info.size_x * this->swapchainSize.width;
 			imageCreateInfo.extent.height = v.info.size_y * this->swapchainSize.height;
@@ -540,7 +330,7 @@ void FrameGraph::build(VkDevice device,VmaAllocator allocator)
 		imageCreateInfo.samples = vk::SampleCountFlagBits::e1;
 		imageCreateInfo.tiling = vk::ImageTiling::eOptimal;
 		imageCreateInfo.format = (vk::Format)v.info.format;
-		imageCreateInfo.usage = v.usageFlags;
+		imageCreateInfo.usage = (vk::ImageUsageFlagBits)v.usageFlags;
 
 		VmaAllocationCreateInfo vmaallocInfo = {};
 		vmaallocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
@@ -550,7 +340,7 @@ void FrameGraph::build(VkDevice device,VmaAllocator allocator)
 
 		VkImage image;
 
-		vmaCreateImage(allocator, &imnfo1, &vmaallocInfo, &image, &v.imageAlloc, nullptr);
+		vmaCreateImage(engine->allocator, &imnfo1, &vmaallocInfo, &image, &v.imageAlloc, nullptr);
 
 		v.image = image;
 
@@ -565,36 +355,33 @@ void FrameGraph::build(VkDevice device,VmaAllocator allocator)
 		imageViewInfo.subresourceRange.layerCount = 1;
 		imageViewInfo.image = image;
 
-		v.view = ((vk::Device)device).createImageView(imageViewInfo);
-		v.sampler = mainSampler;
+		v.descriptor.imageView = engine->device.createImageView(imageViewInfo);
+		v.descriptor.imageLayout = VkImageLayout(v.bIsDepth ? vk::ImageLayout::eDepthStencilReadOnlyOptimal : vk::ImageLayout::eShaderReadOnlyOptimal);
+		v.descriptor.sampler = mainSampler;
 	}
-
 
 	//make render passes
 	for (int i = 0; i < passes.size(); i++) {
 		RenderPass* pass = passes[i];
-		build_render_pass(pass, device);
+		build_render_pass(pass, engine);
 
 		//framebuffers
 		std::vector<vk::ImageView> FBAttachments;
-		FBAttachments.resize(pass->real_attachments.size());
+		//FBAttachments.resize(pass->physical_attachments.size());
 
 		int width;
 		int height;
 
-		for (auto [n, attachment] : pass->real_attachments) {
-			
-			FBAttachments[attachment.index] = this->attachments[n].view;
+		for (auto attachment : pass->physical_attachments) {
 
-			if (attachment.desc.loadOp == vk::AttachmentLoadOp::eClear) {
-				width = this->attachments[n].real_width;
-				height = this->attachments[n].real_height;
-			}
+			FBAttachments.push_back(graph_attachments[attachment.name].descriptor.imageView);
+
+			width = graph_attachments[attachment.name].real_width;
+			height = graph_attachments[attachment.name].real_height;
 		}
 
 		pass->render_height = height;
 		pass->render_width = width;
-		//vk::ImageView attachments[] = { gbuffPass.posdepth.view,gbuffPass.normal.view,depthImageView };
 
 		vk::FramebufferCreateInfo fbufCreateInfo;
 		fbufCreateInfo.renderPass = pass->built_pass;
@@ -605,137 +392,85 @@ void FrameGraph::build(VkDevice device,VmaAllocator allocator)
 		fbufCreateInfo.layers = 1;
 
 		std::cout << "building framebuffer for" << pass->name << std::endl;
-		pass->framebuffer = ((vk::Device)device).createFramebuffer(fbufCreateInfo);
+		pass->framebuffer = engine->device.createFramebuffer(fbufCreateInfo);
 	}
 
 	std::cout << "framegraph built";
 
-	for (auto [n, atch] : attachments)
+	for (auto [n, atch] : graph_attachments)
 	{
 		//leaks
 		std::string* alloc = new std::string(n);
 		attachmentNames.push_back(alloc->c_str());
 	}
+
+	return true;
 }
 
-RenderPass* FrameGraph::add_pass(std::string pass_name)
+RenderPass* FrameGraph::add_pass(std::string pass_name, std::function<void(vk::CommandBuffer, RenderPass*)> execution, PassType type)
 {
 	pass_definitions[pass_name] = RenderPass();
-	
+
 	RenderPass* ptr = &pass_definitions[pass_name];
 	ptr->name = pass_name;
 	ptr->owner = this;
+	ptr->draw_callback = execution;
 	passes.push_back(ptr);
 
 	return ptr;
 }
 
+RenderPass* FrameGraph::get_pass(std::string pass_name)
+{
+	return &pass_definitions[pass_name];
+}
+
+VkDescriptorImageInfo FrameGraph::get_image_descriptor(std::string name)
+{
+	return get_attachment(name)->descriptor;
+}
+
+FrameGraph::GraphAttachment* FrameGraph::get_attachment(std::string name)
+{
+	return &graph_attachments[name];
+}
+
+
+
 void FrameGraph::execute(vk::CommandBuffer cmd)
 {
 	for (auto pass : passes) {
 
-		if (pass->draw_callback && pass->clear_callback)
+		if (pass->draw_callback)
 		{
-			ClearPassSet clear = pass->clear_callback();
+
 			vk::RenderPassBeginInfo renderPassInfo;
-			renderPassInfo.renderPass = pass->built_pass;//shadowPass.renderPass;
+			renderPassInfo.renderPass = pass->built_pass;
 			renderPassInfo.framebuffer = pass->framebuffer;
 			renderPassInfo.renderArea.offset = { 0, 0 };
-			renderPassInfo.renderArea.extent.width = pass->render_width;//shadowPass.width;
-			renderPassInfo.renderArea.extent.height = pass->render_height;//shadowPass.height;
+			renderPassInfo.renderArea.extent.width = pass->render_width;
+			renderPassInfo.renderArea.extent.height = pass->render_height;
 
-			renderPassInfo.clearValueCount = clear.num;
-			renderPassInfo.pClearValues = clear.clearValues.data();
+			renderPassInfo.clearValueCount = pass->clearValues.size();
+			renderPassInfo.pClearValues = (vk::ClearValue*)pass->clearValues.data();
 
 			cmd.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
 
-			pass->draw_callback(cmd,pass);
+			pass->draw_callback(cmd, pass);
 
 			cmd.endRenderPass();
-		}	
+		}
 	}
 }
 
-void create_engine_graph(VulkanEngine* engine)
+void RenderAttachmentInfo::set_clear_color(std::array<float, 4> col)
 {
-	FrameGraph& graph = engine->graph;
-	VkDevice device = (VkDevice)engine->device;
-	VmaAllocator allocator = engine->allocator;
-	VkExtent2D swapChainSize = engine->swapChainExtent;
+	clearValue.color = vk::ClearColorValue{ col };
+	bClear = true;
+}
 
-	graph.swapchainSize = swapChainSize;
-
-	//order is very important
-	auto shadow_pass = graph.add_pass("ShadowPass");
-	auto gbuffer_pass = graph.add_pass("GBuffer");
-	auto ssao0_pass = graph.add_pass("SSAO-pre");
-	auto blurx_pass = graph.add_pass("SSAO-blurx");
-	auto blury_pass = graph.add_pass("SSAO-blury");
-	auto forward_pass = graph.add_pass("MainPass");
-	auto display_pass = graph.add_pass("DisplayPass");
-	AttachmentInfo shadowbuffer;
-	shadowbuffer.format = VK_FORMAT_D16_UNORM;
-	shadowbuffer.persistent = true;
-	shadowbuffer.size_class = SizeClass::Absolute;
-	shadowbuffer.size_x = 2048;
-	shadowbuffer.size_y = 2048;	
-
-	AttachmentInfo gbuffer_position;
-	gbuffer_position.format = VK_FORMAT_R32G32B32A32_SFLOAT;
-	gbuffer_position.persistent = false;
-	gbuffer_position.size_class = SizeClass::SwapchainRelative;
-	gbuffer_position.size_x = 1.f;
-	gbuffer_position.size_y = 1.f;
-
-	AttachmentInfo gbuffer_normal = gbuffer_position;
-	gbuffer_normal.format = VK_FORMAT_R16G16B16A16_SFLOAT;
-
-	AttachmentInfo gbuffer_depth = gbuffer_position;
-	gbuffer_depth.format = (VkFormat)engine->findDepthFormat();
-
-
-	AttachmentInfo ssao_pre = gbuffer_position;
-	ssao_pre.format = VK_FORMAT_R8_UNORM;
-	ssao_pre.size_x =0.5f;
-	ssao_pre.size_y =0.5f;
-
-	AttachmentInfo ssao_midblur = gbuffer_position;
-	AttachmentInfo ssao_post = gbuffer_position;
-
-	shadow_pass->add_depth_attachment("shadow_buffer_1", shadowbuffer,RenderGraphResourceAccess::Write);
-
-	gbuffer_pass->add_color_attachment("gbuf_pos", gbuffer_position,RenderGraphResourceAccess::Write);
-	gbuffer_pass->add_color_attachment("gbuf_normal", gbuffer_normal,RenderGraphResourceAccess::Write);
-	gbuffer_pass->add_depth_attachment("depth_prepass", gbuffer_depth, RenderGraphResourceAccess::Write);
-
-	//ssao0_pass->add_depth_attachment("depth_prepass", gbuffer_depth, RenderGraphResourceAccess::Read);
-	ssao0_pass->add_color_attachment("gbuf_pos", gbuffer_position, RenderGraphResourceAccess::Read);
-	ssao0_pass->add_color_attachment("gbuf_normal", gbuffer_normal, RenderGraphResourceAccess::Read);
-	ssao0_pass->add_color_attachment("ssao_pre", ssao_pre, RenderGraphResourceAccess::Write);
-	ssao0_pass->add_depth_attachment("depth_prepass", gbuffer_depth, RenderGraphResourceAccess::Write);
-
-
-	blurx_pass->add_color_attachment("ssao_pre", ssao_pre, RenderGraphResourceAccess::Read);
-	blurx_pass->add_color_attachment("ssao_mid", ssao_midblur, RenderGraphResourceAccess::Write);
-
-	blury_pass->add_color_attachment("ssao_mid", ssao_midblur, RenderGraphResourceAccess::Read);
-	blury_pass->add_color_attachment("ssao_post", ssao_post, RenderGraphResourceAccess::Write);
-
-	forward_pass->add_color_attachment("gbuf_pos", gbuffer_position, RenderGraphResourceAccess::Read);
-	forward_pass->add_color_attachment("gbuf_normal", gbuffer_normal, RenderGraphResourceAccess::Read);
-	forward_pass->add_color_attachment("shadow_buffer_1", shadowbuffer, RenderGraphResourceAccess::Read);	
-	forward_pass->add_depth_attachment("depth_prepass", gbuffer_depth, RenderGraphResourceAccess::Write);
-
-	forward_pass->add_color_attachment("ssao_post", ssao_post, RenderGraphResourceAccess::Read);
-
-	AttachmentInfo render_output = gbuffer_position;
-		
-	//_output_ is special case
-	forward_pass->add_color_attachment("main_image", render_output, RenderGraphResourceAccess::Write);
-
-
-	display_pass->add_color_attachment("main_image", render_output, RenderGraphResourceAccess::Read);
-	display_pass->add_color_attachment("_output_", render_output, RenderGraphResourceAccess::Write);
-
-	graph.build(device, allocator);
+void RenderAttachmentInfo::set_clear_depth(float depth, uint32_t stencil)
+{
+	clearValue.depthStencil = { depth, stencil };
+	bClear = true;
 }

@@ -68,8 +68,8 @@ void UI::DrawEngineUI(VulkanEngine* engine)
 
 	
 	static int currentItem = 0;
-	if (ImGui::Combo("Display Image", &currentItem, engine->graph.attachmentNames.data(), engine->graph.attachmentNames.size())) {
-		engine->DisplayImage = engine->graph.attachmentNames[currentItem];
+	if (ImGui::Combo("Display Image", &currentItem, engine->render_graph.attachmentNames.data(), engine->render_graph.attachmentNames.size())) {
+		engine->DisplayImage = engine->render_graph.attachmentNames[currentItem];
 	}
 
 	struct GPUSceneParams {
