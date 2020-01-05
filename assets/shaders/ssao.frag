@@ -77,6 +77,12 @@ void main()
 	}
 	
 	occlusion = 1.0 - (occlusion / float(SSAO_KERNEL_SIZE));
-	outFragColor =  occlusion;
+
+	if(abs(fragPos.z) > 2000){
+		outFragColor = 1.f;
+	}
+	else{
+		outFragColor =  occlusion;
+	}	
 }
 

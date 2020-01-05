@@ -502,9 +502,9 @@ void FrameGraph::build(VkDevice device,VmaAllocator allocator)
 
 	//one sampler to rule them all
 	vk::SamplerCreateInfo sampler;
-	sampler.magFilter = vk::Filter::eLinear;
-	sampler.minFilter = vk::Filter::eLinear;
-	sampler.mipmapMode = vk::SamplerMipmapMode::eLinear;
+	sampler.magFilter = vk::Filter::eNearest;
+	sampler.minFilter = vk::Filter::eNearest;
+	sampler.mipmapMode = vk::SamplerMipmapMode::eNearest;
 	sampler.addressModeU = vk::SamplerAddressMode::eClampToEdge;
 	sampler.addressModeV = sampler.addressModeU;
 	sampler.addressModeW = sampler.addressModeU;
@@ -609,6 +609,13 @@ void FrameGraph::build(VkDevice device,VmaAllocator allocator)
 	}
 
 	std::cout << "framegraph built";
+
+	for (auto [n, atch] : attachments)
+	{
+		//leaks
+		std::string* alloc = new std::string(n);
+		attachmentNames.push_back(alloc->c_str());
+	}
 }
 
 RenderPass* FrameGraph::add_pass(std::string pass_name)
@@ -665,7 +672,7 @@ void create_engine_graph(VulkanEngine* engine)
 	auto blurx_pass = graph.add_pass("SSAO-blurx");
 	auto blury_pass = graph.add_pass("SSAO-blury");
 	auto forward_pass = graph.add_pass("MainPass");
-
+	auto display_pass = graph.add_pass("DisplayPass");
 	AttachmentInfo shadowbuffer;
 	shadowbuffer.format = VK_FORMAT_D16_UNORM;
 	shadowbuffer.persistent = true;
@@ -724,7 +731,11 @@ void create_engine_graph(VulkanEngine* engine)
 	AttachmentInfo render_output = gbuffer_position;
 		
 	//_output_ is special case
-	forward_pass->add_color_attachment("_output_", render_output, RenderGraphResourceAccess::Write);
+	forward_pass->add_color_attachment("main_image", render_output, RenderGraphResourceAccess::Write);
+
+
+	display_pass->add_color_attachment("main_image", render_output, RenderGraphResourceAccess::Read);
+	display_pass->add_color_attachment("_output_", render_output, RenderGraphResourceAccess::Write);
 
 	graph.build(device, allocator);
 }

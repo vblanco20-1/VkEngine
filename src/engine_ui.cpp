@@ -66,6 +66,12 @@ void UI::DrawEngineUI(VulkanEngine* engine)
 	ImGui::SliderFloat("SSAO Blur Roughness", (float*)&engine->sceneParameters.ssao_roughness, 0.0f, 1000.f);
 	ImGui::SliderFloat("SSAO Blur Size", (float*)&engine->sceneParameters.kernel_width, 0.0f, 20.f);
 
+	
+	static int currentItem = 0;
+	if (ImGui::Combo("Display Image", &currentItem, engine->graph.attachmentNames.data(), engine->graph.attachmentNames.size())) {
+		engine->DisplayImage = engine->graph.attachmentNames[currentItem];
+	}
+
 	struct GPUSceneParams {
 		glm::vec4 fog_a; //xyz color, w power
 		glm::vec4 fog_b; //x min, y far, zw unused

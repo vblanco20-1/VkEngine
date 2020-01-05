@@ -109,6 +109,8 @@ public:
 	VkExtent2D swapchainSize;
 
 	std::vector<RenderPass*> passes;
+
+	std::vector<const char*> attachmentNames;
 };
 
 void create_engine_graph(struct VulkanEngine* engine);

@@ -207,6 +207,24 @@ void VulkanEngine::init_vulkan()
 		return clearSet;
 	};
 
+
+	graph.pass_definitions["MainPass"].draw_callback = [&](vk::CommandBuffer cmd, RenderPass* pass) {
+		tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(cmd);
+		TracyVkZoneC(profilercontext, VkCommandBuffer(cmd), "Forward Pass", tracy::Color::Red);
+		//render_ssao_blury(cmd, pass->render_height, pass->render_width);
+		RenderMainPass(cmd);
+	};
+
+	graph.pass_definitions["MainPass"].clear_callback = [&]() {
+		ClearPassSet clearSet;
+
+		clearSet.clearValues[0].color = vk::ClearColorValue{ std::array<float,4> { .2f, 0.2f, 0.2f, 1.0f } };
+		clearSet.num = 1;
+		return clearSet;
+	};
+
+	DisplayImage = "main_image";
+
 	create_gfx_pipeline();	
 
 	create_ssao_pipelines();
@@ -466,6 +484,72 @@ vk::ShaderModule VulkanEngine::createShaderModule(const std::vector<unsigned int
 
 
 
+PipelineResource* VulkanEngine::GetBlitPipeline()
+{
+	if (!doesResourceExist<PipelineResource>("output_blit")) {
+
+		auto blitPipelineBuilder = GetOutputBlitPipeline();
+		auto &pass = graph.pass_definitions["DisplayPass"];
+		auto pipelineEffect = getResource<ShaderEffectHandle>("output").handle;
+
+		vk::Pipeline pipeline = blitPipelineBuilder->build_pipeline(device, renderPass, 0, pipelineEffect);
+
+		PipelineResource pipelineRes;
+		pipelineRes.pipeline = pipeline;
+		pipelineRes.pipelineBuilder = blitPipelineBuilder;
+		pipelineRes.effect = pipelineEffect;
+		pipelineRes.renderPassName = "DisplayPass";
+		createResource("output_blit", pipelineRes);
+	}
+
+	return &getResource<PipelineResource>("output_blit");
+}
+
+struct GraphicsPipelineBuilder* VulkanEngine::GetOutputBlitPipeline()
+{
+	ShaderEffect* pipelineEffect;
+	if (!doesResourceExist<ShaderEffectHandle>("output")) {
+
+		ShaderEffectHandle newShader;
+		newShader.handle = new ShaderEffect();
+
+		newShader.handle->add_shader_from_file(MAKE_ASSET_PATH("shaders/fullscreen.vert"));
+		newShader.handle->add_shader_from_file(MAKE_ASSET_PATH("shaders/blit.frag"));
+
+		newShader.handle->build_effect(device);
+
+		pipelineEffect = newShader.handle;
+
+		createResource<ShaderEffectHandle>("output", newShader);
+	}
+	else
+	{
+		pipelineEffect = getResource<ShaderEffectHandle>("output").handle;
+
+	}
+
+	GraphicsPipelineBuilder *blitBuilder = new GraphicsPipelineBuilder();
+	blitBuilder->data.vertexInputInfo = vk::PipelineVertexInputStateCreateInfo{};
+	blitBuilder->data.inputAssembly = VkPipelineInitializers::build_input_assembly(vk::PrimitiveTopology::eTriangleList);
+	//blitBuilder.data.viewport = VkPipelineInitializers::build_viewport(sizex, sizey);
+	//blitBuilder.data.scissor = VkPipelineInitializers::build_rect2d(0, 0, sizex, sizey);
+	blitBuilder->data.multisampling = VkPipelineInitializers::build_multisampling();
+	blitBuilder->data.depthStencil = VkPipelineInitializers::build_depth_stencil(true, false, vk::CompareOp::eAlways);
+	blitBuilder->data.rasterizer = VkPipelineInitializers::build_rasterizer();
+	blitBuilder->data.rasterizer.cullMode = vk::CullModeFlagBits::eNone;
+	//1 color attachments
+	blitBuilder->data.colorAttachmentStates.push_back(VkPipelineInitializers::build_color_blend_attachment_state());
+
+	blitBuilder->data.dynamicStates = {
+		vk::DynamicState::eViewport,
+		vk::DynamicState::eScissor
+	};
+
+	return blitBuilder;
+
+	//shadowPipeline = blitBuilder.build_pipeline(device, shadowPass.renderPass, 0, pipelineEffect);
+}
+
 void* VulkanEngine::get_profiler_context(vk::CommandBuffer cmd)
 {
 	if (!MainProfilerContext)
@@ -510,7 +594,9 @@ void VulkanEngine::create_gfx_pipeline()
 	gfxPipelineBuilder->data.multisampling = VkPipelineInitializers::build_multisampling();
 	gfxPipelineBuilder->data.colorAttachmentStates.push_back(VkPipelineInitializers::build_color_blend_attachment_state());	
 
-	graphicsPipeline = gfxPipelineBuilder->build_pipeline(device, renderPass, 0, pipelineEffect);
+	RenderPass* pass = &graph.pass_definitions["MainPass"];
+
+	graphicsPipeline = gfxPipelineBuilder->build_pipeline(device, pass->built_pass, 0, pipelineEffect);
 }
 
 
@@ -1074,7 +1160,7 @@ void VulkanEngine::start_frame_renderpass(vk::CommandBuffer buffer, vk::Framebuf
 	renderPassInfo.renderArea.extent = swapChainExtent;
 
 	std::array<vk::ClearValue, 1> clearValues = {};
-	clearValues[0].color = vk::ClearColorValue{ std::array<float,4> { 0.0f, 0.0f, 0.0f, 1.0f } };
+	clearValues[0].color = vk::ClearColorValue{ std::array<float,4> { 0.0f, 0.0f, 0.2f, 1.0f } };
 	//clearValues[1].depthStencil = { 1.0f, 0 };
 
 	renderPassInfo.clearValueCount = clearValues.size();
@@ -1174,29 +1260,38 @@ void VulkanEngine::draw_frame()
 		VkCommandBuffer commandbuffer = VkCommandBuffer(cmd);
 		TracyVkZone(profilercontext, commandbuffer, "All Frame");
 
-		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline);
+		PipelineResource* blit = GetBlitPipeline();
+		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, blit->pipeline);
 
-		//cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, 1, &test_descriptorSets[(currentFrameIndex + 1) %MAX_FRAMES_IN_FLIGHT], 0, nullptr);//1, &dynamicOffset);//0, nullptr);
+		vk::Viewport viewport;
+		viewport.height = swapChainExtent.height;
+		viewport.width = swapChainExtent.width;
+		viewport.minDepth = 0.f;
+		viewport.maxDepth = 1.f;
 
+		cmd.setViewport(0, viewport);
+
+		vk::Rect2D scissor;
+		scissor.extent = swapChainExtent;
+
+		cmd.setScissor(0, scissor);
+
+		vk::DescriptorImageInfo renderImage = {};
+		renderImage.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+		renderImage.imageView = graph.attachments[DisplayImage].view;
+		renderImage.sampler = graph.attachments[DisplayImage].sampler;
+
+		DescriptorSetBuilder setBuilder{ blit->effect,&descriptorMegapool };
+
+		setBuilder.bind_image(0,0, renderImage);
+
+		std::array<vk::DescriptorSet, 2> descriptors;
+		descriptors[0] = setBuilder.build_descriptor(0, DescriptorLifetime::PerFrame);
+
+		cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, blit->effect->build_pipeline_layout(device), 0, 1, &descriptors[0], 0, nullptr);
 		
-
-		if (currentFrameIndex == 0) {
-			TracyVkZoneC(profilercontext, commandbuffer, "Main pass 0",tracy::Color::Red1);
-			//for (int i = 5; i != 0; i--) {
-				RenderMainPass(cmd);
-			//}
-			
-		}
-		else if (currentFrameIndex == 1) {
-			TracyVkZoneC(profilercontext, commandbuffer, "Main pass 1", tracy::Color::Red2);
-			RenderMainPass(cmd);
-		}
-		else if (currentFrameIndex == 2) {
-			TracyVkZoneC(profilercontext, commandbuffer, "Main pass 2", tracy::Color::Red3);
-			RenderMainPass(cmd);
-		}
+		cmd.draw(3, 1, 0, 0);
 		
-		//TracyVkCollect(profilercontext, commandbuffer);
 		{
 			
 			ZoneScopedNC("Imgui Update", tracy::Color::Grey);

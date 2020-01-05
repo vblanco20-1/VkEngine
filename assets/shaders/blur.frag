@@ -55,7 +55,7 @@ vec4 BlurFunction(vec2 uv, float r, vec4 center_c, float center_d, inout float w
   const float BlurSigma = float(KERNEL_RADIUS) * 0.5;
   const float BlurFalloff = 1.0 / (2.0*BlurSigma*BlurSigma);
   
-  float ddiff = (d - center_d) * g_Sharpness;
+  float ddiff = (d - center_d) * g_Sharpness * 10;
   float w = exp2(-r*r*BlurFalloff - ddiff*ddiff);
   w_total += w;
 
@@ -72,15 +72,15 @@ void main()
   
   for (float r = 1; r <= KERNEL_RADIUS; ++r)
   {
-    vec2 uv = texCoord + g_InvResolutionDirection * r;
+    vec2 uv = texCoord + (g_InvResolutionDirection * r);
     c_total += BlurFunction(uv, r, center_c, center_d, w_total);  
   }
-  
+
   for (float r = 1; r <= KERNEL_RADIUS; ++r)
   {
-    vec2 uv = texCoord - g_InvResolutionDirection * r;
+     vec2 uv = texCoord + (g_InvResolutionDirection * r * -1);
     c_total += BlurFunction(uv, r, center_c, center_d, w_total);  
-  }
+   }
 
   out_Color = (c_total/w_total).r;
 }

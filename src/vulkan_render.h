@@ -280,6 +280,12 @@ struct VulkanEngine {
 	EntityID testCubemap;
 	EntityID bluenoiseTexture;
 
+	std::string DisplayImage;
+	//vk::Pipeline getBlitPipeline(vk::RenderPass pass);
+	PipelineResource* GetBlitPipeline();
+
+	struct GraphicsPipelineBuilder* GetOutputBlitPipeline();
+
 	struct GraphicsPipelineBuilder* gfxPipelineBuilder;
 	struct GraphicsPipelineBuilder* shadowPipelineBuilder;
 	struct GraphicsPipelineBuilder* gbufferPipelineBuilder;
