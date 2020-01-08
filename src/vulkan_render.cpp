@@ -117,8 +117,8 @@ void VulkanEngine::create_engine_graph()
 
 	RenderAttachmentInfo ssao_pre;
 	ssao_pre.format = VK_FORMAT_R8_UNORM;
-	ssao_pre.size_x = 0.5f;
-	ssao_pre.size_y = 0.5f;
+	ssao_pre.size_x = 1.f; // 0.5f;
+	ssao_pre.size_y = 1.f; // 0.5f;
 	ssao_pre.set_clear_color({ 0.0f, 0.0f, 0.0f, 1.0f });
 
 	RenderAttachmentInfo ssao_midblur = gbuffer_position;
@@ -722,7 +722,7 @@ void VulkanEngine::create_ssao_pipelines()
 	
 
 
-	const int SSAO_KERNEL_SIZE = 32;
+	const int SSAO_KERNEL_SIZE = 16;
 	const int SSAO_NOISE_DIM = 4;
 	//cam buffer
 	createBuffer(sizeof(glm::vec4) * SSAO_KERNEL_SIZE, vk::BufferUsageFlagBits::eUniformBuffer,
@@ -739,9 +739,13 @@ void VulkanEngine::create_ssao_pipelines()
 	{
 		glm::vec3 sample(rndDist(rndEngine) * 2.0 - 1.0, rndDist(rndEngine) * 2.0 - 1.0, rndDist(rndEngine));
 		sample = glm::normalize(sample);
-		sample *= rndDist(rndEngine);
-		float scale = float(i) / float(SSAO_KERNEL_SIZE);
-		scale = lerp(0.1f, 1.0f, scale * scale);
+		//sample *= rndDist(rndEngine);
+		float scale = 1.f;
+		if (i < 8) {
+			scale = 0.6f;
+		}
+		//float(i) / float(SSAO_KERNEL_SIZE);
+		//scale = lerp(0.1f, 1.0f, scale * scale);
 		ssaoKernel[i] = glm::vec4(sample * scale, 0.0f);
 	}
 

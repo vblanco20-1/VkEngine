@@ -140,7 +140,7 @@ void main() {
 	screenspace.y = gl_FragCoord.y / 900.f;
 	screenspace.x = gl_FragCoord.x / 1700.f;
 
-	float ssao = texture(ssaoMap,screenspace).r;
+	float ssao =  clamp( pow(texture(ssaoMap,screenspace).r , 2.f),0.f,1.f);
 	//vec3 ambient = sceneParams.ambient.xyz * sceneParams.ambient.w;
 	vec3 light_dir = normalize(vec3(100.0f, 600.0f, 800.0f)) * 1.f;
 

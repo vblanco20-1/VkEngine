@@ -4,7 +4,7 @@ layout (set = 0,binding = 0) uniform sampler2D samplerPositionDepth;
 layout (set = 0,binding = 1) uniform sampler2D samplerNormal;
 layout (set = 0,binding = 2) uniform sampler2D ssaoNoise;
 
-//const int SSAO_KERNEL_SIZE = 32;
+//const int SSAO_KERNEL_SIZE = 16;
 const float SSAO_RADIUS = 100.f;
 layout (constant_id = 0) const int SSAO_KERNEL_SIZE = 64;
 //layout (constant_id = 1) const float SSAO_RADIUS = 0.5;
