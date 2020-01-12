@@ -175,7 +175,7 @@ void UI::DrawEngineUI(VulkanEngine* engine)
 					}
 					ImGui::Separator();
 
-					for (auto& s : pip.effect->loaded_shaders) {
+					for (auto& s : pip.effect->get_loaded_shaders()) {
 						ImGui::Text(s.c_str());
 					}
 				}

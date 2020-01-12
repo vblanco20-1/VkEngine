@@ -52,8 +52,7 @@ struct BindReflection {
 //holds all information for a given shader set for pipeline
 struct ShaderEffect {
 
-	std::vector< ShaderModule> modules;
-	std::vector<std::string> loaded_shaders;
+	
 	//pImpl
 	struct ShaderEffectPrivateData* privData;
 	//add a shader to the effect
@@ -68,7 +67,7 @@ struct ShaderEffect {
 
 	std::array< VkDescriptorSetLayout, 4> build_descriptor_layouts(VkDevice device);
 	std::vector<VkPipelineShaderStageCreateInfo> get_stage_infos();
-
+	std::vector<std::string> get_loaded_shaders();
 	BindReflection* get_reflection();
 
 

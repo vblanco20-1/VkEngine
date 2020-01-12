@@ -248,12 +248,12 @@ bool compile_string(const char* InputCString, EShLanguage ShaderType, std::strin
     for (const Resource& resource : res.uniform_buffers)
     {
         auto& type = comp.get_type(resource.base_type_id);
-        unsigned member_count = type.member_types.size();
+        auto member_count = type.member_types.size();
 
         auto struct_name = comp.get_name(resource.base_type_id);
 
-        unsigned set = comp.get_decoration(resource.id, spv::DecorationDescriptorSet);
-        unsigned binding = comp.get_decoration(resource.id, spv::DecorationBinding);
+        auto set = comp.get_decoration(resource.id, spv::DecorationDescriptorSet);
+        auto binding = comp.get_decoration(resource.id, spv::DecorationBinding);
 
         std::cout << "Struct reflected: " << struct_name << " Set:" << set << " binding:" << binding << "----------------"<<std::endl;
         for (unsigned i = 0; i < member_count; i++)
@@ -369,6 +369,9 @@ void add_binding(ShaderDescriptorBindings* bindings, VkDescriptorSetLayoutBindin
 }
 
 struct ShaderEffectPrivateData {
+	std::vector< ShaderModule> modules;
+	std::vector<std::string> loaded_shaders;
+
     std::vector< glslang::TShader*> Shaders;
     std::vector< VkPipelineShaderStageCreateInfo> ShaderStages;
 
@@ -456,7 +459,7 @@ bool ShaderEffect::add_shader_from_file(const char* path)
         privData->Shaders.push_back(PtrShader);
         privData->Program.addShader(PtrShader);
 
-        loaded_shaders.push_back(path);
+        privData->loaded_shaders.push_back(path);
 
         return true;
     }
@@ -465,15 +468,18 @@ bool ShaderEffect::add_shader_from_file(const char* path)
 }
 bool ShaderEffect::reload_shaders(VkDevice device) {
     //save old state to be able to recover
-    std::vector< ShaderModule> oldmodules = modules;
-    ShaderEffectPrivateData* oldPrivData = privData;
+    std::vector< ShaderModule> oldmodules = privData->modules;
 
+    ShaderEffectPrivateData* oldPrivData = privData;
+	std::vector<std::string> shaders = privData->loaded_shaders;
+
+    privData->loaded_shaders.clear();
+    privData->modules.clear();
     //clear internal state
     privData = new ShaderEffectPrivateData;
-    modules.clear();
+   
 
-    std::vector<std::string> shaders = loaded_shaders;
-    loaded_shaders.clear();
+    
     
     for (auto& s : shaders) {
         if (!add_shader_from_file(s.c_str()))
@@ -493,9 +499,9 @@ bool ShaderEffect::reload_shaders(VkDevice device) {
     return true;
 failure:
     delete privData;
-    modules = oldmodules;
+    privData->modules = oldmodules;
     privData = oldPrivData;
-    loaded_shaders = shaders;
+    privData->loaded_shaders = shaders;
 
     return false;
 }
@@ -579,11 +585,11 @@ bool ShaderEffect::build_effect(VkDevice device)
 
             privData->ShaderStages.push_back(shaderCreateInfo);
 
-            modules.push_back(std::move(newModule));
+            privData->modules.push_back(std::move(newModule));
         }       
     }
 
-    for (ShaderModule &ShaderMod : modules)
+    for (ShaderModule &ShaderMod : privData->modules)
     {
         //read spirv
         spirv_cross::Compiler comp(ShaderMod.SpirV);
@@ -609,7 +615,7 @@ bool ShaderEffect::build_effect(VkDevice device)
             BindInfo newinfo;
             newinfo.set = set;
             newinfo.binding = binding;
-            newinfo.range = size;;
+            newinfo.range = (int)size;;
             newinfo.type = vkbind.descriptorType;
 
             privData->reflectionData.DataBindings[comp.get_name(resource.id)] = newinfo;
@@ -633,7 +639,7 @@ bool ShaderEffect::build_effect(VkDevice device)
             BindInfo newinfo;
             newinfo.set = set;
             newinfo.binding = binding;
-            newinfo.range = size;
+            newinfo.range = (int)size;
             newinfo.type = vkbind.descriptorType;
 
             privData->reflectionData.DataBindings[comp.get_name(resource.id)] = newinfo;
@@ -753,6 +759,11 @@ std::array<VkDescriptorSetLayout, 4> ShaderEffect::build_descriptor_layouts(VkDe
 std::vector<VkPipelineShaderStageCreateInfo> ShaderEffect::get_stage_infos()
 {
     return privData->ShaderStages;
+}
+
+std::vector<std::string> ShaderEffect::get_loaded_shaders()
+{
+    return privData->loaded_shaders;
 }
 
 BindReflection* ShaderEffect::get_reflection()
