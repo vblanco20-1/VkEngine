@@ -715,7 +715,7 @@ VkPipelineLayout ShaderEffect::build_pipeline_layout(VkDevice device)
 		pipelineLayoutInfo.pSetLayouts = &descriptorSetLayouts[0];
 		pipelineLayoutInfo.pushConstantRangeCount = privData->pushConstantRanges.size();
 		pipelineLayoutInfo.pPushConstantRanges = privData->pushConstantRanges.data();
-
+        pipelineLayoutInfo.flags = 0;
         
 		vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &privData->builtPipelineLayout);
 

@@ -3,11 +3,11 @@
 #include "sdl_render.h"
 #include "rawbuffer.h"
 #include <glm/gtx/vector_angle.hpp>
-#include "termcolor.hpp"
+#include "termcolor.hpp" 
 //#include <gli/gli.hpp>
 #include <vk_format.h>
 //#include <tiny_obj_loader.h>
-#include <chrono>
+#include <chrono> 
 
 #include "imgui.h"
 #include "imgui_impl_sdl.h"
@@ -665,6 +665,8 @@ float lerp(float a, float b, float f)
 	return a + f * (b - a);
 }
 
+constexpr int SSAO_KERNEL_SIZE = 16;
+constexpr int SSAO_NOISE_DIM = 4;
 
 void VulkanEngine::create_ssao_pipelines()
 {
@@ -722,8 +724,6 @@ void VulkanEngine::create_ssao_pipelines()
 	
 
 
-	const int SSAO_KERNEL_SIZE = 16;
-	const int SSAO_NOISE_DIM = 4;
 	//cam buffer
 	createBuffer(sizeof(glm::vec4) * SSAO_KERNEL_SIZE, vk::BufferUsageFlagBits::eUniformBuffer,
 		vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, ssaoSamples);
@@ -1483,7 +1483,7 @@ void VulkanEngine::render_ssao_pass(const vk::CommandBuffer& cmd, int height, in
 	vk::DescriptorBufferInfo ssaoSamplesbuffer;
 	ssaoSamplesbuffer.buffer = ssaoSamples.buffer;
 	ssaoSamplesbuffer.offset = 0;
-	ssaoSamplesbuffer.range = sizeof(glm::vec4) * 64;
+	ssaoSamplesbuffer.range = sizeof(glm::vec4) * SSAO_KERNEL_SIZE;
 
 	vk::DescriptorImageInfo noiseImage = {};
 	noiseImage.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
@@ -1538,7 +1538,7 @@ void VulkanEngine::render_ssao_blurx(const vk::CommandBuffer& cmd, int height, i
 	blur_dir.y = 0;
 	blur_dir.z = sceneParameters.ssao_roughness;
 	blur_dir.w = sceneParameters.kernel_width;
-	cmd.pushConstants(layout, vk::ShaderStageFlagBits::eFragment, 0, sizeof(glm::vec4) * 4, &blur_dir);
+	cmd.pushConstants(layout, vk::ShaderStageFlagBits::eFragment, 0, sizeof(glm::vec4), &blur_dir);
 
 	cmd.draw(3, 1, 0, 0);
 }
@@ -2527,7 +2527,7 @@ bool VulkanEngine::load_scene(const char* scene_path, glm::mat4 rootMatrix)
 			SimpleMaterial mat;
 			mat.textureIDs = blank_textures;
 
-			EntityID textureId;
+			EntityID textureId; 
 			if (GrabTextureID(scene->mMaterials[i], aiTextureType_DIFFUSE, this, textureId)) {
 				mat.textureIDs[0] = textureId;
 			}

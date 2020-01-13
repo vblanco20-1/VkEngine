@@ -84,7 +84,7 @@ vk::AttachmentDescription make_color_attachment(const RenderAttachmentInfo* info
 		attachment.initialLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
 	}
 
-	attachment.finalLayout = bReadAfter ? vk::ImageLayout::eShaderReadOnlyOptimal : vk::ImageLayout::eUndefined;
+	attachment.finalLayout = bReadAfter ? vk::ImageLayout::eShaderReadOnlyOptimal : vk::ImageLayout::eColorAttachmentOptimal;
 
 	return attachment;
 }
@@ -117,7 +117,7 @@ vk::AttachmentDescription make_depth_attachment(const RenderAttachmentInfo* info
 		attachment.finalLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
 	}
 	else {
-		attachment.finalLayout = bReadAfter ? vk::ImageLayout::eDepthStencilReadOnlyOptimal : vk::ImageLayout::eUndefined;
+		attachment.finalLayout = bReadAfter ? vk::ImageLayout::eDepthStencilReadOnlyOptimal : vk::ImageLayout::eDepthStencilAttachmentOptimal;
 	}
 
 	return attachment;
@@ -228,7 +228,7 @@ bool FrameGraph::build(struct VulkanEngine* engine)
 		for (const auto& image : pass->image_dependencies) {
 			if (graph_attachments.find(image) != graph_attachments.end())
 			{
-				graph_attachments[image].last_writer_pass = pass->name;
+				graph_attachments[image].last_read_pass = pass->name;
 				graph_attachments[image].reads++;
 				graph_attachments[image].usageFlags |= (VkImageUsageFlags)vk::ImageUsageFlagBits::eSampled;
 			}

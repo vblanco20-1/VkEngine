@@ -340,6 +340,7 @@ void VulkanEngine::createImage(uint32_t width, uint32_t height, vk::Format forma
 	{
 		imageInfo.flags = vk::ImageCreateFlagBits::eCubeCompatible;
 	}
+	
 
 	VmaAllocationCreateInfo vmaallocInfo = {};
 	vmaallocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;

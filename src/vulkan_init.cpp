@@ -11,7 +11,7 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL vulkanValidationErrorCallback(
 	const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
 	void* pUserData) {
 
-	if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT || messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
+	if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT || messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT || messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT) {
 
 
 
@@ -167,14 +167,28 @@ void VulkanEngine::create_device()
 	//--- DEVICE CREATE
 	vk::DeviceCreateInfo createInfo;
 
-	std::array<vk::DeviceQueueCreateInfo, 2> queues{ queueCreateInfo,presentQueueCreateInfo };
-	createInfo.pQueueCreateInfos = queues.data();
-	createInfo.queueCreateInfoCount = 2;
-	createInfo.pEnabledFeatures = &deviceFeatures;
-	createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
-	createInfo.ppEnabledExtensionNames = deviceExtensions.data();
+	if (queueCreateInfo.queueFamilyIndex == presentQueueCreateInfo.queueFamilyIndex) {
+		std::array<vk::DeviceQueueCreateInfo, 2> queues{ queueCreateInfo,presentQueueCreateInfo };
+		createInfo.pQueueCreateInfos = queues.data();
+		createInfo.queueCreateInfoCount = 1;
+		createInfo.pEnabledFeatures = &deviceFeatures;
+		createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
+		createInfo.ppEnabledExtensionNames = deviceExtensions.data();
 
-	device = physicalDevice.createDevice(createInfo);
+		device = physicalDevice.createDevice(createInfo);
+	}
+	else {
+		std::array<vk::DeviceQueueCreateInfo, 2> queues{ queueCreateInfo,presentQueueCreateInfo };
+		createInfo.pQueueCreateInfos = queues.data();
+		createInfo.queueCreateInfoCount = 2;
+		createInfo.pEnabledFeatures = &deviceFeatures;
+		createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
+		createInfo.ppEnabledExtensionNames = deviceExtensions.data();
+
+		device = physicalDevice.createDevice(createInfo);
+	}
+
+	
 
 	graphicsQueue = device.getQueue(graphicsFamilyIndex, 0);
 	presentQueue = device.getQueue(presentFamilyIndex, 0);
