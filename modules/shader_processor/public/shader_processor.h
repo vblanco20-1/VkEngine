@@ -65,6 +65,8 @@ struct ShaderEffect {
 	//returns a vkPipelineLayout
 	VkPipelineLayout build_pipeline_layout(VkDevice device);
 
+	void set_manual_push_constants(VkPushConstantRange* ranges, int count);
+
 	std::array< VkDescriptorSetLayout, 4> build_descriptor_layouts(VkDevice device);
 	std::vector<VkPipelineShaderStageCreateInfo> get_stage_infos();
 	std::vector<std::string> get_loaded_shaders();

@@ -4,6 +4,7 @@
 #include "engine_ui.h"
 #include "misc/cpp/imgui_stdlib.h"
 #include "shader_processor.h"
+#include "components2.h"
 
 
 

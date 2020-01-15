@@ -2,6 +2,9 @@ layout(set = 0, binding = 4) uniform sampler2D blueNoise;
 layout(set = 0, binding = 5) uniform sampler2D ssaoMap;
 layout(set = 0, binding = 6) uniform samplerCube ambientCubemap;
 layout(set = 0, binding = 7) uniform sampler2D shadowMap;
+layout(set = 0, binding = 8) uniform samplerCube reflectionCubemap;
+layout(set = 0, binding = 9) uniform sampler2D samplerBRDFLUT;
+
 layout(set = 2, binding = 6) uniform sampler2D tex1;
 layout(set = 2, binding = 7) uniform sampler2D tex2;
 layout(set = 2, binding = 8) uniform sampler2D tex3;

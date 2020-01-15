@@ -7,6 +7,12 @@
 #include "player_camera.h"
 #include "framegraph.h"
 
+#ifndef ASSET_PATH
+	//#define ASSET_PATH errorpath
+#define ASSET_PATH "K:/Programming/vkEngine/assets/"
+#endif
+#define MAKE_ASSET_PATH(path) ASSET_PATH ## path
+
 constexpr int MAX_FRAMES_IN_FLIGHT =2;
 constexpr int MAX_UNIFORM_BUFFER = 5000;
 constexpr int SHADOWMAP_DIM = 2048;
@@ -197,6 +203,8 @@ struct VulkanEngine {
 	EntityID load_assimp_mesh(aiMesh* mesh);
 	EntityID load_texture(const char* image_path, std::string textureName,bool bIsCubemap = false);
 
+	std::pair<TextureResource, TextureResourceMetadata>  load_texture_resource(const char* image_path,bool bIsCubemap = false);
+
 	void load_textures_bulk(TextureLoadRequest* requests, size_t count);
 
 
@@ -220,6 +228,7 @@ struct VulkanEngine {
 	void render_ssao_pass(const vk::CommandBuffer& cmd, int height, int width);
 	void render_ssao_blurx(const vk::CommandBuffer& cmd, int height, int width);
 	void render_ssao_blury(const vk::CommandBuffer& cmd, int height, int width);
+	vk::DescriptorImageInfo get_image_resource(const char* name);
 	void RenderMainPass(const vk::CommandBuffer& cmd);
 	void RenderGBufferPass(const vk::CommandBuffer& cmd);
 	void update_uniform_buffer(uint32_t currentImage);
@@ -251,6 +260,7 @@ struct VulkanEngine {
 	void transitionImageLayout(vk::Image image, vk::Format format, vk::ImageLayout oldLayout, vk::ImageLayout newLayout);
 
 	void cmd_transitionImageLayout(vk::CommandBuffer& commandBuffer, vk::Image image, vk::Format format, vk::ImageLayout oldLayout, vk::ImageLayout newLayout, bool bIsCubemap = false);
+	void cmd_transitionImageLayout(vk::CommandBuffer& commandBuffer, vk::Image image, vk::Format format, vk::ImageLayout oldLayout, vk::ImageLayout newLayout, vk::ImageSubresourceRange range);
 
 	vk::CommandBuffer beginSingleTimeCommands();
 	void endSingleTimeCommands(vk::CommandBuffer commandBuffer);

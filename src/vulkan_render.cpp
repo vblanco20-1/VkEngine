@@ -20,13 +20,11 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "tiny_gltf.h"
 
-#ifndef ASSET_PATH
-	//#define ASSET_PATH errorpath
-    #define ASSET_PATH "K:/Programming/vkEngine/assets/"
-#endif
-#include <framegraph.h>
 
-#define MAKE_ASSET_PATH(path) ASSET_PATH ## path
+#include <framegraph.h>
+#include "cubemap_loader.h"
+
+
 
 #undef max()
 #undef min()
@@ -292,11 +290,23 @@ void VulkanEngine::init_vulkan()
 
 	blankTexture = load_texture(MAKE_ASSET_PATH("sprites/blank.png"), "blank");
 	blackTexture = load_texture(MAKE_ASSET_PATH("sprites/black.png"), "black");
-	testCubemap = load_texture(MAKE_ASSET_PATH("models/SunTemple_Skybox.hdr"), "cubemap", true);
+	//testCubemap = load_texture(MAKE_ASSET_PATH("models/SunTemple_Skybox.hdr"), "cubemap", true);
 
 	bluenoiseTexture = load_texture(MAKE_ASSET_PATH("sprites/bluenoise256.png"), "blunoise");
 	//testCubemap = load_texture(MAKE_ASSET_PATH("sprites/cubemap_yokohama_bc3_unorm.ktx"), "cubemap",true);
+	testCubemap = load_texture(MAKE_ASSET_PATH("sprites/pisa_cube.ktx"), "cubemap", true);
+	testCubemap = load_texture(MAKE_ASSET_PATH("sprites/pisa_cube.ktx"), "cubemap", true);
+	load_texture(MAKE_ASSET_PATH("sprites/ibl_brdf_lut.png"), "brdf", false);
 
+	CubemapLoader cubeLoad;
+	cubeLoad.initialize(this);
+	//"sprites / cubemap_yokohama_bc3_unorm.ktx"
+	//TextureResource irradianceMap = cubeLoad.load_cubemap(MAKE_ASSET_PATH("sprites/pisa_cube.ktx"));
+	TextureResource irradianceMap = cubeLoad.load_cubemap(MAKE_ASSET_PATH("sprites/pisa_cube.ktx"),64, CubemapFilterMode::IRRADIANCE);
+
+	TextureResource reflectionMap = cubeLoad.load_cubemap(MAKE_ASSET_PATH("sprites/pisa_cube.ktx"), 512, CubemapFilterMode::REFLECTION);
+	createResource("irradiance_map", irradianceMap);
+	createResource("reflection_map", reflectionMap);
 	sceneParameters.fog_a = glm::vec4(1);
 	sceneParameters.fog_b.x = 0.f;
 	sceneParameters.fog_b.y = 10000.f;
@@ -1046,6 +1056,9 @@ void VulkanEngine::copyBuffer(vk::Buffer srcBuffer, vk::Buffer dstBuffer, vk::De
 	endSingleTimeCommands(commandBuffer);
 
 }
+
+
+
 vk::CommandBuffer VulkanEngine::beginSingleTimeCommands() {
 	vk::CommandBufferAllocateInfo allocInfo;
 	allocInfo.level = vk::CommandBufferLevel::ePrimary;
@@ -1581,6 +1594,15 @@ void VulkanEngine::render_ssao_blury(const vk::CommandBuffer& cmd, int height, i
 	cmd.draw(3, 1, 0, 0);
 }
 
+vk::DescriptorImageInfo VulkanEngine::get_image_resource(const char *name) {
+	const TextureResource& texture_env = getResource<TextureResource>(name);//render_registry.get<TextureResource>();
+	vk::DescriptorImageInfo imageInfo = {};
+	imageInfo.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+	imageInfo.imageView = texture_env.imageView;
+	imageInfo.sampler = texture_env.textureSampler;
+	return imageInfo;
+}
+
 void VulkanEngine::RenderMainPass(const vk::CommandBuffer& cmd)
 {
 	tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(cmd);
@@ -1678,12 +1700,20 @@ void VulkanEngine::RenderMainPass(const vk::CommandBuffer& cmd)
 
 
 
-			const TextureResource& texture = render_registry.get<TextureResource>(testCubemap);
-
+			//const TextureResource& texture = render_registry.get<TextureResource>(testCubemap);
+			const TextureResource& texture_env = getResource<TextureResource>("irradiance_map");//render_registry.get<TextureResource>();
 			vk::DescriptorImageInfo imageInfo = {};
 			imageInfo.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-			imageInfo.imageView = texture.imageView;
-			imageInfo.sampler = texture.textureSampler;
+			imageInfo.imageView = texture_env.imageView;
+			imageInfo.sampler = texture_env.textureSampler;
+
+			const TextureResource& texture_Ref = getResource<TextureResource>("reflection_map");//render_registry.get<TextureResource>();
+			vk::DescriptorImageInfo imageInfo2 = {};
+			imageInfo2.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+			imageInfo2.imageView = texture_Ref.imageView;
+			imageInfo2.sampler = texture_Ref.textureSampler;
+
+			vk::DescriptorImageInfo brdfimg = get_image_resource("brdf");
 
 			vk::DescriptorImageInfo shadowInfo = {};
 			shadowInfo.imageLayout = vk::ImageLayout::eDepthStencilReadOnlyOptimal;
@@ -1697,11 +1727,12 @@ void VulkanEngine::RenderMainPass(const vk::CommandBuffer& cmd)
 
 			setBuilder.bind_image("ssaoMap", render_graph.get_image_descriptor("ssao_post"));
 
-
+			setBuilder.bind_image("samplerBRDFLUT", brdfimg);
 			setBuilder.bind_image("blueNoise", noiseImage);
 			//setBuilder.bind_image("ssaoMap", ssaoImage);
 			setBuilder.bind_image("shadowMap", shadowInfo);
 			setBuilder.bind_image("ambientCubemap", imageInfo);
+			setBuilder.bind_image("reflectionCubemap", imageInfo2);
 			setBuilder.bind_buffer("ubo", camBufferInfo);
 			setBuilder.bind_buffer("shadowUbo", shadowBufferInfo);
 			setBuilder.bind_buffer("sceneParams", sceneBufferInfo);
@@ -2326,6 +2357,8 @@ EntityID VulkanEngine::load_assimp_mesh(aiMesh* mesh)
 
 
 
+
+
 void eraseSubStr(std::string& mainStr, const std::string& toErase)
 {
 	// Search for the substring in string
@@ -2377,9 +2410,10 @@ bool GrabTextureLoadRequest(aiMaterial* material, aiTextureType textype, const s
 
 bool GrabTextureID(aiMaterial* material, aiTextureType textype, VulkanEngine* eng, EntityID& textureID) {
 	aiString texpath;
-	if (material->GetTextureCount(textype))
+	int texcount = material->GetTextureCount(textype);
+	for ( int m = 0; m < texcount; m++)
 	{
-		material->GetTexture(textype, 0, &texpath);
+		material->GetTexture(textype, m, &texpath);
 
 		const char* txpath = &texpath.data[0];
 		for (int i = 0; i < texpath.length; i++)
@@ -2460,7 +2494,13 @@ bool VulkanEngine::load_scene(const char* scene_path, glm::mat4 rootMatrix)
 		ZoneScopedNC("Texture request building", tracy::Color::Green);
 		for (int i = 0; i < scene->mNumMaterials; i++)
 		{
-			if (outputMaterialInfo) {
+			std::string matname = scene->mMaterials[i]->GetName().C_Str();
+			
+			std::string find = "Pavement";
+			bool bdebug = (matname.find(find) != std::string::npos);
+		
+
+			if (bdebug || outputMaterialInfo) {
 
 
 				std::cout << std::endl;

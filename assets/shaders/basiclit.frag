@@ -134,6 +134,40 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0)
 {
     return F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
 } 
+
+// Fresnel function ----------------------------------------------------
+vec3 F_Schlick(float cosTheta, vec3 F0)
+{
+	return F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
+}
+vec3 F_SchlickR(float cosTheta, vec3 F0, float roughness)
+{
+	return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(1.0 - cosTheta, 5.0);
+}
+
+vec3 prefilteredReflection(vec3 R, float roughness)
+{
+	const float MAX_REFLECTION_LOD = 9.0; // todo: param/const
+	float lod = roughness * MAX_REFLECTION_LOD;
+	float lodf = floor(lod);
+	float lodc = ceil(lod);
+	vec3 a = textureLod(reflectionCubemap, R, lodf).rgb;
+	vec3 b = textureLod(reflectionCubemap, R, lodc).rgb;
+	return mix(a, b, lod - lodf);
+}
+
+
+vec3 Uncharted2Tonemap(vec3 x)
+{
+	float A = 0.15;
+	float B = 0.50;
+	float C = 0.10;
+	float D = 0.20;
+	float E = 0.02;
+	float F = 0.30;
+	return ((x*(A*x+C*B)+D*E)/(x*(A*x+B)+D*F))-E/F;
+}
+
 void main() {
 
 	vec2 screenspace = vec2(0.f);
@@ -141,27 +175,27 @@ void main() {
 	screenspace.x = gl_FragCoord.x / 1700.f;
 
 	float ssao =  clamp( pow(texture(ssaoMap,screenspace).r , 2.f),0.f,1.f);
-	//vec3 ambient = sceneParams.ambient.xyz * sceneParams.ambient.w;
+	
 	vec3 light_dir = normalize(vec3(100.0f, 600.0f, 800.0f)) * 1.f;
 
     float ao = 1.f;
 	vec3 albedo = clamp(texture(tex1, fragTexCoord).rgb,vec3(0.01),vec3(1.f));
 
-	float metallic = 0;
+	float metallic = 1;
 	float roughness = 0.9;
-
+	
 	vec3 tex3 = texture(tex3, fragTexCoord).xyz;
-	if(tex3 != vec3(1)){
+	//if(tex3 != vec3(1)){
  	 metallic = tex3.b;
 	 roughness =  tex3.g;
-	}
+	//}
 
-	//float metallic = texture(tex3, fragTexCoord).b;
-	//float roughness =  texture(tex3, fragTexCoord).g;
 	vec4 emmisive = texture(tex4, fragTexCoord);
 
     vec3 N = normalize(fragNormal);
     vec3 V = normalize(eyePos - fragPos);
+    vec3 R = reflect(-V, N); 
+
 
 	vec3 F0 = vec3(0.04); 
     F0 = mix(F0, albedo, metallic);
@@ -170,9 +204,13 @@ void main() {
 	// reflectance equation
     vec3 Lo = vec3(0.0);
 
-	float shadow = filterPCF(inShadowCoord / inShadowCoord.w);
+	float shadow = clamp( filterPCF(inShadowCoord / inShadowCoord.w),0.1f,1.f);
 
-	vec3 radiance = texture(ambientCubemap, N, 0).rgb;
+	vec3 norm = N;
+	//norm.x = N.y;
+	//norm.y = N.x;
+	//norm.z = -N.z;
+
 
 	//light
 	vec3 L = light_dir;
@@ -199,20 +237,33 @@ void main() {
 		float NdotL = max(dot(N, L), 0.0);                
 		Lo += (kD * albedo / PI + specular) * lightradiance * NdotL; 
 	}
-	vec3 kS = fresnelSchlick(max(dot(N, V), 0.0), F0);
-	vec3 kD = 1.0 - kS;
-	//vec3 irradiance = 1.f;//radiance;//texture(irradianceMap, N).rgb;
-	vec3 diffuse    = albedo;//irradiance * albedo;
-	//vec3 ambient    = (kD * diffuse) * ao; 
 
-	vec3 ambient = (kD * diffuse) * sceneParams.ambient.w;
-	//Lo *= pow(ssao,4);
-    vec3 color = (ambient + Lo)  * (pow(ssao,4));
-	
-    color = color / (color + vec3(1.0));
-    //color = pow(color, vec3(1.0/2.2));  
    
-   //outColor = vec4(roughness);
-   outColor = vec4(ssao);//
-	outColor = vec4(color, 1.0) + emmisive;
+
+    vec2 brdf = texture(samplerBRDFLUT, vec2(max(dot(N, V), 0.0), roughness)).rg;
+	vec3 reflection = prefilteredReflection(R, roughness).rgb;	
+	vec3 irradiance = texture(ambientCubemap, N).rgb;
+
+	// Diffuse based on irradiance
+	vec3 diffuse = irradiance * albedo;	
+
+	vec3 F = F_SchlickR(max(dot(N, V), 0.0), F0, roughness);
+
+	// Specular reflectance
+	vec3 specular = reflection * (F * brdf.x + brdf.y);
+
+	// Ambient part
+	vec3 kD = 1.0 - F;
+	kD *= 1.0 - metallic;	  
+	vec3 ambient = (kD * diffuse + specular) * pow(ssao,10);
+	
+	vec3 color = ambient + Lo;
+	
+	// Tone mapping
+	color = Uncharted2Tonemap(color * sceneParams.ambient.w);
+	color = color * (1.0f / Uncharted2Tonemap(vec3(11.2f)));	
+	// Gamma correction
+	color = pow(color, vec3(1.0f / 1));
+
+	outColor = vec4(color, 1.0);
 }

@@ -10,7 +10,7 @@
 #include "tiny_gltf.h"
 #include "stb_image.h"
 
-EntityID VulkanEngine::load_texture(const char* image_path, std::string textureName, bool bIsCubemap)
+std::pair<TextureResource,TextureResourceMetadata> VulkanEngine::load_texture_resource(const char* image_path, bool bIsCubemap /*= false*/)
 {
 	TextureResource texture;
 	int texWidth, texHeight, texChannels;
@@ -42,77 +42,84 @@ EntityID VulkanEngine::load_texture(const char* image_path, std::string textureN
 
 	AllocatedBuffer stagingBuffer;
 	createBuffer(imageSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, stagingBuffer);
-	
-	
+
+
 	void* data;
 	vmaMapMemory(allocator, stagingBuffer.allocation, &data);//device.mapMemory(stagingBufferMemory, 0, bufferSize);
-	
+
 	memcpy(data, pixel_ptr, static_cast<size_t>(imageSize));
-	
+
 	vmaUnmapMemory(allocator, stagingBuffer.allocation);
-	
-	stbi_image_free(pixels);	
+
+	stbi_image_free(pixels);
 
 
 	vk::ImageUsageFlags usageFlags = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled;
-	
+
 	createImage(texWidth, texHeight, image_format,
 		vk::ImageTiling::eOptimal, usageFlags,
-		vk::MemoryPropertyFlagBits::eDeviceLocal, texture.image,bIsCubemap);
-	
+		vk::MemoryPropertyFlagBits::eDeviceLocal, texture.image, bIsCubemap);
+
 	//transitionImageLayout(texture.image.image, image_format, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal);
-	
+
 	auto cmd1 = beginSingleTimeCommands();
 
-	cmd_transitionImageLayout(cmd1, texture.image.image, image_format, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal,bIsCubemap);
+	cmd_transitionImageLayout(cmd1, texture.image.image, image_format, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, bIsCubemap);
 
 	endSingleTimeCommands(cmd1);
 
-	copyBufferToImage(stagingBuffer.buffer, texture.image.image, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight),bIsCubemap);
-	
+	copyBufferToImage(stagingBuffer.buffer, texture.image.image, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), bIsCubemap);
+
 	//transitionImageLayout(texture.image.image, image_format, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
 	auto cmd2 = beginSingleTimeCommands();
 
 	cmd_transitionImageLayout(cmd2, texture.image.image, image_format, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, bIsCubemap);
 
 	endSingleTimeCommands(cmd2);
-	
+
 	vmaDestroyBuffer(allocator, stagingBuffer.buffer, stagingBuffer.allocation);
-	
-	texture.imageView = createImageView(texture.image.image, image_format, vk::ImageAspectFlagBits::eColor,bIsCubemap);
-	
+
+	texture.imageView = createImageView(texture.image.image, image_format, vk::ImageAspectFlagBits::eColor, bIsCubemap);
+
 	vk::SamplerCreateInfo samplerInfo;
 	samplerInfo.magFilter = vk::Filter::eLinear;
 	samplerInfo.minFilter = vk::Filter::eLinear;
 	samplerInfo.addressModeU = vk::SamplerAddressMode::eRepeat;
 	samplerInfo.addressModeV = vk::SamplerAddressMode::eRepeat;
 	samplerInfo.addressModeW = vk::SamplerAddressMode::eRepeat;
-	
+
 	samplerInfo.anisotropyEnable = VK_TRUE;
 	samplerInfo.maxAnisotropy = 16;
-	
+
 	samplerInfo.borderColor = vk::BorderColor::eIntOpaqueBlack;
 	samplerInfo.unnormalizedCoordinates = VK_FALSE;
-	
+
 	samplerInfo.compareEnable = VK_FALSE;
 	samplerInfo.compareOp = vk::CompareOp::eAlways;
-	
+
 	samplerInfo.mipmapMode = vk::SamplerMipmapMode::eLinear;
 	samplerInfo.mipLodBias = 0.0f;
 	samplerInfo.minLod = 0.0f;
 	samplerInfo.maxLod = 0.0f;
-	
+
 	texture.textureSampler = device.createSampler(samplerInfo);
-	
+
 	TextureResourceMetadata metadata;
 
 	metadata.image_format = image_format;
 	metadata.texture_size.x = texWidth;
 	metadata.texture_size.y = texHeight;
 
-	auto res = createResource(textureName.c_str(), texture);
+	return { texture,metadata };
+}
 
-	render_registry.assign<TextureResourceMetadata>(res,metadata);
+EntityID VulkanEngine::load_texture(const char* image_path, std::string textureName, bool bIsCubemap)
+{
+	auto texture = load_texture_resource(image_path, bIsCubemap);
+
+	auto res = createResource(textureName.c_str(), texture.first);
+
+	render_registry.assign<TextureResourceMetadata>(res, texture.second);
 
 	return res;
 }
@@ -478,8 +485,7 @@ void VulkanEngine::transitionImageLayout(vk::Image image, vk::Format format, vk:
 
 	endSingleTimeCommands(cmd);
 }
-
-void VulkanEngine::cmd_transitionImageLayout(vk::CommandBuffer& commandBuffer, vk::Image image, vk::Format format, vk::ImageLayout oldLayout, vk::ImageLayout newLayout, bool bIsCubemap)
+void VulkanEngine::cmd_transitionImageLayout(vk::CommandBuffer& commandBuffer, vk::Image image, vk::Format format, vk::ImageLayout oldLayout, vk::ImageLayout newLayout, vk::ImageSubresourceRange range)
 {
 	vk::ImageMemoryBarrier barrier;
 	barrier.oldLayout = oldLayout;
@@ -487,11 +493,7 @@ void VulkanEngine::cmd_transitionImageLayout(vk::CommandBuffer& commandBuffer, v
 	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 	barrier.image = image;
-	barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
-	barrier.subresourceRange.baseMipLevel = 0;
-	barrier.subresourceRange.levelCount = 1;
-	barrier.subresourceRange.baseArrayLayer = 0;
-	barrier.subresourceRange.layerCount = bIsCubemap? 6: 1;
+	barrier.subresourceRange = range;
 	//barrier.srcAccessMask = 0; // TODO
 	//barrier.dstAccessMask = 0; // TODO
 
@@ -528,9 +530,28 @@ void VulkanEngine::cmd_transitionImageLayout(vk::CommandBuffer& commandBuffer, v
 		sourceStage = vk::PipelineStageFlagBits::eTopOfPipe;
 		destinationStage = vk::PipelineStageFlagBits::eEarlyFragmentTests;
 	}
+	else if (oldLayout == vk::ImageLayout::eUndefined && newLayout == vk::ImageLayout::eColorAttachmentOptimal) {
+		barrier.srcAccessMask = vk::AccessFlags{};
+		barrier.dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+
+		sourceStage = vk::PipelineStageFlagBits::eTopOfPipe;
+		destinationStage = vk::PipelineStageFlagBits::eEarlyFragmentTests;
+	}
 	else {
 		throw std::invalid_argument("unsupported layout transition!");
 	}
 
 	commandBuffer.pipelineBarrier(sourceStage, destinationStage, vk::DependencyFlags{}, 0, nullptr, 0, nullptr, 1, &barrier);
+
+}
+void VulkanEngine::cmd_transitionImageLayout(vk::CommandBuffer& commandBuffer, vk::Image image, vk::Format format, vk::ImageLayout oldLayout, vk::ImageLayout newLayout, bool bIsCubemap)
+{
+	vk::ImageSubresourceRange range;
+	range.aspectMask = vk::ImageAspectFlagBits::eColor;
+	range.baseMipLevel = 0;
+	range.levelCount = 1;
+	range.baseArrayLayer = 0;
+	range.layerCount = bIsCubemap ? 6 : 1;
+
+	cmd_transitionImageLayout(commandBuffer, image, format, oldLayout, newLayout, range);
 }

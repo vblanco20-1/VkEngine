@@ -677,18 +677,26 @@ bool ShaderEffect::build_effect(VkDevice device)
             privData->reflectionData.DataBindings[comp.get_name(resource.id)] = newinfo;
         }
 
+        VkShaderStageFlags stage_flags{};
+
+        for (const ShaderModule& mod : privData->modules)
+        {     
+            stage_flags |= ShaderTypeToVulkanFlag(mod.type);
+        }
 
         for (const Resource& resource : res.push_constant_buffers)
         {
             const SPIRType& type = comp.get_type(resource.base_type_id);
+            uint32_t last = uint32_t(type.member_types.size() - 1);
             size_t size = comp.get_declared_struct_size(type);
-
+            size_t offset =comp.type_struct_member_offset(type, 0);
             VkPushConstantRange pushConstantRange;
 
-            pushConstantRange.size = size;
-            pushConstantRange.offset = 0;
+            pushConstantRange.size = size - offset;
+            pushConstantRange.offset = offset;
             pushConstantRange.stageFlags = ShaderTypeToVulkanFlag(ShaderMod.type);
 
+            //offset += size;
 
             BindInfoPushConstants newinfo;
             newinfo.size = size;
@@ -724,6 +732,15 @@ VkPipelineLayout ShaderEffect::build_pipeline_layout(VkDevice device)
     
 
     return privData->builtPipelineLayout;
+}
+
+void ShaderEffect::set_manual_push_constants(VkPushConstantRange* ranges, int count)
+{
+    privData->pushConstantRanges.clear();
+    for (int i = 0; i < count; i++) {
+        privData->pushConstantRanges.push_back(ranges[i]);
+    }
+
 }
 
 std::array<VkDescriptorSetLayout, 4> ShaderEffect::build_descriptor_layouts(VkDevice device)
