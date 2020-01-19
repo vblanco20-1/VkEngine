@@ -96,7 +96,7 @@ public:
 		std::string last_read_pass{ "" };
 	};
 
-	bool build(struct VulkanEngine* engine);
+	bool build(class VulkanEngine* engine);
 
 	RenderPass* add_pass(std::string pass_name, std::function<void(vk::CommandBuffer, RenderPass*)> execution, PassType type);
 	RenderPass* get_pass(std::string name);

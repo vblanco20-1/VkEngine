@@ -4,7 +4,6 @@
 #include "engine_ui.h"
 #include "misc/cpp/imgui_stdlib.h"
 #include "shader_processor.h"
-#include "components2.h"
 
 
 
@@ -62,7 +61,7 @@ void UI::DrawEngineUI(VulkanEngine* engine)
 	ImGui::ColorEdit3("Ambient Color", (float*)&engine->sceneParameters.ambient[0], 0);	
 
 	//ImGui::InputFloat3("Ambient Color", (float*)&engine->sceneParameters.ambient[0]);
-	ImGui::SliderFloat("Ambient Power", (float*)&engine->sceneParameters.ambient.w, 0.0f,3.f);
+	ImGui::SliderFloat("Ambient Power", (float*)&engine->sceneParameters.ambient.w, 0.0f,10.f);
 
 	ImGui::SliderFloat("SSAO Blur Roughness", (float*)&engine->sceneParameters.ssao_roughness, 0.0f, 1000.f);
 	ImGui::SliderFloat("SSAO Blur Size", (float*)&engine->sceneParameters.kernel_width, 0.0f, 20.f);

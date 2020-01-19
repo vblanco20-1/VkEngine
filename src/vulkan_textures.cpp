@@ -10,6 +10,8 @@
 #include "tiny_gltf.h"
 #include "stb_image.h"
 
+#include "vulkan_textures.h"
+
 std::pair<TextureResource,TextureResourceMetadata> VulkanEngine::load_texture_resource(const char* image_path, bool bIsCubemap /*= false*/)
 {
 	TextureResource texture;
@@ -36,7 +38,7 @@ std::pair<TextureResource,TextureResourceMetadata> VulkanEngine::load_texture_re
 
 
 		image_format = vk::Format(format);
-		std::cout << "failed to load texture on path: " << image_path << to_string(image_format) << std::endl;
+		std::cout << "GLI loading texture: " << image_path << to_string(image_format) << std::endl;
 		//throw std::runtime_error("failed to load texture image!");
 	}
 
@@ -49,7 +51,7 @@ std::pair<TextureResource,TextureResourceMetadata> VulkanEngine::load_texture_re
 
 	memcpy(data, pixel_ptr, static_cast<size_t>(imageSize));
 
-	vmaUnmapMemory(allocator, stagingBuffer.allocation);
+ 	vmaUnmapMemory(allocator, stagingBuffer.allocation);
 
 	stbi_image_free(pixels);
 
@@ -253,11 +255,14 @@ void VulkanEngine::load_textures_bulk(TextureLoadRequest* requests, size_t count
 
 					int index = batch * batches + i;
 					if (index >= count) break;
-					cmd_transitionImageLayout(cmd, AllData[index].texture.image.image, AllData[index].image_format, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal);
+					if (AllData[index].bLoaded) {
+						cmd_transitionImageLayout(cmd, AllData[index].texture.image.image, AllData[index].image_format, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal);
 
-					cmd_copyBufferToImage(cmd, AllData[index].stagingBuffer.buffer, AllData[index].texture.image.image, static_cast<uint32_t>(AllData[index].texWidth), static_cast<uint32_t>(AllData[index].texHeight));
+						cmd_copyBufferToImage(cmd, AllData[index].stagingBuffer.buffer, AllData[index].texture.image.image, static_cast<uint32_t>(AllData[index].texWidth), static_cast<uint32_t>(AllData[index].texHeight));
 
-					cmd_transitionImageLayout(cmd, AllData[index].texture.image.image, AllData[index].image_format, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
+						cmd_transitionImageLayout(cmd, AllData[index].texture.image.image, AllData[index].image_format, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
+
+					}
 				}
 			}
 
@@ -272,36 +277,41 @@ void VulkanEngine::load_textures_bulk(TextureLoadRequest* requests, size_t count
 					int index = batch * batches + i;
 					if (index >= count) break;
 
-					vmaDestroyBuffer(allocator, AllData[index].stagingBuffer.buffer, AllData[index].stagingBuffer.allocation);
+					if (AllData[index].bLoaded) {
+						vmaDestroyBuffer(allocator, AllData[index].stagingBuffer.buffer, AllData[index].stagingBuffer.allocation);
 
-					AllData[index].texture.imageView = createImageView(AllData[index].texture.image.image, AllData[index].image_format, vk::ImageAspectFlagBits::eColor);
+						AllData[index].texture.imageView = createImageView(AllData[index].texture.image.image, AllData[index].image_format, vk::ImageAspectFlagBits::eColor);
 
-					vk::SamplerCreateInfo samplerInfo;
-					samplerInfo.magFilter = vk::Filter::eLinear;
-					samplerInfo.minFilter = vk::Filter::eLinear;
-					samplerInfo.addressModeU = vk::SamplerAddressMode::eRepeat;
-					samplerInfo.addressModeV = vk::SamplerAddressMode::eRepeat;
-					samplerInfo.addressModeW = vk::SamplerAddressMode::eRepeat;
+						vk::SamplerCreateInfo samplerInfo;
+						samplerInfo.magFilter = vk::Filter::eLinear;
+						samplerInfo.minFilter = vk::Filter::eLinear;
+						samplerInfo.addressModeU = vk::SamplerAddressMode::eRepeat;
+						samplerInfo.addressModeV = vk::SamplerAddressMode::eRepeat;
+						samplerInfo.addressModeW = vk::SamplerAddressMode::eRepeat;
 
-					samplerInfo.anisotropyEnable = VK_TRUE;
-					samplerInfo.maxAnisotropy = 16;
+						samplerInfo.anisotropyEnable = VK_TRUE;
+						samplerInfo.maxAnisotropy = 16;
 
-					samplerInfo.borderColor = vk::BorderColor::eIntOpaqueBlack;
-					samplerInfo.unnormalizedCoordinates = VK_FALSE;
+						samplerInfo.borderColor = vk::BorderColor::eIntOpaqueBlack;
+						samplerInfo.unnormalizedCoordinates = VK_FALSE;
 
-					samplerInfo.compareEnable = VK_FALSE;
-					samplerInfo.compareOp = vk::CompareOp::eAlways;
+						samplerInfo.compareEnable = VK_FALSE;
+						samplerInfo.compareOp = vk::CompareOp::eAlways;
 
-					samplerInfo.mipmapMode = vk::SamplerMipmapMode::eLinear;
-					samplerInfo.mipLodBias = 0.0f;
-					samplerInfo.minLod = 0.0f;
-					samplerInfo.maxLod = 0.0f;
+						samplerInfo.mipmapMode = vk::SamplerMipmapMode::eLinear;
+						samplerInfo.mipLodBias = 0.0f;
+						samplerInfo.minLod = 0.0f;
+						samplerInfo.maxLod = 0.0f;
 
-					AllData[index].texture.textureSampler = device.createSampler(samplerInfo);
+						AllData[index].texture.textureSampler = device.createSampler(samplerInfo);
 
-					requests[index].loadedTexture = createResource(requests[index].textureName.c_str(), AllData[index].texture);
-					render_registry.assign<TextureResourceMetadata>(requests[index].loadedTexture, AllData[index].metadata);
-					requests[index].bLoaded = true;
+						requests[index].loadedTexture = createResource(requests[index].textureName.c_str(), AllData[index].texture);
+						render_registry.assign<TextureResourceMetadata>(requests[index].loadedTexture, AllData[index].metadata);
+						requests[index].bLoaded = true;
+					}
+					else {
+						requests[index].bLoaded = false;
+					}
 				}
 			}
 		}
@@ -554,4 +564,366 @@ void VulkanEngine::cmd_transitionImageLayout(vk::CommandBuffer& commandBuffer, v
 	range.layerCount = bIsCubemap ? 6 : 1;
 
 	cmd_transitionImageLayout(commandBuffer, image, format, oldLayout, newLayout, range);
+}
+
+struct TextureLoadRequest2 {
+	
+	bool bFailedLoade{ false };
+	EntityID loadedTexture;
+	std::string image_path;
+	std::string textureName;	
+};
+
+class RealTextureLoader : public TextureLoader {
+public:
+	void add_request_from_assimp(const aiScene* scene, aiMaterial* material, aiTextureType textype,
+		const std::string& scenepath) override final;
+
+	void flush_requests() override final;
+
+	VulkanEngine* owner;
+
+
+	std::unordered_map<std::string, EntityID> path_references;
+	//std::vector<TextureLoadRequest2> requests;
+
+	entt::registry load_registry;
+
+	//200 megabytes
+	static constexpr size_t max_image_buffer_size = 1024L * 1024L * 200;
+	
+	AllocatedBuffer staging_buffer;
+
+	void finish_image_batch();
+};
+
+struct StbInlineLoad {
+
+	stbi_uc* pixel_data;
+	int x, y, channels;
+};
+
+struct BaseTextureLoad {
+	std::string path;
+	std::string name;
+};
+
+struct LoadStagingBuffer {
+	AllocatedBuffer buffer;
+};
+struct LoadImageAlloc {
+	AllocatedImage image;
+};
+
+void RealTextureLoader::add_request_from_assimp(const aiScene* scene, aiMaterial* material, aiTextureType textype, const std::string& scenepath)
+{
+	aiString texpath;
+	if (material->GetTextureCount(textype))
+	{
+		material->GetTexture(textype, 0, &texpath);
+
+		const char* txpath = &texpath.data[0];
+		char* ch = &texpath.data[1];
+
+		for (int i = 0; i < texpath.length; i++)
+		{
+			if (texpath.data[i] == '\\')
+			{
+				texpath.data[i] = '/';
+			}
+		}
+		std::filesystem::path texture_path{ txpath };
+
+		std::string tx_path = scenepath + "/" + texture_path.string();
+
+		auto load_entity = path_references.find(tx_path);
+		if (load_entity == path_references.end()) {
+
+			ZoneScopedNC("Texture load from stbi buffer", tracy::Color::Red);
+
+			EntityID load_id = load_registry.create();
+
+			if (auto texture = scene->GetEmbeddedTexture(texpath.C_Str())) {
+				size_t tex_size = texture->mHeight * texture->mWidth;
+				if (texture->mHeight == 0) {
+					tex_size = texture->mWidth;
+				}
+				//int x, y, c;
+				StbInlineLoad load;
+				
+				load.pixel_data = stbi_load_from_memory((stbi_uc*)texture->pcData, tex_size, &load.x, &load.y, &load.channels, STBI_rgb_alpha);
+
+				if (load.pixel_data) {
+					load.channels = STBI_rgb_alpha;
+					load_registry.assign_or_replace<StbInlineLoad>(load_id,load);
+
+					BaseTextureLoad bload;
+					bload.path = tx_path;
+					bload.name = txpath;
+
+					load_registry.assign_or_replace<BaseTextureLoad>(load_id, bload);
+
+					path_references[tx_path] = load_id;
+				}
+			}
+			else {
+				BaseTextureLoad load;
+				load.path = tx_path;
+				load.name = txpath;
+
+				//load_registry.assign_or_replace<BaseTextureLoad>(load_id, load);
+				//path_references[tx_path] = load_id;
+			}
+		}
+	}
+}
+
+vk::Format get_image_format_from_stbi(int channels) {
+	switch (channels) {
+	case 1:
+		return vk::Format::eR8Unorm;
+		break;
+	case 2:
+		return vk::Format::eR8G8Unorm;
+		break;
+	case 3:
+		return vk::Format::eR8G8B8Unorm;
+		break;
+	case 4:
+		return vk::Format::eR8G8B8A8Unorm;
+		break;
+	}
+	return vk::Format{};
+};
+
+void RealTextureLoader::flush_requests()
+{
+	const int max_images_per_batch = 20;
+
+	vk::CommandBuffer cmd;
+	bool cmd_needs_end = false;
+
+	auto stb_view = load_registry.view<StbInlineLoad>();
+	auto upload_view = load_registry.view<StbInlineLoad, LoadStagingBuffer, LoadImageAlloc>();
+	while (true) {
+		ZoneScopedNC("Texture request batch", tracy::Color::Yellow);
+	//
+		int current_batch = 0;
+		for (auto e : stb_view) {			
+
+			ZoneScopedNC("Texture upload", tracy::Color::Orange);
+
+			//if (!load_registry.has<LoadImageAlloc>(e)) {
+				const StbInlineLoad& load = stb_view.get(e);
+				LoadStagingBuffer& staging = load_registry.assign<LoadStagingBuffer>(e);
+				LoadImageAlloc& texresource = load_registry.assign<LoadImageAlloc>(e);
+				const BaseTextureLoad& texload = load_registry.get<BaseTextureLoad>(e);
+				size_t image_size = load.x * load.y * load.channels;
+
+				owner->createBuffer(image_size, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+					staging.buffer);
+
+				void* data;
+				vmaMapMemory(owner->allocator, staging.buffer.allocation, &data);
+
+				memcpy(data, load.pixel_data, static_cast<size_t>(image_size));
+
+				vmaUnmapMemory(owner->allocator, staging.buffer.allocation);
+
+				stbi_image_free(load.pixel_data);
+
+				owner->createImage(load.x, load.y, get_image_format_from_stbi(load.channels),
+					vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+					vk::MemoryPropertyFlagBits::eDeviceLocal, texresource.image);
+
+				current_batch++;
+				if (current_batch >= max_images_per_batch) { break; };
+
+				
+
+				//const StbInlineLoad& load = upload_view.get<StbInlineLoad>(e);
+				//const LoadStagingBuffer& staging = upload_view.get<LoadStagingBuffer>(e);
+				//const LoadImageAlloc& texresource = upload_view.get<LoadImageAlloc>(e);
+				//auto format = get_image_format_from_stbi(load.channels);
+				//
+				//vk::Image target_image = texresource.image.image;
+				//owner->cmd_transitionImageLayout(cmd, target_image, format, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal);
+				//
+				//owner->cmd_copyBufferToImage(cmd, staging.buffer.buffer, target_image, static_cast<uint32_t>(load.x), static_cast<uint32_t>(load.y));
+				//
+				//owner->cmd_transitionImageLayout(cmd, target_image, format, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
+				//owner->endSingleTimeCommands(cmd);
+				////finish_image_batch();
+				//
+				//TextureResource newResource;
+				//newResource.image = texresource.image;
+				//
+				////auto format = get_image_format_from_stbi(load.channels);
+				//
+				//vmaDestroyBuffer(owner->allocator, staging.buffer.buffer, staging.buffer.allocation);
+				//
+				//newResource.imageView = owner->createImageView(texresource.image.image, format, vk::ImageAspectFlagBits::eColor);
+				//
+				//vk::SamplerCreateInfo samplerInfo;
+				//samplerInfo.magFilter = vk::Filter::eLinear;
+				//samplerInfo.minFilter = vk::Filter::eLinear;
+				//samplerInfo.addressModeU = vk::SamplerAddressMode::eRepeat;
+				//samplerInfo.addressModeV = vk::SamplerAddressMode::eRepeat;
+				//samplerInfo.addressModeW = vk::SamplerAddressMode::eRepeat;
+				//
+				//samplerInfo.anisotropyEnable = VK_TRUE;
+				//samplerInfo.maxAnisotropy = 16;
+				//
+				//samplerInfo.borderColor = vk::BorderColor::eIntOpaqueBlack;
+				//samplerInfo.unnormalizedCoordinates = VK_FALSE;
+				//
+				//samplerInfo.compareEnable = VK_FALSE;
+				//samplerInfo.compareOp = vk::CompareOp::eAlways;
+				//
+				//samplerInfo.mipmapMode = vk::SamplerMipmapMode::eLinear;
+				//samplerInfo.mipLodBias = 0.0f;
+				//samplerInfo.minLod = 0.0f;
+				//samplerInfo.maxLod = 0.0f;
+				//
+				//newResource.textureSampler = owner->device.createSampler(samplerInfo);
+				//
+				//auto new_entity = owner->createResource(texload.name.c_str(), newResource);
+				//
+				//TextureResourceMetadata metadata;
+				//metadata.image_format = format;
+				//metadata.texture_size.x = load.x;
+				//metadata.texture_size.y = load.y;
+				//
+				//owner->render_registry.assign<TextureResourceMetadata>(new_entity, metadata);
+				//
+				//load_registry.destroy(e);
+
+				//current_batch++;
+				//if (current_batch >= max_images_per_batch) { break; };
+			//}			
+		}
+		if (current_batch <= 0) { break; };
+
+
+
+		//if(cmd_needs_end)
+		//{
+		//	ZoneScopedNC("Texture batch wait load queue", tracy::Color::Red);
+		//	owner->endSingleTimeCommands(cmd);
+		//	finish_image_batch();
+		//}
+		//
+		cmd = owner->beginSingleTimeCommands();
+		//cmd_needs_end = true;
+		{
+			tracy::VkCtx* profilercontext = (tracy::VkCtx*)owner->get_profiler_context(cmd);
+			//TracyVkZone(profilercontext, VkCommandBuffer(cmd), "Upload Image");
+		
+			ZoneScopedN("Copying images to GPU");
+		
+			for (auto e : upload_view) {
+		
+				const StbInlineLoad& load = upload_view.get<StbInlineLoad>(e);
+				const LoadStagingBuffer& staging = upload_view.get<LoadStagingBuffer>(e);
+				const LoadImageAlloc& texresource = upload_view.get<LoadImageAlloc>(e);
+				auto format = get_image_format_from_stbi(load.channels);
+		
+				vk::Image target_image = texresource.image.image;
+				owner->cmd_transitionImageLayout(cmd, target_image, format, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal);
+		
+				owner->cmd_copyBufferToImage(cmd, staging.buffer.buffer, target_image, static_cast<uint32_t>(load.x), static_cast<uint32_t>(load.y));
+		
+				owner->cmd_transitionImageLayout(cmd, target_image, format, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
+		
+				//load_registry.remove<StbInlineLoad>(e);
+				//load_registry.remove<LoadStagingBuffer>(e);
+			}
+			{
+				ZoneScopedNC("Texture batch wait load queue", tracy::Color::Red);
+				owner->endSingleTimeCommands(cmd);
+				finish_image_batch();
+			}
+		}
+	}
+	//if (cmd_needs_end)
+	//{
+	//	ZoneScopedNC("Texture batch wait load queue", tracy::Color::Red);
+	//	owner->endSingleTimeCommands(cmd);
+	//	finish_image_batch();
+	//}
+	
+}
+
+void RealTextureLoader::finish_image_batch()
+{
+	auto stb_view = load_registry.view<StbInlineLoad>();
+	auto upload_view = load_registry.view<StbInlineLoad, LoadStagingBuffer, LoadImageAlloc,BaseTextureLoad>();
+
+	ZoneScopedNC("Texture batch image view creation", tracy::Color::Blue);
+	
+	for (auto e : upload_view) {
+		const StbInlineLoad& load = upload_view.get<StbInlineLoad>(e);
+		const LoadStagingBuffer& staging = upload_view.get<LoadStagingBuffer>(e);
+		const LoadImageAlloc& texresource = upload_view.get<LoadImageAlloc>(e);
+		const BaseTextureLoad& texload = upload_view.get<BaseTextureLoad>(e);
+		TextureResource newResource;
+		newResource.image = texresource.image;
+
+		auto format = get_image_format_from_stbi(load.channels);
+
+		vmaDestroyBuffer(owner->allocator, staging.buffer.buffer, staging.buffer.allocation);
+
+		newResource.imageView = owner->createImageView(texresource.image.image, format, vk::ImageAspectFlagBits::eColor);
+
+		vk::SamplerCreateInfo samplerInfo;
+		samplerInfo.magFilter = vk::Filter::eLinear;
+		samplerInfo.minFilter = vk::Filter::eLinear;
+		samplerInfo.addressModeU = vk::SamplerAddressMode::eRepeat;
+		samplerInfo.addressModeV = vk::SamplerAddressMode::eRepeat;
+		samplerInfo.addressModeW = vk::SamplerAddressMode::eRepeat;
+
+		samplerInfo.anisotropyEnable = VK_TRUE;
+		samplerInfo.maxAnisotropy = 16;
+
+		samplerInfo.borderColor = vk::BorderColor::eIntOpaqueBlack;
+		samplerInfo.unnormalizedCoordinates = VK_FALSE;
+
+		samplerInfo.compareEnable = VK_FALSE;
+		samplerInfo.compareOp = vk::CompareOp::eAlways;
+
+		samplerInfo.mipmapMode = vk::SamplerMipmapMode::eLinear;
+		samplerInfo.mipLodBias = 0.0f;
+		samplerInfo.minLod = 0.0f;
+		samplerInfo.maxLod = 0.0f;
+
+		newResource.textureSampler = owner->device.createSampler(samplerInfo);
+
+		auto new_entity = owner->createResource(texload.name.c_str(), newResource);
+
+		TextureResourceMetadata metadata;
+		metadata.image_format = format;
+		metadata.texture_size.x = load.x;
+		metadata.texture_size.y = load.y;
+
+		owner->render_registry.assign<TextureResourceMetadata>(new_entity, metadata);
+
+		load_registry.destroy(e);
+	}
+}
+
+TextureLoader* TextureLoader::create_new_loader(VulkanEngine* ownerEngine)
+{
+	auto loader = new RealTextureLoader;
+	loader->owner = ownerEngine;
+
+	vk::DeviceSize buffersize = RealTextureLoader::max_image_buffer_size;
+	
+
+
+	//allocate a big buffer to use for uploads
+	//ownerEngine->createBuffer(buffersize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, 
+	//	loader->staging_buffer);
+
+
+	return loader;
 }

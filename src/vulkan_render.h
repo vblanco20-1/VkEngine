@@ -43,8 +43,11 @@ struct Camera {
 	Frustum camfrustum;
 };
 
-struct VulkanEngine {
+class TextureLoader;
+class VulkanEngine {
+public:
 
+	TextureLoader* tex_loader;
 	PlayerCamera playerCam;
 	Camera mainCam; 
 	vk::Instance instance;

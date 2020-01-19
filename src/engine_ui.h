@@ -1,5 +1,5 @@
 #pragma once
-struct VulkanEngine;
+class VulkanEngine;
 
 
 namespace UI {

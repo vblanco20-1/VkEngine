@@ -173,7 +173,7 @@ void build_render_pass(RenderPass* pass, VulkanEngine* eng)
 	//assert(pass->built_pass != VkRenderPass{});
 }
 
-bool FrameGraph::build(struct VulkanEngine* engine)
+bool FrameGraph::build(class VulkanEngine* engine)
 {
 	//grab all render targets
 	for (auto pass : passes) {

@@ -1,7 +1,7 @@
 #pragma once
 
-
-
+//disable conversion related annoying warnings
+#pragma warning( disable : 4018 4244 4267 4101 4838 4305)
 #define WIN32_LEAN_AND_MEAN
 #include <vk_mem_alloc.h>  //vk_mem_alloc.h"
 #include <vulkan/vulkan.hpp>

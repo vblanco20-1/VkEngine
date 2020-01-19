@@ -2,7 +2,7 @@
 #include <pcheader.h>
 #include "vulkan_types.h"
 class VulkanEngine;
-class ShaderEffect;
+struct ShaderEffect;
 
 enum class CubemapFilterMode {
 	IRRADIANCE,

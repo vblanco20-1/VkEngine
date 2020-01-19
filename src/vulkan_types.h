@@ -174,12 +174,9 @@ struct TransformComponent {
 
 struct TextureLoadRequest {
 	bool bLoaded{ false };
-	EntityID loadedTexture;
-	//const char* image_path;
+	EntityID loadedTexture;	
 	std::string image_path;
-
 	std::string textureName;
-
 };
 
 struct ConfigParams {

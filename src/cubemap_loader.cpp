@@ -413,7 +413,7 @@ TextureResource CubemapLoader::load_cubemap(const char* path, int32_t dim, Cubem
 	struct PushBlock2 {
 		glm::mat4 mvp;
 		float roughness;
-		uint32_t numSamples = 32u;
+		uint32_t numSamples = 512u;
 	} reflectionPushBlock;
 	
 	ShaderEffect* renderEffect;
@@ -469,7 +469,7 @@ TextureResource CubemapLoader::load_cubemap(const char* path, int32_t dim, Cubem
 				// Update shader push constant block
 				reflectionPushBlock.mvp = glm::perspective((float)(M_PI / 2.0), 1.0f, 0.1f, 512.0f) * matrices[f];
 
-				cmd.pushConstants(pipelineLayout, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0, sizeof(PushBlock), &reflectionPushBlock);
+				cmd.pushConstants(pipelineLayout, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0, sizeof(PushBlock2), &reflectionPushBlock);
 
 				cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, reflectionRenderPipeline);
 				
@@ -478,17 +478,9 @@ TextureResource CubemapLoader::load_cubemap(const char* path, int32_t dim, Cubem
 
 			VkDeviceSize offsets[1] = { 0 };
 
-			//vkCmdBindVertexBuffers(cmdBuf, 0, 1, &models.skybox.vertices.buffer, offsets);
-			//vkCmdBindIndexBuffer(cmdBuf, models.skybox.indices.buffer, 0, VK_INDEX_TYPE_UINT32);
-			//vkCmdDrawIndexed(cmdBuf, models.skybox.indexCount, 1, 0, 0, 0);
-
 			cmd.draw(12*3, 1, 0, 0);
 
 			cmd.endRenderPass();
-			//vkCmdEndRenderPass(cmdBuf);
-
-
-			//eng->cmd_transitionImageLayout(cmd, offscreen->image, cubemapFormat, vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::eTransferSrcOptimal, subresourceRange);
 
 			setImageLayout(
 				cmd,
@@ -518,17 +510,6 @@ TextureResource CubemapLoader::load_cubemap(const char* path, int32_t dim, Cubem
 
 			cmd.copyImage(offscreen->image, vk::ImageLayout::eTransferSrcOptimal, cubemapImage,
 				vk::ImageLayout::eTransferDstOptimal, { copyRegion });
-			//vkCmdCopyImage(
-			//	cmdBuf,
-			//	offscreen.image,
-			//	VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-			//	textures.irradianceCube.image,
-			//	VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-			//	1,
-			//	&copyRegion);
-
-			//eng->cmd_transitionImageLayout(cmd, offscreen->image, cubemapFormat, vk::ImageLayout::eTransferSrcOptimal,vk::ImageLayout::eColorAttachmentOptimal, subresourceRange);
-
 
 			// Transform framebuffer color attachment back 
 			setImageLayout(			
