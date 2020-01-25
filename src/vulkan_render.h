@@ -43,6 +43,8 @@ struct Camera {
 	Frustum camfrustum;
 };
 
+
+
 class TextureLoader;
 class VulkanEngine {
 public:
@@ -211,7 +213,7 @@ public:
 	void load_textures_bulk(TextureLoadRequest* requests, size_t count);
 
 
-	bool load_scene(const char* scene_path, glm::mat4 rootMatrix);
+	bool load_scene(const char* db_path, const char* scene_path, glm::mat4 rootMatrix);
 	EntityID create_basic_descriptor_sets(EntityID pipelineID, std::string name, std::array<EntityID,8> textureID);
 
 	void begin_frame_command_buffer(vk::CommandBuffer buffer);
@@ -288,6 +290,7 @@ public:
 	entt::registry render_registry;
 
 	std::unordered_map<std::string, EntityID> resourceMap;	
+	std::unordered_map<std::string, EntityID> sceneNodeMap;
 
 	AlignedBuffer<UniformBufferObject> StagingCPUUBOArray{0};
 	EntityID blankTexture;

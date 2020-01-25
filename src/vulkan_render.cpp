@@ -24,6 +24,7 @@
 #include <framegraph.h>
 #include "cubemap_loader.h"
 #include "vulkan_textures.h"
+#include "../../scene_processor/public/scene_processor.h"
 
 
 
@@ -59,6 +60,12 @@ void VulkanEngine::create_engine_graph()
 
 	graph.swapchainSize = swapChainSize;
 
+
+	auto gbuffer_pass = graph.add_pass("GBuffer", [&](vk::CommandBuffer cmd, RenderPass* pass) {
+
+		RenderGBufferPass(cmd);
+		}, PassType::Graphics);
+
 	//order is very important
 	auto shadow_pass = graph.add_pass("ShadowPass", [&](vk::CommandBuffer cmd, RenderPass* pass) {
 		
@@ -66,10 +73,7 @@ void VulkanEngine::create_engine_graph()
 		}, PassType::Graphics);
 
 
-	auto gbuffer_pass = graph.add_pass("GBuffer", [&](vk::CommandBuffer cmd, RenderPass* pass) {
-		
-		RenderGBufferPass(cmd);
-		}, PassType::Graphics);
+	
 
 	auto ssao0_pass = graph.add_pass("SSAO-pre", [&](vk::CommandBuffer cmd, RenderPass* pass) {
 		
@@ -327,11 +331,43 @@ void VulkanEngine::init_vulkan()
 
 	//load_scene(MAKE_ASSET_PATH("models/Elemental/Elemental.obj"),
 	//	glm::rotate(glm::mat4(1), glm::radians(90.f), glm::vec3(1, 0, 0)));
-	load_scene(MAKE_ASSET_PATH("models/sponza/sponza_light.glb") ,// glm::mat4(1.f));
-		glm::rotate(glm::mat4(1), glm::radians(179.f), glm::vec3(1, 0, 0)));
+	//load_scene(MAKE_ASSET_PATH("models/sponza/sponza_light.glb"),//glm::mat4(100.f));
+	//	glm::rotate(glm::scale(glm::vec3(100.f)), glm::radians(90.f), glm::vec3(1, 0, 0)));
+
+	
+
+	sp::SceneLoader* loader = sp::SceneLoader::Create();
+
+	sp::SceneProcessConfig loadConfig;
+	loadConfig.bLoadMeshes = true;
+	loadConfig.bLoadNodes = true;
+	//textures take a huge amount of time
+	loadConfig.bLoadTextures = true;
+	
+	//loadConfig.rootMatrix = &glm::rotate(glm::scale(glm::vec3(100.f)), glm::radians(90.f), glm::vec3(1, 0, 0))[0][0];
+	//loader->transform_scene(MAKE_ASSET_PATH("models/sponza/sponza_light.glb"),//glm::mat4(100.f));
+	//	loadConfig);
+
+	
+
+	loadConfig.database_name = "bistro_ext.db";
+	loadConfig.rootMatrix =& glm::mat4(1.f)[0][0];//&glm::rotate(glm::scale(glm::vec3(100.f)), glm::radians(90.f), glm::vec3(1, 0, 0))[0][0];
+	//loader->transform_scene(MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Exterior.fbx"),//glm::mat4(100.f));
+	//	loadConfig);
+
+	load_scene("bistro_ext.db",MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Exterior.fbx"), glm::rotate(glm::scale(glm::vec3(100.f)), glm::radians(90.f), glm::vec3(1, 0, 0)));
+
+	//load_scene("sun_temple.db",
+	//	MAKE_ASSET_PATH("models/SunTemple.fbx"),
+	//	glm::rotate(glm::scale(glm::vec3(100.f)), glm::radians(90.f), glm::vec3(1, 0, 0)));
+
+	//load_scene("scene.db",MAKE_ASSET_PATH("models/sponza/sponza_light.glb"),//glm::mat4(100.f));
+	//	glm::rotate(glm::scale(glm::vec3(100.f)), glm::radians(90.f), glm::vec3(1, 0, 0)));
+
 #else
 
-	load_scene(MAKE_ASSET_PATH("models/SunTemple.fbx"),
+	load_scene(TODO,
+		MAKE_ASSET_PATH("models/SunTemple.fbx"),
 		glm::rotate(glm::mat4(1), glm::radians(90.f), glm::vec3(1, 0, 0)));
 #endif
 	ImGui::CreateContext();
@@ -671,6 +707,7 @@ void VulkanEngine::create_shadow_pipeline()
 	shadowPipelineBuilder.data.scissor = VkPipelineInitializers::build_rect2d(0, 0, 2048, 2048);
 	shadowPipelineBuilder.data.depthStencil = VkPipelineInitializers::build_depth_stencil(true, true);
 	shadowPipelineBuilder.data.rasterizer = VkPipelineInitializers::build_rasterizer();
+	//shadowPipelineBuilder.data.rasterizer.cullMode = vk::CullModeFlagBits::eFront;
 	shadowPipelineBuilder.data.multisampling = VkPipelineInitializers::build_multisampling();
 	
 	shadowPipelineBuilder.data.dynamicStates = {
@@ -1372,17 +1409,15 @@ void VulkanEngine::draw_frame()
 		globalFrameNumber++;
 	}
 }
-void VulkanEngine::render_shadow_pass(const vk::CommandBuffer& cmd, int height, int width)
-{
-	tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(cmd);
-	TracyVkZoneC(profilercontext, VkCommandBuffer(cmd), "Shadow pass", tracy::Color::Blue);
 
+void set_pipeline_state_depth(int height, int width, const vk::CommandBuffer& cmd)
+{
 	vk::Viewport viewport;
 	viewport.height = height;
 	viewport.width = width;
 	viewport.minDepth = 0.f;
 	viewport.maxDepth = 1.f;
-	
+
 	cmd.setViewport(0, viewport);
 
 	vk::Rect2D scissor;
@@ -1399,6 +1434,35 @@ void VulkanEngine::render_shadow_pass(const vk::CommandBuffer& cmd, int height, 
 	float depthBiasSlope = 1.75f;
 
 	cmd.setDepthBias(depthBiasConstant, 0, depthBiasSlope);
+}
+
+vk::DescriptorBufferInfo make_buffer_info(vk::Buffer buffer, size_t size, uint32_t offset = 0) {
+	vk::DescriptorBufferInfo info;
+	info.buffer = buffer;
+	info.offset = offset;
+	info.range = size;
+	return info;
+}
+template<typename T>
+vk::DescriptorBufferInfo make_buffer_info(const AllocatedBuffer& allocbuffer, uint32_t offset = 0) {
+	return make_buffer_info(allocbuffer.buffer, sizeof(T), offset);
+}
+vk::DescriptorImageInfo VulkanEngine::get_image_resource(const char* name) {
+	const TextureResource& texture_env = getResource<TextureResource>(name);//render_registry.get<TextureResource>();
+	vk::DescriptorImageInfo imageInfo = {};
+	imageInfo.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+	imageInfo.imageView = texture_env.imageView;
+	imageInfo.sampler = texture_env.textureSampler;
+	return imageInfo;
+}
+
+void VulkanEngine::render_shadow_pass(const vk::CommandBuffer& cmd, int height, int width)
+{
+	tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(cmd);
+	TracyVkZoneC(profilercontext, VkCommandBuffer(cmd), "Shadow pass", tracy::Color::Blue);
+
+	
+
 
 	ZoneScopedNC("Shadow Pass", tracy::Color::BlueViolet);
 	EntityID LastMesh = entt::null;
@@ -1416,22 +1480,19 @@ void VulkanEngine::render_shadow_pass(const vk::CommandBuffer& cmd, int height, 
 
 		if (bShouldBindPipeline) {
 			cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, shadowPipeline);
+
+			set_pipeline_state_depth(height, width, cmd);
+
 			piplayout = (vk::PipelineLayout)effect->build_pipeline_layout(device);
 			last_pipeline = shadowPipeline;
 
-			DescriptorSetBuilder setBuilder{ effect,&descriptorMegapool };
+			DescriptorSetBuilder setBuilder{ effect,&descriptorMegapool };		
 
-			vk::DescriptorBufferInfo camBufferInfo;
-			camBufferInfo.buffer = shadowDataBuffers[currentFrameIndex].buffer;
-			camBufferInfo.offset = 0;
-			camBufferInfo.range = sizeof(UniformBufferObject);
+			vk::DescriptorBufferInfo shadowBufferInfo = make_buffer_info<UniformBufferObject>(shadowDataBuffers[currentFrameIndex]);
 
-			vk::DescriptorBufferInfo transformBufferInfo;
-			transformBufferInfo.buffer = object_buffers[currentFrameIndex].buffer;
-			transformBufferInfo.offset = 0;
-			transformBufferInfo.range = sizeof(glm::mat4) * 10000;
-			
-			setBuilder.bind_buffer("ubo", camBufferInfo);
+			vk::DescriptorBufferInfo transformBufferInfo = make_buffer_info(object_buffers[currentFrameIndex].buffer, sizeof(glm::mat4) * 10000);
+
+			setBuilder.bind_buffer("ubo", shadowBufferInfo);
 			setBuilder.bind_buffer("MainObjectBuffer", transformBufferInfo);
 
 			std::array<vk::DescriptorSet, 2> descriptors;
@@ -1477,37 +1538,10 @@ void VulkanEngine::render_ssao_pass(const vk::CommandBuffer& cmd, int height, in
 
 	cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, ssaopip.pipeline);
 
-	//vk::Viewport viewport;
-	//viewport.height = height;
-	//viewport.width = width;
-	//viewport.minDepth = 0.f;
-	//viewport.maxDepth = 1.f;
-	//
-	//cmd.setViewport(0, viewport);
-	//
-	//vk::Rect2D scissor;
-	//scissor.extent.width = width;
-	//scissor.extent.height = height;
-	//
-	//cmd.setScissor(0, scissor);	
-
-	
-	
-
-	
-
-
 	DescriptorSetBuilder setBuilder{ effect,&descriptorMegapool };
 
-	vk::DescriptorBufferInfo camBufferInfo;
-	camBufferInfo.buffer = cameraDataBuffers[currentFrameIndex].buffer;
-	camBufferInfo.offset = 0;
-	camBufferInfo.range = sizeof(UniformBufferObject);
-
-	vk::DescriptorBufferInfo ssaoSamplesbuffer;
-	ssaoSamplesbuffer.buffer = ssaoSamples.buffer;
-	ssaoSamplesbuffer.offset = 0;
-	ssaoSamplesbuffer.range = sizeof(glm::vec4) * SSAO_KERNEL_SIZE;
+	vk::DescriptorBufferInfo camBufferInfo = make_buffer_info<UniformBufferObject>(cameraDataBuffers[currentFrameIndex]);
+	vk::DescriptorBufferInfo ssaoSamplesbuffer = make_buffer_info(ssaoSamples.buffer, sizeof(glm::vec4) * SSAO_KERNEL_SIZE);
 
 	vk::DescriptorImageInfo noiseImage = {};
 	noiseImage.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
@@ -1526,8 +1560,7 @@ void VulkanEngine::render_ssao_pass(const vk::CommandBuffer& cmd, int height, in
 
 	cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, layout, 0, 1, &descriptors[0], 0, nullptr);
 
-	cmd.draw(3, 1, 0, 0);
-	
+	cmd.draw(3, 1, 0, 0);	
 }
 
 void VulkanEngine::render_ssao_blurx(const vk::CommandBuffer& cmd, int height, int width)
@@ -1604,25 +1637,7 @@ void VulkanEngine::render_ssao_blury(const vk::CommandBuffer& cmd, int height, i
 
 	cmd.draw(3, 1, 0, 0);
 }
-vk::DescriptorBufferInfo make_buffer_info(vk::Buffer buffer, size_t size, uint32_t offset = 0) {
-	vk::DescriptorBufferInfo info;
-	info.buffer = buffer;
-	info.offset = offset;
-	info.range = size;
-	return info;
-}
-template<typename T>
-vk::DescriptorBufferInfo make_buffer_info(const AllocatedBuffer& allocbuffer, uint32_t offset = 0) {
-	return make_buffer_info(allocbuffer.buffer, sizeof(T), offset);
-}
-vk::DescriptorImageInfo VulkanEngine::get_image_resource(const char *name) {
-	const TextureResource& texture_env = getResource<TextureResource>(name);//render_registry.get<TextureResource>();
-	vk::DescriptorImageInfo imageInfo = {};
-	imageInfo.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-	imageInfo.imageView = texture_env.imageView;
-	imageInfo.sampler = texture_env.textureSampler;
-	return imageInfo;
-}
+
 
 void VulkanEngine::RenderMainPass(const vk::CommandBuffer& cmd)
 {
@@ -1769,6 +1784,7 @@ void VulkanEngine::RenderMainPass(const vk::CommandBuffer& cmd)
 
 void VulkanEngine::RenderGBufferPass(const vk::CommandBuffer& cmd)
 {
+
 	tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(cmd);
 	TracyVkZoneC(profilercontext, VkCommandBuffer(cmd), "Gbuffer pass", tracy::Color::Grey);
 
@@ -2459,7 +2475,7 @@ void Coutproperty(aiMaterialProperty* property) {
 }
 
 
-bool VulkanEngine::load_scene(const char* scene_path, glm::mat4 rootMatrix)
+bool VulkanEngine::load_scene(const char* db_path, const char* scene_path, glm::mat4 rootMatrix)
 {
 	auto start1 = std::chrono::system_clock::now();
 
@@ -2492,80 +2508,64 @@ bool VulkanEngine::load_scene(const char* scene_path, glm::mat4 rootMatrix)
 		
 	};
 	std::vector<SimpleMaterial> materials;
+	sp::SceneLoader* loader = sp::SceneLoader::Create();
+	{
+		ZoneScopedNC("Opening database", tracy::Color::Blue);
+		
+
+		loader->open_db(db_path);
+	}
 
 	{
 		const bool outputMaterialInfo = true;
+		std::string scenepath = sc_path.parent_path().string();
 		ZoneScopedNC("Texture request building", tracy::Color::Green);
-		for (int i = 0; i < scene->mNumMaterials; i++)
-		{
-			std::string matname = scene->mMaterials[i]->GetName().C_Str();
-			
-			//std::string find = "Pavement";
-			bool bdebug = true;// (matname.find(find) != std::string::npos);
-		
-
-			if (bdebug || outputMaterialInfo) {
-
-
-				std::cout << std::endl;
-				std::cout << "iterating material" << scene->mMaterials[i]->GetName().C_Str() << std::endl;
-			}
-			TextureLoadRequest request;
-			std::string scenepath = sc_path.parent_path().string();
-
-			tex_loader->add_request_from_assimp(scene, scene->mMaterials[i], aiTextureType_DIFFUSE, scenepath);
-			tex_loader->add_request_from_assimp(scene, scene->mMaterials[i], aiTextureType_NORMALS, scenepath);
-			tex_loader->add_request_from_assimp(scene, scene->mMaterials[i], aiTextureType_SPECULAR, scenepath);
-			tex_loader->add_request_from_assimp(scene, scene->mMaterials[i], aiTextureType_METALNESS, scenepath);
-			tex_loader->add_request_from_assimp(scene, scene->mMaterials[i], aiTextureType_EMISSIVE, scenepath);
-			tex_loader->add_request_from_assimp(scene, scene->mMaterials[i], aiTextureType_OPACITY, scenepath);
-			tex_loader->add_request_from_assimp(scene, scene->mMaterials[i], aiTextureType_DIFFUSE_ROUGHNESS, scenepath);
-			tex_loader->add_request_from_assimp(scene, scene->mMaterials[i], aiTextureType_EMISSION_COLOR, scenepath);
-			tex_loader->add_request_from_assimp(scene, scene->mMaterials[i], aiTextureType_BASE_COLOR, scenepath);
-			tex_loader->add_request_from_assimp(scene, scene->mMaterials[i], aiTextureType_UNKNOWN, scenepath);
-
-			if (GrabTextureLoadRequest(scene, scene->mMaterials[i], aiTextureType_DIFFUSE, scenepath, request)) {
-				textureLoadRequests.push_back(request);
-			}
-			if (GrabTextureLoadRequest(scene, scene->mMaterials[i], aiTextureType_NORMALS, scenepath, request)) {
-				textureLoadRequests.push_back(request);
-			}
-			if (GrabTextureLoadRequest(scene, scene->mMaterials[i], aiTextureType_SPECULAR, scenepath, request)) {
-				textureLoadRequests.push_back(request);
-			}
-			if (GrabTextureLoadRequest(scene, scene->mMaterials[i], aiTextureType_METALNESS, scenepath, request)) {
-				textureLoadRequests.push_back(request);
-			}
-			if (GrabTextureLoadRequest(scene, scene->mMaterials[i], aiTextureType_EMISSIVE, scenepath, request)) {
-				textureLoadRequests.push_back(request);
-			}
-			if (GrabTextureLoadRequest(scene, scene->mMaterials[i], aiTextureType_OPACITY, scenepath, request)) {
-				textureLoadRequests.push_back(request);
-			}
-			if (GrabTextureLoadRequest(scene, scene->mMaterials[i], aiTextureType_UNKNOWN, scenepath, request)) {
-				textureLoadRequests.push_back(request);
-			}
-			if (GrabTextureLoadRequest(scene, scene->mMaterials[i], aiTextureType_DIFFUSE_ROUGHNESS, scenepath, request)) {
-				textureLoadRequests.push_back(request);
-			}
-			
-			if (outputMaterialInfo) {
-				for (int j = 0; j < scene->mMaterials[i]->mNumProperties; j++)
-				{
-					std::cout << "found param:" << scene->mMaterials[i]->mProperties[j]->mKey.C_Str() << " val: ";
-
-					Coutproperty(scene->mMaterials[i]->mProperties[j]);
-					std::cout << std::endl;
-				}
-			}
-		}
+		tex_loader->load_all_textures(loader, scenepath);
+		//for (int i = 0; i < scene->mNumMaterials; i++)
+		//{
+		//	std::string matname = scene->mMaterials[i]->GetName().C_Str();
+		//	
+		//	//std::string find = "Pavement";
+		//	bool bdebug = true;// (matname.find(find) != std::string::npos);
+		//
+		//
+		//	if (bdebug || outputMaterialInfo) {
+		//
+		//
+		//		std::cout << std::endl;
+		//		std::cout << "iterating material" << scene->mMaterials[i]->GetName().C_Str() << std::endl;
+		//	}
+		//	TextureLoadRequest request;
+		//	std::string scenepath = sc_path.parent_path().string();
+		//
+		//	tex_loader->add_request_from_assimp_db(loader,scene->mMaterials[i], aiTextureType_DIFFUSE, scenepath);
+		//	tex_loader->add_request_from_assimp_db(loader,scene->mMaterials[i], aiTextureType_NORMALS, scenepath);
+		//	tex_loader->add_request_from_assimp_db(loader,scene->mMaterials[i], aiTextureType_SPECULAR, scenepath);
+		//	tex_loader->add_request_from_assimp_db(loader,scene->mMaterials[i], aiTextureType_METALNESS, scenepath);
+		//	tex_loader->add_request_from_assimp_db(loader,scene->mMaterials[i], aiTextureType_EMISSIVE, scenepath);
+		//	tex_loader->add_request_from_assimp_db(loader,scene->mMaterials[i], aiTextureType_OPACITY, scenepath);
+		//	tex_loader->add_request_from_assimp_db(loader,scene->mMaterials[i], aiTextureType_DIFFUSE_ROUGHNESS, scenepath);
+		//	tex_loader->add_request_from_assimp_db(loader,scene->mMaterials[i], aiTextureType_EMISSION_COLOR, scenepath);
+		//	tex_loader->add_request_from_assimp_db(loader,scene->mMaterials[i], aiTextureType_BASE_COLOR, scenepath);
+		//	tex_loader->add_request_from_assimp_db(loader,scene->mMaterials[i], aiTextureType_UNKNOWN, scenepath);
+		//	
+		//	if (outputMaterialInfo) {
+		//		for (int j = 0; j < scene->mMaterials[i]->mNumProperties; j++)
+		//		{
+		//			std::cout << "found param:" << scene->mMaterials[i]->mProperties[j]->mKey.C_Str() << " val: ";
+		//
+		//			Coutproperty(scene->mMaterials[i]->mProperties[j]);
+		//			std::cout << std::endl;
+		//		}
+		//	}
+		//}
 	}
 
 	{
 		ZoneScopedNC("Texture request bulk load", tracy::Color::Yellow);
-		tex_loader->flush_requests();
+		//tex_loader->load_all_textures(loader, scenepath);//flush_requests();
 
-		load_textures_bulk(textureLoadRequests.data(), textureLoadRequests.size());
+		//load_textures_bulk(textureLoadRequests.data(), textureLoadRequests.size());
 	}
 
 	
@@ -2588,21 +2588,21 @@ bool VulkanEngine::load_scene(const char* scene_path, glm::mat4 rootMatrix)
 
 		for (int i = 0; i < scene->mNumMaterials; i++)
 		{
-			SimpleMaterial mat;
-			mat.textureIDs = blank_textures;
+			SimpleMaterial newMat;
+			newMat.textureIDs = blank_textures;
 
 			EntityID textureId; 
 			if (GrabTextureID(scene->mMaterials[i], aiTextureType_DIFFUSE, this, textureId)) {
-				mat.textureIDs[0] = textureId;
+				newMat.textureIDs[0] = textureId;
 			}
 			if (GrabTextureID(scene->mMaterials[i], aiTextureType_NORMALS, this, textureId)) {
-				mat.textureIDs[1] = textureId;
+				newMat.textureIDs[1] = textureId;
 			}
 			if (GrabTextureID(scene->mMaterials[i], aiTextureType_SPECULAR, this, textureId)) {
-				mat.textureIDs[2] = textureId;
+				newMat.textureIDs[2] = textureId;
 			}
 			if (GrabTextureID(scene->mMaterials[i], aiTextureType_UNKNOWN, this, textureId)) {
-				mat.textureIDs[3] = textureId;
+				newMat.textureIDs[3] = textureId;
 			}
 			//if (GrabTextureID(scene->mMaterials[i], aiTextureType_METALNESS, this, textureId)) {
 			//	mat.textureIDs[3] = textureId;
@@ -2611,16 +2611,16 @@ bool VulkanEngine::load_scene(const char* scene_path, glm::mat4 rootMatrix)
 			//	
 			//}
 			if (GrabTextureID(scene->mMaterials[i], aiTextureType_EMISSION_COLOR, this, textureId)) {
-				mat.textureIDs[4] = textureId;
+				newMat.textureIDs[4] = textureId;
 			}
 			if (GrabTextureID(scene->mMaterials[i], aiTextureType_BASE_COLOR, this, textureId)) {
-				mat.textureIDs[5] = textureId;
+				newMat.textureIDs[5] = textureId;
 			}
 			if (GrabTextureID(scene->mMaterials[i], aiTextureType_DIFFUSE_ROUGHNESS, this, textureId)) {
-				mat.textureIDs[6] = textureId;
+				newMat.textureIDs[6] = textureId;
 			}
 
-			materials[i] = mat;
+			materials[i] = newMat;
 		}
 
 	}
@@ -2668,7 +2668,7 @@ bool VulkanEngine::load_scene(const char* scene_path, glm::mat4 rootMatrix)
 	int nodemeshes = 0;
 	std::function<void(aiNode * node, aiMatrix4x4 & parentmat)> process_node = [&](aiNode* node, aiMatrix4x4& parentmat) {
 
-		aiMatrix4x4 node_mat = /*node->mTransformation */parentmat;
+		aiMatrix4x4 node_mat = parentmat *node->mTransformation;
 		//std::cout << "node transforms: ";
 		//for (int y = 0; y < 4; y++)
 		//{
@@ -2726,6 +2726,8 @@ bool VulkanEngine::load_scene(const char* scene_path, glm::mat4 rootMatrix)
 			meshBounds.center_rad.z = center.z;
 
 			registry.assign<ObjectBounds>(id, meshBounds);
+
+			
 		}
 		
 		for (int ch = 0; ch < node->mNumChildren; ch++)

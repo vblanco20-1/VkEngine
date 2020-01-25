@@ -144,15 +144,22 @@ vec3 F_SchlickR(float cosTheta, vec3 F0, float roughness)
 {
 	return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(1.0 - cosTheta, 5.0);
 }
+vec3 convert_cubemap_coords(vec3 N){
 
+	float swap = N.y;
+	N.y = N.z * -1.f;
+	N.z = swap;	
+	return N;
+}
 vec3 prefilteredReflection(vec3 R, float roughness)
 {
+	vec3 dir = convert_cubemap_coords(R);
 	const float MAX_REFLECTION_LOD = 9.0; // todo: param/const
 	float lod = roughness * MAX_REFLECTION_LOD;
 	float lodf = floor(lod);
 	float lodc = ceil(lod);
-	vec3 a = textureLod(reflectionCubemap, R, lodf).rgb;
-	vec3 b = textureLod(reflectionCubemap, R, lodc).rgb;
+	vec3 a = textureLod(reflectionCubemap, dir, lodf).rgb;
+	vec3 b = textureLod(reflectionCubemap, dir, lodc).rgb;
 	return mix(a, b, lod - lodf);
 }
 
@@ -167,6 +174,8 @@ vec3 Uncharted2Tonemap(vec3 x)
 	float F = 0.30;
 	return ((x*(A*x+C*B)+D*E)/(x*(A*x+B)+D*F))-E/F;
 }
+
+
 
 void main() {
 
@@ -242,7 +251,7 @@ void main() {
 
     vec2 brdf = texture(samplerBRDFLUT, vec2(max(dot(N, V), 0.0), roughness)).rg;
 	vec3 reflection = prefilteredReflection(R, roughness).rgb;	
-	vec3 irradiance = texture(ambientCubemap, N).rgb;
+	vec3 irradiance = texture(ambientCubemap,convert_cubemap_coords(N)).rgb;
 
 	// Diffuse based on irradiance
 	vec3 diffuse = irradiance * albedo;	
@@ -255,7 +264,7 @@ void main() {
 	// Ambient part
 	vec3 kD = 1.0 - F;
 	kD *= 1.0 - metallic;	  
-	vec3 ambient = (kD * diffuse + specular) * pow(ssao,10);
+	vec3 ambient = (kD * diffuse + specular) * pow(ssao,4);
 	
 	vec3 color = ambient + Lo;
 	
@@ -265,5 +274,13 @@ void main() {
 	// Gamma correction
 	color = pow(color, vec3(1.0f / 1));
 
+	//vec4 tex_test  = vec4(texture(tex3, fragTexCoord));//.rgba;
+	//float tex_test  = texture(tex3, fragTexCoord);
+	//outColor = tex_test;
+	//outColor = vec4(tex3,1.f);
+
 	outColor = vec4(color, 1.0);
+	
+	
+	//outColor=	vec4(prefilteredReflection(N, sceneParams.ambient.w).rgb, 1.0);
 }

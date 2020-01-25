@@ -9,6 +9,7 @@ add_library(entt INTERFACE)
 add_library(glm INTERFACE)
 add_library(gli INTERFACE)
 add_library(assimp INTERFACE)
+add_library(asimp INTERFACE)
 add_library(sdl2 INTERFACE)
 add_library(vma INTERFACE)
 
@@ -18,6 +19,8 @@ add_library(vma INTERFACE)
 
 find_package(Vulkan REQUIRED)
 
+add_subdirectory(json)
+add_subdirectory(sqlite)
 
 #SDL ------------------------------------------
 
@@ -31,7 +34,7 @@ target_link_libraries(sdl2 INTERFACE SDL2_image SDL2 SDL2main)
 #ENTT -----------------------------------
 FetchContent_Declare(ext_entt
 		  GIT_REPOSITORY    https://github.com/skypjack/entt
-		  GIT_TAG           000b7d2651e2197014c9676ce9148fdc0e8482f4
+		  GIT_TAG           master
 		  GIT_SHALLOW 1
 		  SOURCE_DIR        "${CMAKE_CURRENT_SOURCE_DIR}/entt"
 		  CONFIGURE_COMMAND ""
@@ -54,7 +57,7 @@ message(STATUS "entt directory: ${ext_entt_SOURCE_DIR}")
 
 FetchContent_Declare(ext_imgui
 		  GIT_REPOSITORY    https://github.com/ocornut/imgui
-		  GIT_TAG           061650bd2ae21bfb085628fde781fe11df528b59
+		  GIT_TAG           master
 		  GIT_SHALLOW 1
 		  SOURCE_DIR        "${CMAKE_CURRENT_SOURCE_DIR}/imgui"
 		  CONFIGURE_COMMAND ""
@@ -148,7 +151,7 @@ target_include_directories(vma INTERFACE "${ext_vma_SOURCE_DIR}/src")
 #GLSLANG -----------------------------------
 ExternalProject_Add(ext_glslang
 		  GIT_REPOSITORY    https://github.com/KhronosGroup/glslang
-		  GIT_TAG           bd97b6f9f2132fa8df90431415e32dbab5c76db8
+		  GIT_TAG           master
 		  GIT_SHALLOW 1
 		  SOURCE_DIR        "${CMAKE_CURRENT_SOURCE_DIR}/glslang"
 		  BINARY_DIR        "${CMAKE_CURRENT_SOURCE_DIR}/glslang_build"
@@ -156,12 +159,12 @@ ExternalProject_Add(ext_glslang
 		  BUILD_COMMAND    ""
 )
 
-add_subdirectory(glslang EXCLUDE_FROM_ALL)
+add_subdirectory(glslang )
 
 #SPIRV -----------------------------------
 ExternalProject_Add(ext_spirv
 		  GIT_REPOSITORY    https://github.com/KhronosGroup/SPIRV-Cross
-		  GIT_TAG           f912c32898dbf558635c9d5a2d50ff887c1402ae
+		  GIT_TAG           master
 		  GIT_SHALLOW 1
 		  SOURCE_DIR        "${CMAKE_CURRENT_SOURCE_DIR}/spirv_cross"
 		  BINARY_DIR        "${CMAKE_CURRENT_SOURCE_DIR}/spirv_cross_build"
@@ -176,7 +179,7 @@ ExternalProject_Add(ext_spirv
 )
 
 
-add_subdirectory(spirv_cross EXCLUDE_FROM_ALL)
+add_subdirectory(spirv_cross )
 
 
 
@@ -221,5 +224,8 @@ set(assimp_lib "${CMAKE_CURRENT_SOURCE_DIR}/assimp_build/code/Release/assimp-vc1
 
 target_include_directories(assimp INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/assimp/include")
 target_link_libraries(assimp INTERFACE "${assimp_lib}" )
+
+target_include_directories(asimp INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/assimp/include")
+target_link_libraries(asimp INTERFACE "${assimp_lib}" )
 
 

@@ -5,7 +5,7 @@ layout (set = 0,binding = 1) uniform sampler2D samplerNormal;
 layout (set = 0,binding = 2) uniform sampler2D ssaoNoise;
 
 //const int SSAO_KERNEL_SIZE = 16;
-const float SSAO_RADIUS = 25.f;
+const float SSAO_RADIUS = 50.f;
 layout (constant_id = 0) const int SSAO_KERNEL_SIZE = 64;
 //layout (constant_id = 1) const float SSAO_RADIUS = 0.5;
 
@@ -75,8 +75,8 @@ void main()
 		occlusion += (sampleDepth >= samplePos.z + bias ? 1.0f : 0.0f);  
 #endif
 	}
-	
-	occlusion = 1.0 - (occlusion / float(SSAO_KERNEL_SIZE));
+	occlusion *= 2;
+	occlusion = clamp( 1.0 - (occlusion / float(SSAO_KERNEL_SIZE)) ,0.f,1.f );
 
 	if(abs(fragPos.z) > 2000){
 		outFragColor = 1.f;

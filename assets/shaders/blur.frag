@@ -37,6 +37,8 @@ layout(push_constant) uniform PushConsts{
 	float KERNEL_RADIUS;
 };
 
+const float KERNEL_RAD = 5;
+
 layout(binding=0) uniform sampler2D texSource;
 layout(binding=1) uniform sampler2D texLinearDepth;
 
@@ -52,7 +54,7 @@ vec4 BlurFunction(vec2 uv, float r, vec4 center_c, float center_d, inout float w
   vec4  c = texture( texSource, uv );
   float d = texture( texLinearDepth, uv).w / 50000.f;
   
-  const float BlurSigma = float(KERNEL_RADIUS) * 0.5;
+  const float BlurSigma = float(KERNEL_RAD) * 0.5;
   const float BlurFalloff = 1.0 / (2.0*BlurSigma*BlurSigma);
   
   float ddiff = (d - center_d) * g_Sharpness * 10;
@@ -70,13 +72,13 @@ void main()
   vec4  c_total = center_c;
   float w_total = 1.0;
   
-  for (float r = 1; r <= KERNEL_RADIUS; ++r)
+  for (float r = 1; r <= KERNEL_RAD; ++r)
   {
     vec2 uv = texCoord + (g_InvResolutionDirection * r);
     c_total += BlurFunction(uv, r, center_c, center_d, w_total);  
   }
 
-  for (float r = 1; r <= KERNEL_RADIUS; ++r)
+  for (float r = 1; r <= KERNEL_RAD; ++r)
   {
      vec2 uv = texCoord + (g_InvResolutionDirection * r * -1);
     c_total += BlurFunction(uv, r, center_c, center_d, w_total);  
