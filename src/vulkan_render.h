@@ -6,6 +6,7 @@
 #include "frustum_cull.h"
 #include "player_camera.h"
 #include "framegraph.h"
+#include "frame_resource.h"
 
 #ifndef ASSET_PATH
 	//#define ASSET_PATH errorpath
@@ -13,7 +14,7 @@
 #endif
 #define MAKE_ASSET_PATH(path) ASSET_PATH ## path
 
-constexpr int MAX_FRAMES_IN_FLIGHT =2;
+constexpr int MAX_FRAMES_IN_FLIGHT =3;
 constexpr int MAX_UNIFORM_BUFFER = 5000;
 constexpr int SHADOWMAP_DIM = 2048;
 
@@ -34,6 +35,7 @@ const std::vector<const char*> validationLayers = {
 
 const std::vector<const char*> deviceExtensions = {
 	VK_KHR_SWAPCHAIN_EXTENSION_NAME ,
+	VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME
 	//VK_NV_GLSL_SHADER_EXTENSION_NAME
 };
 
@@ -103,7 +105,10 @@ public:
 	VmaAllocator allocator;
 
 	vk::CommandPool commandPool;
-	std::vector<vk::CommandBuffer> commandBuffers;
+	vk::CommandPool transferCommandPool;
+
+	//std::vector<vk::CommandBuffer> commandBuffers;
+	FrameResource<vk::CommandBuffer,4> commandBuffers;
 
 	std::unordered_map< uint64_t, void*> ProfilerContexts;
 	void* MainProfilerContext{nullptr};
@@ -116,6 +121,10 @@ public:
 	std::vector<vk::Semaphore> imageAvailableSemaphores;
 	std::vector<vk::Semaphore> renderFinishedSemaphores;
 	std::vector<vk::Fence> inFlightFences;
+	vk::Semaphore frameTimelineSemaphore;
+
+	vk::DispatchLoaderDynamic extensionDispatcher;
+
 	size_t currentFrameIndex = 0;
 	size_t globalFrameNumber = 0;
 
@@ -229,7 +238,20 @@ public:
 	size_t align_dynamic_descriptor(size_t initial_alignement);
 
 	void draw_frame();
-	void render_shadow_pass(const vk::CommandBuffer& cmd,int height, int width);
+
+	uint64_t get_last_frame_timeline_value()
+	{
+		uint64_t waitValue = globalFrameNumber - 2;
+		if (globalFrameNumber < 2) {
+			return 0;
+		}
+		else {
+			return waitValue +  1000;
+		}
+		
+	}
+
+	void render_shadow_pass(const vk::CommandBuffer& cmd, int height, int width);
 	void render_ssao_pass(const vk::CommandBuffer& cmd, int height, int width);
 	void render_ssao_blurx(const vk::CommandBuffer& cmd, int height, int width);
 	void render_ssao_blury(const vk::CommandBuffer& cmd, int height, int width);

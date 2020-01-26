@@ -363,36 +363,38 @@ bool FrameGraph::build(class VulkanEngine* engine)
 	//make render passes
 	for (int i = 0; i < passes.size(); i++) {
 		RenderPass* pass = passes[i];
-		build_render_pass(pass, engine);
+		if (pass->type == PassType::Graphics) {
+			build_render_pass(pass, engine);
 
-		//framebuffers
-		std::vector<vk::ImageView> FBAttachments;
-		//FBAttachments.resize(pass->physical_attachments.size());
+			//framebuffers
+			std::vector<vk::ImageView> FBAttachments;
+			//FBAttachments.resize(pass->physical_attachments.size());
 
-		int width;
-		int height;
+			int width = 0;
+			int height = 0;
 
-		for (auto attachment : pass->physical_attachments) {
+			for (auto attachment : pass->physical_attachments) {
 
-			FBAttachments.push_back(graph_attachments[attachment.name].descriptor.imageView);
+				FBAttachments.push_back(graph_attachments[attachment.name].descriptor.imageView);
 
-			width = graph_attachments[attachment.name].real_width;
-			height = graph_attachments[attachment.name].real_height;
-		}
+				width = graph_attachments[attachment.name].real_width;
+				height = graph_attachments[attachment.name].real_height;
+			}
 
-		pass->render_height = height;
-		pass->render_width = width;
+			pass->render_height = height;
+			pass->render_width = width;
 
-		vk::FramebufferCreateInfo fbufCreateInfo;
-		fbufCreateInfo.renderPass = pass->built_pass;
-		fbufCreateInfo.attachmentCount = FBAttachments.size();
-		fbufCreateInfo.pAttachments = FBAttachments.data();
-		fbufCreateInfo.width = width;
-		fbufCreateInfo.height = height;
-		fbufCreateInfo.layers = 1;
+			vk::FramebufferCreateInfo fbufCreateInfo;
+			fbufCreateInfo.renderPass = pass->built_pass;
+			fbufCreateInfo.attachmentCount = FBAttachments.size();
+			fbufCreateInfo.pAttachments = FBAttachments.data();
+			fbufCreateInfo.width = width;
+			fbufCreateInfo.height = height;
+			fbufCreateInfo.layers = 1;
 
-		std::cout << "building framebuffer for" << pass->name << std::endl;
-		pass->framebuffer = engine->device.createFramebuffer(fbufCreateInfo);
+			std::cout << "building framebuffer for" << pass->name << std::endl;
+			pass->framebuffer = engine->device.createFramebuffer(fbufCreateInfo);
+		}		
 	}
 
 	std::cout << "framegraph built";
@@ -415,6 +417,7 @@ RenderPass* FrameGraph::add_pass(std::string pass_name, std::function<void(vk::C
 	ptr->name = pass_name;
 	ptr->owner = this;
 	ptr->draw_callback = execution;
+	ptr->type = type;
 	passes.push_back(ptr);
 
 	return ptr;
@@ -443,22 +446,28 @@ void FrameGraph::execute(vk::CommandBuffer cmd)
 
 		if (pass->draw_callback)
 		{
+			if (pass->type == PassType::Graphics) {
 
-			vk::RenderPassBeginInfo renderPassInfo;
-			renderPassInfo.renderPass = pass->built_pass;
-			renderPassInfo.framebuffer = pass->framebuffer;
-			renderPassInfo.renderArea.offset = { 0, 0 };
-			renderPassInfo.renderArea.extent.width = pass->render_width;
-			renderPassInfo.renderArea.extent.height = pass->render_height;
+			
+				vk::RenderPassBeginInfo renderPassInfo;
+				renderPassInfo.renderPass = pass->built_pass;
+				renderPassInfo.framebuffer = pass->framebuffer;
+				renderPassInfo.renderArea.offset = { 0, 0 };
+				renderPassInfo.renderArea.extent.width = pass->render_width;
+				renderPassInfo.renderArea.extent.height = pass->render_height;
 
-			renderPassInfo.clearValueCount = pass->clearValues.size();
-			renderPassInfo.pClearValues = (vk::ClearValue*)pass->clearValues.data();
+				renderPassInfo.clearValueCount = pass->clearValues.size();
+				renderPassInfo.pClearValues = (vk::ClearValue*)pass->clearValues.data();
 
-			cmd.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
+				cmd.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
+				pass->draw_callback(cmd, pass);
 
-			pass->draw_callback(cmd, pass);
-
-			cmd.endRenderPass();
+				cmd.endRenderPass();
+			}
+			else {
+				pass->draw_callback(cmd, pass);
+			}
+			
 		}
 	}
 }

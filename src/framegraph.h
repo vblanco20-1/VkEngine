@@ -64,6 +64,7 @@ public:
 	int render_height = 0;
 	class FrameGraph* owner;
 	std::string name;
+	PassType type;
 
 	void add_image_dependency(std::string name);
 

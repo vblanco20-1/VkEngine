@@ -627,33 +627,58 @@ public:
 
 	vk::CommandBuffer get_upload_command_buffer() {
 
-		if (upload_buffer == vk::CommandBuffer{}) {
-			vk::CommandBufferAllocateInfo allocInfo;
-			allocInfo.level = vk::CommandBufferLevel::ePrimary;
-			allocInfo.commandPool = owner->commandPool;
-			allocInfo.commandBufferCount = 1;
+		//if (upload_buffer == vk::CommandBuffer{}) {
+		//	vk::CommandBufferAllocateInfo allocInfo;
+		//	allocInfo.level = vk::CommandBufferLevel::ePrimary;
+		//	allocInfo.commandPool = owner->commandPool;
+		//	allocInfo.commandBufferCount = 1;
+		//
+		//	upload_buffer = owner->device.allocateCommandBuffers(allocInfo)[0];
+		//}
+		//else {
+		//	upload_buffer.reset(vk::CommandBufferResetFlagBits::eReleaseResources);
+		//}
+		//
+		////owner->device.resetCommandPool(owner->commandPool, vk::CommandPoolResetFlagBits::eReleaseResources);
+		//
+		//upload_buffer.begin(vk::CommandBufferBeginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
+		//return upload_buffer;
 
-			upload_buffer = owner->device.allocateCommandBuffers(allocInfo)[0];
-		}
-		else {
-			upload_buffer.reset(vk::CommandBufferResetFlagBits::eReleaseResources);
-		}
 		
+		vk::CommandBufferAllocateInfo allocInfo;
+		allocInfo.level = vk::CommandBufferLevel::ePrimary;
+		allocInfo.commandPool = owner->transferCommandPool;
+		allocInfo.commandBufferCount = 1;
+
+		auto cmd = owner->device.allocateCommandBuffers(allocInfo)[0];
+		
+
 		//owner->device.resetCommandPool(owner->commandPool, vk::CommandPoolResetFlagBits::eReleaseResources);
 
-		upload_buffer.begin(vk::CommandBufferBeginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
-		return upload_buffer;
+		cmd.begin(vk::CommandBufferBeginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
+		return cmd;
 	}
-	void finish_upload_command_buffer() {
-		upload_buffer.end();
+
+	void submit_command_buffer(vk::CommandBuffer cmd) {
+		cmd.end();
 
 		vk::SubmitInfo submitInfo;
 		submitInfo.commandBufferCount = 1;
-		submitInfo.pCommandBuffers = &upload_buffer;
+		submitInfo.pCommandBuffers = &cmd;
 
 		owner->graphicsQueue.submit(submitInfo, nullptr);
-		owner->graphicsQueue.waitIdle();
 	}
+	void wait_queue_idle() {
+		owner->graphicsQueue.waitIdle();
+		owner->device.resetCommandPool(owner->transferCommandPool, vk::CommandPoolResetFlagBits{});
+	}
+
+	void finish_upload_command_buffer() {
+		submit_command_buffer(upload_buffer);
+		wait_queue_idle();
+	}
+
+	
 
 
 	VulkanEngine* owner;
@@ -862,25 +887,47 @@ void RealTextureLoader::flush_requests()
 void RealTextureLoader::upload_pending_images()
 {
 	{
+		owner->device.resetCommandPool(owner->transferCommandPool, vk::CommandPoolResetFlagBits{});
+	
 		vk::CommandBuffer cmd = get_upload_command_buffer();
 		auto upload_view = load_registry.view<LoadStagingBuffer, LoadImageAlloc>();
 		tracy::VkCtx* profilercontext = (tracy::VkCtx*)owner->get_profiler_context(cmd);
 		
 
 		ZoneScopedN("Copying images to GPU");
+		auto view_iterator = upload_view.begin();
+		while (true) {
+			//submit buffers every 10 textures;
+			for (int i = 0; i < 10; i++) {
+				if (view_iterator == upload_view.end()) {
+					goto end;
+				}
+				EntityID e = *view_iterator;
+				view_iterator++;
 
-		for (auto e : upload_view) {
-			TracyVkZone(profilercontext, VkCommandBuffer(cmd), "Upload Image");
-			const LoadStagingBuffer& staging = upload_view.get<LoadStagingBuffer>(e);
-			const LoadImageAlloc& texresource = upload_view.get<LoadImageAlloc>(e);
-			
+				TracyVkZone(profilercontext, VkCommandBuffer(cmd), "Upload Image");
+				const LoadStagingBuffer& staging = upload_view.get<LoadStagingBuffer>(e);
+				const LoadImageAlloc& texresource = upload_view.get<LoadImageAlloc>(e);
 
-			vk::Image target_image = texresource.image.image;
-			uploadImage(cmd, target_image, texresource.format, staging, texresource);
+
+				vk::Image target_image = texresource.image.image;
+				uploadImage(cmd, target_image, texresource.format, staging, texresource);
+			}
+			{
+				ZoneScopedNC("Texture batch queue upload", tracy::Color::Red);
+				submit_command_buffer(cmd);
+				cmd = get_upload_command_buffer();
+			}
+			profilercontext = (tracy::VkCtx*)owner->get_profiler_context(cmd);
 		}
+		end:
+
 		{
 			ZoneScopedNC("Texture batch wait load queue", tracy::Color::Red);
-			finish_upload_command_buffer();
+
+			submit_command_buffer(cmd);
+			wait_queue_idle();
+			//finish_upload_command_buffer();
 			
 			finish_image_batch();
 		}
@@ -1082,8 +1129,14 @@ void RealTextureLoader::load_all_textures(SceneLoader* loader, const std::string
 			loader->load_textures_from_db("", textures);
 		}
 
+		owner->device.resetCommandPool(owner->transferCommandPool, vk::CommandPoolResetFlagBits{});
 
+		vk::CommandBuffer cmd = get_upload_command_buffer();
+		auto upload_view = load_registry.view<LoadStagingBuffer, LoadImageAlloc>();
+		tracy::VkCtx* profilercontext = (tracy::VkCtx*)owner->get_profiler_context(cmd);
+		int ntextures = 0;
 		for (auto t : textures) {
+			
 			EntityID load_id = load_registry.create();
 
 
@@ -1096,16 +1149,50 @@ void RealTextureLoader::load_all_textures(SceneLoader* loader, const std::string
 			load_registry.assign_or_replace<BaseTextureLoad>(load_id, bload);
 
 			this->add_load_from_db(load_id, loader, t);
+
+			const LoadStagingBuffer& staging = load_registry.get<LoadStagingBuffer>(load_id);
+			const LoadImageAlloc& texresource = load_registry.get<LoadImageAlloc>(load_id);
+
+			vk::Image target_image = texresource.image.image; 
+			{
+			TracyVkZone(profilercontext, VkCommandBuffer(cmd), "Upload Image");
+			uploadImage(cmd, target_image, texresource.format, staging, texresource);
+			}
+
+			ntextures++;
+			if (ntextures > 20) {
+				ZoneScopedNC("Texture batch submit", tracy::Color::Red);
+				submit_command_buffer(cmd);
+				cmd = get_upload_command_buffer();
+				profilercontext = (tracy::VkCtx*)owner->get_profiler_context(cmd);
+				ntextures = 0;
+			}
 		}
+	
+
 		{
-			ZoneScopedNC("Texture request flush load", tracy::Color::Yellow);
-			upload_pending_images();
-			bLoadedDB = true;
+			ZoneScopedNC("Texture batch wait load queue", tracy::Color::Red);
+
+			submit_command_buffer(cmd);
+			wait_queue_idle();
+			//finish_upload_command_buffer();0
+
+			finish_image_batch();
 		}
 	}
 
 
-	return;
+	
+	
+	//{
+		//	ZoneScopedNC("Texture request flush load", tracy::Color::Yellow);
+		//	upload_pending_images();
+		//	bLoadedDB = true;
+		//}
+	//}
+
+
+	//return;
 }
 
 TextureLoader* TextureLoader::create_new_loader(VulkanEngine* ownerEngine)

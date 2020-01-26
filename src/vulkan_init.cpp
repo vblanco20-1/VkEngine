@@ -164,6 +164,14 @@ void VulkanEngine::create_device()
 	vk::PhysicalDeviceFeatures deviceFeatures;
 	deviceFeatures.samplerAnisotropy = true;
 
+	vk::PhysicalDeviceTimelineSemaphoreFeaturesKHR timelineFeatures;
+	timelineFeatures.timelineSemaphore = true;
+
+	vk::PhysicalDeviceFeatures2 features2;
+	features2.features = deviceFeatures;
+	features2.pNext = &timelineFeatures;
+
+	//deviceFeatures.
 	//--- DEVICE CREATE
 	vk::DeviceCreateInfo createInfo;
 
@@ -171,9 +179,10 @@ void VulkanEngine::create_device()
 		std::array<vk::DeviceQueueCreateInfo, 2> queues{ queueCreateInfo,presentQueueCreateInfo };
 		createInfo.pQueueCreateInfos = queues.data();
 		createInfo.queueCreateInfoCount = 1;
-		createInfo.pEnabledFeatures = &deviceFeatures;
+		//createInfo.pEnabledFeatures = &deviceFeatures;
 		createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
 		createInfo.ppEnabledExtensionNames = deviceExtensions.data();
+		createInfo.pNext = &features2;
 
 		device = physicalDevice.createDevice(createInfo);
 	}
@@ -192,6 +201,9 @@ void VulkanEngine::create_device()
 
 	graphicsQueue = device.getQueue(graphicsFamilyIndex, 0);
 	presentQueue = device.getQueue(presentFamilyIndex, 0);
+
+	// This dispatch class will fetch function pointers for the passed device if possible, else for the passed instance
+	extensionDispatcher = vk::DispatchLoaderDynamic(instance, device);
 }
 
 struct SwapChainSupportDetails {
@@ -325,8 +337,14 @@ void VulkanEngine::create_command_pool()
 	vk::CommandPoolCreateInfo poolInfo;
 	poolInfo.queueFamilyIndex = graphicsFamilyIndex;
 	poolInfo.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer;
-
 	commandPool = device.createCommandPool(poolInfo);
+
+	vk::CommandPoolCreateInfo transferPoolInfo;
+	transferPoolInfo.queueFamilyIndex = graphicsFamilyIndex;
+	transferPoolInfo.flags = vk::CommandPoolCreateFlagBits::eTransient;
+
+	transferCommandPool = device.createCommandPool(transferPoolInfo);
+	
 }
 
 void VulkanEngine::init_vulkan_debug()

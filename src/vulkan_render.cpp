@@ -94,6 +94,13 @@ void VulkanEngine::create_engine_graph()
 
 		RenderMainPass(cmd);
 		}, PassType::Graphics);
+	
+	auto test_pass = graph.add_pass("test", [&](vk::CommandBuffer cmd, RenderPass* pass) {
+		if (engine->globalFrameNumber > 3)
+		{
+
+		}
+		}, PassType::CPU);
 
 	auto display_pass = graph.add_pass("DisplayPass", [](vk::CommandBuffer cmd, RenderPass* pass) {}, PassType::Graphics);
 
@@ -168,6 +175,7 @@ void VulkanEngine::create_engine_graph()
 
 void VulkanEngine::init_vulkan()
  {
+	
 	vk::ApplicationInfo appInfo{ "VkEngine",VK_MAKE_VERSION(0,0,0),"VkEngine:Demo",VK_MAKE_VERSION(0,0,0),VK_API_VERSION_1_1 };
 
 	vk::InstanceCreateInfo createInfo;
@@ -1213,17 +1221,21 @@ void VulkanEngine::create_command_buffers()
 	vk::CommandBufferAllocateInfo allocInfo;	
 	allocInfo.commandPool = commandPool;
 	allocInfo.level = vk::CommandBufferLevel::ePrimary;
-	allocInfo.commandBufferCount = swapChainFramebuffers.size();
+	allocInfo.commandBufferCount = commandBuffers.num;
 
 
-	commandBuffers = device.allocateCommandBuffers(allocInfo);
+	auto buffers = device.allocateCommandBuffers(allocInfo);
+	for (int i = 0; i < commandBuffers.num; i++) {
+		commandBuffers.items[i] = buffers[i];
+	}
+	
 
-	get_profiler_context(commandBuffers[0]);
+	get_profiler_context(commandBuffers.get(0));
 }
 void VulkanEngine::begin_frame_command_buffer(vk::CommandBuffer buffer)
 {
 	vk::CommandBufferBeginInfo beginInfo;
-	beginInfo.flags = vk::CommandBufferUsageFlagBits::eSimultaneousUse;
+	beginInfo.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
 	beginInfo.pInheritanceInfo = nullptr; // Optional
 
 	vk::CommandBuffer& cmd = buffer;//commandBuffers[i];
@@ -1276,7 +1288,29 @@ void VulkanEngine::draw_frame()
 	//("Draw Frame", color);
 	{
 		ZoneScopedNC("WaitFences", tracy::Color::Red);
-		device.waitForFences(1, &inFlightFences[currentFrameIndex], VK_TRUE, std::numeric_limits<uint64_t>::max());
+
+
+
+		uint64_t waitValue = get_last_frame_timeline_value();
+
+
+		vk::SemaphoreWaitInfoKHR waitInfo;
+		waitInfo.flags = vk::SemaphoreWaitFlagBitsKHR{};
+		waitInfo.semaphoreCount = 1;
+		waitInfo.pSemaphores = &frameTimelineSemaphore;
+		waitInfo.pValues = &waitValue;
+		std::cout << "cpu pre pass: " << globalFrameNumber << " - " << device.getSemaphoreCounterValueKHR(frameTimelineSemaphore, extensionDispatcher) << std::endl;
+
+		device.waitSemaphoresKHR(waitInfo, UINT64_MAX, extensionDispatcher);
+		std::cout << "cpu frame pass: " << globalFrameNumber << " - " << device.getSemaphoreCounterValueKHR(frameTimelineSemaphore, extensionDispatcher) << std::endl;
+
+		//vkWaitSemaphoresKHR(device, (VkSemaphoreWaitInfoKHR*)&waitInfo, UINT64_MAX);
+	}
+	{
+		ZoneScopedNC("Real Fence", tracy::Color::Yellow);
+		
+		device.waitForFences(1, &inFlightFences[currentFrameIndex], VK_TRUE, 0);
+		device.resetFences(1, &inFlightFences[currentFrameIndex]);
 	}
 	descriptorMegapool.set_frame(currentFrameIndex);
 
@@ -1302,11 +1336,11 @@ void VulkanEngine::draw_frame()
 
 
 
-	vk::Semaphore signalSemaphores[] = { renderFinishedSemaphores[currentFrameIndex] };
+	
 
 
 
-	device.resetFences(1, &inFlightFences[currentFrameIndex]);
+	
 
 	update_uniform_buffer(currentFrameIndex/*imageIndex*/);
 
@@ -1317,7 +1351,7 @@ void VulkanEngine::draw_frame()
 
 	eng_stats.drawcalls = 0;
 
-	vk::CommandBuffer cmd = commandBuffers[currentFrameIndex];
+	vk::CommandBuffer cmd = commandBuffers.get(globalFrameNumber);//commandBuffers[currentFrameIndex];
 
 	begin_frame_command_buffer(cmd);
 	tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(cmd);
@@ -1376,23 +1410,40 @@ void VulkanEngine::draw_frame()
 
 	}
 	end_frame_command_buffer(cmd);
-	
+
+	vk::Semaphore signalSemaphores[] = { frameTimelineSemaphore, renderFinishedSemaphores[currentFrameIndex]  };
 	{
-		
+		const uint64_t waitValue3 = 0; 
+		const uint64_t signalValues[] = {
+			globalFrameNumber + 1000,globalFrameNumber + 1000
+		};
+		//const uint64_t globalFrameNumber = 8;
+
+		VkTimelineSemaphoreSubmitInfoKHR timelineInfo3;
+		timelineInfo3.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO_KHR;
+		timelineInfo3.pNext = NULL;
+		timelineInfo3.waitSemaphoreValueCount = 1;
+		timelineInfo3.pWaitSemaphoreValues = &waitValue3;
+		timelineInfo3.signalSemaphoreValueCount = 2;
+		timelineInfo3.pSignalSemaphoreValues = signalValues;
+
 		submitInfo.commandBufferCount = 1;
 		submitInfo.pCommandBuffers = &cmd;
-		submitInfo.signalSemaphoreCount = 1;
+		submitInfo.signalSemaphoreCount = 2;
+		//submitInfo.pSignalSemaphores = signalSemaphores;
 		submitInfo.pSignalSemaphores = signalSemaphores;
+		submitInfo.pNext = &timelineInfo3;
 		{
 			ZoneScopedNC("Submit", tracy::Color::Red);
-			graphicsQueue.submit(1, &submitInfo, inFlightFences[currentFrameIndex]);
+			graphicsQueue.submit(1, &submitInfo, inFlightFences[currentFrameIndex]); //vk::Fence{}); //
+			//graphicsQueue.submit(1, &submitInfo, vk::Fence{}); 
 		}
 		
 
 
 		vk::PresentInfoKHR presentInfo = {};
 		presentInfo.waitSemaphoreCount = 1;
-		presentInfo.pWaitSemaphores = signalSemaphores;
+		presentInfo.pWaitSemaphores = &renderFinishedSemaphores[currentFrameIndex];
 
 		vk::SwapchainKHR swapChains[] = { swapChain };
 		presentInfo.swapchainCount = 1;
@@ -2056,7 +2107,7 @@ void VulkanEngine::cleanup_swap_chain()
 	
 	//device.freeMemory(depthImageMemory);
 
-	device.freeCommandBuffers(commandPool, commandBuffers);
+	//device.freeCommandBuffers(commandPool, commandBuffers);
 
 	device.destroyPipeline(graphicsPipeline);
 	//device.destroyPipelineLayout(pipelineLayout);
@@ -2136,7 +2187,16 @@ void VulkanEngine::create_semaphores()
 	imageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
 	renderFinishedSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
 	inFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
+
+	vk::SemaphoreTypeCreateInfoKHR timelineSemaphoreInfo;
+	timelineSemaphoreInfo.semaphoreType = vk::SemaphoreTypeKHR::eTimeline;
+	timelineSemaphoreInfo.initialValue = 0;
+
+	vk::SemaphoreCreateInfo timeline;
+	timeline.setPNext(&timelineSemaphoreInfo);
 	
+	frameTimelineSemaphore = device.createSemaphore(timeline);
+
 	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
 		imageAvailableSemaphores[i] = device.createSemaphore(semaphoreInfo);
 		renderFinishedSemaphores[i] = device.createSemaphore(semaphoreInfo);
