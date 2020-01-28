@@ -1,7 +1,8 @@
 #pragma once
 #include <pcheader.h>
 #include <functional>
-
+#include <array>
+#include "frame_resource.h"
 enum class RenderGraphResourceLifetime {
 	PerFrame,
 	Persistent
@@ -65,6 +66,7 @@ public:
 	class FrameGraph* owner;
 	std::string name;
 	PassType type;
+	bool perform_submit;
 
 	void add_image_dependency(std::string name);
 
@@ -99,18 +101,27 @@ public:
 
 	bool build(class VulkanEngine* engine);
 
-	RenderPass* add_pass(std::string pass_name, std::function<void(vk::CommandBuffer, RenderPass*)> execution, PassType type);
+	RenderPass* add_pass(std::string pass_name, std::function<void(vk::CommandBuffer, RenderPass*)> execution, PassType type, bool bPerformSubmit = false);
 	RenderPass* get_pass(std::string name);
 	VkDescriptorImageInfo get_image_descriptor(std::string name);
 	GraphAttachment* get_attachment(std::string name);
-
+	
+	vk::CommandBuffer create_graphics_buffer(int threadID);
 	void execute(vk::CommandBuffer cmd);
+
+	void submit_commands(vk::CommandBuffer cmd, int wait_pass_index, int signal_pass_index);
+
+	void build_command_pools();
+
 	std::vector<RenderPass*> passes;
 	std::unordered_map<std::string, RenderPass > pass_definitions;
 	std::unordered_map<std::string, GraphAttachment> graph_attachments;
 
+	FrameResource < std::array<vk::CommandPool,4> , 3 > commandPools;
+
 	VkExtent2D swapchainSize;
 	std::vector<const char*> attachmentNames;
+	VulkanEngine* owner;
 };
 
 std::array < vk::SubpassDependency, 2> build_basic_subpass_dependencies();

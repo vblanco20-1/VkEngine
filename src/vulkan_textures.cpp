@@ -45,7 +45,7 @@ std::pair<TextureResource,TextureResourceMetadata> VulkanEngine::load_texture_re
 	}
 
 	AllocatedBuffer stagingBuffer;
-	createBuffer(imageSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, stagingBuffer);
+	createBuffer(imageSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_UNKNOWN, stagingBuffer);
 
 
 	void* data;
@@ -227,7 +227,7 @@ void VulkanEngine::load_textures_bulk(TextureLoadRequest* requests, size_t count
 					}
 
 
-					createBuffer(AllData[index].imageSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, AllData[index].stagingBuffer);
+					createBuffer(AllData[index].imageSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_UNKNOWN, AllData[index].stagingBuffer);
 
 					void* data;
 					vmaMapMemory(allocator, AllData[index].stagingBuffer.allocation, &data);
@@ -822,7 +822,7 @@ void RealTextureLoader::flush_requests()
 			texresource.channels = load.channels;
 
 
-			owner->createBuffer(image_size, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+			owner->createBuffer(image_size, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_UNKNOWN,
 				staging.buffer);
 
 			void* data;
@@ -856,7 +856,7 @@ void RealTextureLoader::flush_requests()
 				texresource.channels = load.channels;
 
 
-				owner->createBuffer(image_size, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+				owner->createBuffer(image_size, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_UNKNOWN,
 					staging.buffer);
 
 				void* data;
@@ -960,7 +960,7 @@ void RealTextureLoader::add_load_from_db(EntityID e ,SceneLoader* loader,DbTextu
 	texresource.channels = texture.channels;
 
 
-	owner->createBuffer(image_size, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+	owner->createBuffer(image_size, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_UNKNOWN,
 		staging.buffer);
 
 	void* data;

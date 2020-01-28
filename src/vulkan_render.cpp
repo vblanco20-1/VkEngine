@@ -64,13 +64,13 @@ void VulkanEngine::create_engine_graph()
 	auto gbuffer_pass = graph.add_pass("GBuffer", [&](vk::CommandBuffer cmd, RenderPass* pass) {
 
 		RenderGBufferPass(cmd);
-		}, PassType::Graphics);
+		}, PassType::Graphics, true);
 
 	//order is very important
 	auto shadow_pass = graph.add_pass("ShadowPass", [&](vk::CommandBuffer cmd, RenderPass* pass) {
 		
 		this->render_shadow_pass(cmd, pass->render_height, pass->render_width);
-		}, PassType::Graphics);
+		}, PassType::Graphics, true);
 
 
 	
@@ -78,7 +78,7 @@ void VulkanEngine::create_engine_graph()
 	auto ssao0_pass = graph.add_pass("SSAO-pre", [&](vk::CommandBuffer cmd, RenderPass* pass) {
 		
 		render_ssao_pass(cmd, pass->render_height, pass->render_width);
-		}, PassType::Graphics);
+		}, PassType::Graphics, false);
 
 	auto blurx_pass = graph.add_pass("SSAO-blurx", [&](vk::CommandBuffer cmd, RenderPass* pass) {
 		
@@ -91,16 +91,20 @@ void VulkanEngine::create_engine_graph()
 		}, PassType::Graphics);
 
 	auto forward_pass = graph.add_pass("MainPass", [&](vk::CommandBuffer cmd, RenderPass* pass) {
-
+		//vkCmdPipelineBarrier(
+		//	cmd,
+		//	VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, // source stage
+		//	VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,    // destination stage
+		//	);
 		RenderMainPass(cmd);
-		}, PassType::Graphics);
+		}, PassType::Graphics,false);
 	
-	auto test_pass = graph.add_pass("test", [&](vk::CommandBuffer cmd, RenderPass* pass) {
-		if (engine->globalFrameNumber > 3)
-		{
-
-		}
-		}, PassType::CPU);
+	//auto test_pass = graph.add_pass("test", [&](vk::CommandBuffer cmd, RenderPass* pass) {
+	//	if (engine->globalFrameNumber > 3)
+	//	{
+	//
+	//	}
+	//	}, PassType::CPU);
 
 	auto display_pass = graph.add_pass("DisplayPass", [](vk::CommandBuffer cmd, RenderPass* pass) {}, PassType::Graphics);
 
@@ -253,11 +257,7 @@ void VulkanEngine::init_vulkan()
 
 	create_render_pass();
 
-	//create_engine_graph(this);
 	create_engine_graph();
-	
-	
-
 
 	DisplayImage = "main_image";
 
@@ -269,7 +269,7 @@ void VulkanEngine::init_vulkan()
 
 	create_command_pool();
 
-	
+	render_graph.build_command_pools();
 
 	create_depth_resources();
 
@@ -678,7 +678,11 @@ void VulkanEngine::create_gfx_pipeline()
 	gfxPipelineBuilder->data.rasterizer = VkPipelineInitializers::build_rasterizer();
 	gfxPipelineBuilder->data.multisampling = VkPipelineInitializers::build_multisampling();
 	gfxPipelineBuilder->data.colorAttachmentStates.push_back(VkPipelineInitializers::build_color_blend_attachment_state());	
-
+	gfxPipelineBuilder->data.dynamicStates = {
+		vk::DynamicState::eViewport,
+		vk::DynamicState::eScissor,
+		vk::DynamicState::eDepthBias
+	};
 	RenderPass* pass = render_graph.get_pass("MainPass");
 
 	graphicsPipeline = gfxPipelineBuilder->build_pipeline(device, pass->built_pass, 0, pipelineEffect);
@@ -792,7 +796,7 @@ void VulkanEngine::create_ssao_pipelines()
 
 	//cam buffer
 	createBuffer(sizeof(glm::vec4) * SSAO_KERNEL_SIZE, vk::BufferUsageFlagBits::eUniformBuffer,
-		vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, ssaoSamples);
+		vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_UNKNOWN, ssaoSamples);
 
 
 	// SSAO
@@ -923,6 +927,12 @@ void VulkanEngine::create_gbuffer_pipeline()
 	gbufferPipelineBuilder->data.colorAttachmentStates.push_back(VkPipelineInitializers::build_color_blend_attachment_state());
 	gbufferPipelineBuilder->data.colorAttachmentStates.push_back(VkPipelineInitializers::build_color_blend_attachment_state());
 
+	gbufferPipelineBuilder->data.dynamicStates = {
+		vk::DynamicState::eViewport,
+		vk::DynamicState::eScissor,
+		vk::DynamicState::eDepthBias
+	};
+
 	gbufferPipeline = gbufferPipelineBuilder->build_pipeline(device, gbuffPass.renderPass, 0, pipelineEffect);
 }
 
@@ -1033,7 +1043,7 @@ void VulkanEngine::create_texture_image()
 	//vk::Buffer stagingBuffer;
 	//vk::DeviceMemory stagingBufferMemory;
 	AllocatedBuffer stagingBuffer;
-	createBuffer(imageSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, stagingBuffer);
+	createBuffer(imageSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_UNKNOWN, stagingBuffer);
 
 		
 	void* data;
@@ -1078,7 +1088,7 @@ uint32_t VulkanEngine::findMemoryType(uint32_t typeFilter,const vk::MemoryProper
 
 }
 
-void VulkanEngine::createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties, AllocatedBuffer& allocatedbuffer)
+void VulkanEngine::createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties, VmaMemoryUsage vmaUsage, AllocatedBuffer& allocatedbuffer)
 {
 	vk::BufferCreateInfo bufferInfo;
 	bufferInfo.size = size;
@@ -1088,7 +1098,7 @@ void VulkanEngine::createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage,
 	VkBufferCreateInfo vkbinfo = bufferInfo;
 
 	VmaAllocationCreateInfo vmaallocInfo = {};
-	vmaallocInfo.usage = VMA_MEMORY_USAGE_UNKNOWN;
+	vmaallocInfo.usage = vmaUsage;
 	vmaallocInfo.requiredFlags = VkMemoryPropertyFlags(properties);
 	VkBuffer vkbuffer;
 	VmaAllocation allocation;
@@ -1145,7 +1155,7 @@ void  VulkanEngine::create_vertex_buffer()
 
 	//vk::DeviceMemory stagingBufferMemory;
 	AllocatedBuffer staging_allocation;
-	createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, staging_allocation);
+	createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_UNKNOWN, staging_allocation);
 
 
 	void* data;
@@ -1156,7 +1166,7 @@ void  VulkanEngine::create_vertex_buffer()
 	vmaUnmapMemory(allocator, staging_allocation.allocation);
 	
 	//AllocatedBuffer vertex_buffer;
-	createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer, vk::MemoryPropertyFlagBits::eDeviceLocal, vertexBuffer);//vertexBuffer, vertexBufferMemory);
+	createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer, vk::MemoryPropertyFlagBits::eDeviceLocal, VMA_MEMORY_USAGE_UNKNOWN, vertexBuffer);//vertexBuffer, vertexBufferMemory);
 	//vertexBuffer = vertex_buffer.buffer;
 	copyBuffer(staging_allocation.buffer, vertexBuffer.buffer, bufferSize);
 
@@ -1168,7 +1178,7 @@ void VulkanEngine::create_index_buffer()
 	vk::DeviceSize bufferSize = sizeof(test_indices[0]) * test_indices.size();
 
 	AllocatedBuffer staging_allocation;
-	createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, staging_allocation);
+	createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_UNKNOWN, staging_allocation);
 
 
 	void* data;
@@ -1178,8 +1188,8 @@ void VulkanEngine::create_index_buffer()
 
 	vmaUnmapMemory(allocator, staging_allocation.allocation);
 
-	//AllocatedBuffer index_buffer;
-	createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer, vk::MemoryPropertyFlagBits::eDeviceLocal, indexBuffer);
+
+	createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer, vk::MemoryPropertyFlagBits::eDeviceLocal, VMA_MEMORY_USAGE_UNKNOWN, indexBuffer);
 
 	copyBuffer(staging_allocation.buffer, indexBuffer.buffer, bufferSize);
 
@@ -1199,19 +1209,17 @@ void VulkanEngine::create_uniform_buffers()
 
 	for (size_t i = 0; i < swapChainImages.size(); i++) {
 		//cam buffer
-		createBuffer(sizeof(UniformBufferObject), vk::BufferUsageFlagBits::eUniformBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, cameraDataBuffers[i]);
+		createBuffer(sizeof(UniformBufferObject), vk::BufferUsageFlagBits::eUniformBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_CPU_TO_GPU, cameraDataBuffers[i]);
 	
 		//shadow buffer
-		createBuffer(sizeof(UniformBufferObject), vk::BufferUsageFlagBits::eUniformBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, shadowDataBuffers[i]);
+		createBuffer(sizeof(UniformBufferObject), vk::BufferUsageFlagBits::eUniformBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_CPU_TO_GPU, shadowDataBuffers[i]);
 
 
 		//scene data buffer
-		createBuffer(sizeof(GPUSceneParams), vk::BufferUsageFlagBits::eUniformBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, sceneParamBuffers[i]);
+		createBuffer(sizeof(GPUSceneParams), vk::BufferUsageFlagBits::eUniformBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_CPU_TO_GPU, sceneParamBuffers[i]);
 
 		//mesh transform buffer
-		createBuffer(sizeof(glm::mat4) * 10000, vk::BufferUsageFlagBits::eStorageBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, object_buffers[i]);
-	
-
+		createBuffer(sizeof(glm::mat4) * 10000, vk::BufferUsageFlagBits::eStorageBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_CPU_TO_GPU, object_buffers[i]);
 	}
 
 }
@@ -1289,50 +1297,60 @@ void VulkanEngine::draw_frame()
 	{
 		ZoneScopedNC("WaitFences", tracy::Color::Red);
 
+		if (globalFrameNumber == 0) {
+
+			vk::SemaphoreSignalInfoKHR signal;
+			signal.semaphore = frameTimelineSemaphore;
+			signal.value = current_frame_timeline_value();
+			device.signalSemaphoreKHR(signal,extensionDispatcher);
+		}
 
 
-		uint64_t waitValue = get_last_frame_timeline_value();
-
+		uint64_t waitValue = last_frame_timeline_value();
 
 		vk::SemaphoreWaitInfoKHR waitInfo;
 		waitInfo.flags = vk::SemaphoreWaitFlagBitsKHR{};
 		waitInfo.semaphoreCount = 1;
 		waitInfo.pSemaphores = &frameTimelineSemaphore;
 		waitInfo.pValues = &waitValue;
-		std::cout << "cpu pre pass: " << globalFrameNumber << " - " << device.getSemaphoreCounterValueKHR(frameTimelineSemaphore, extensionDispatcher) << std::endl;
+		//std::cout << "cpu pre pass: " << globalFrameNumber << " - " << device.getSemaphoreCounterValueKHR(frameTimelineSemaphore, extensionDispatcher) << std::endl;
 
-		device.waitSemaphoresKHR(waitInfo, UINT64_MAX, extensionDispatcher);
-		std::cout << "cpu frame pass: " << globalFrameNumber << " - " << device.getSemaphoreCounterValueKHR(frameTimelineSemaphore, extensionDispatcher) << std::endl;
+		//device.waitSemaphoresKHR(waitInfo, UINT64_MAX, extensionDispatcher);
+		//std::cout << "cpu frame pass: " << globalFrameNumber << " - " << device.getSemaphoreCounterValueKHR(frameTimelineSemaphore, extensionDispatcher) << std::endl;
 
 		//vkWaitSemaphoresKHR(device, (VkSemaphoreWaitInfoKHR*)&waitInfo, UINT64_MAX);
 	}
 	{
 		ZoneScopedNC("Real Fence", tracy::Color::Yellow);
 		
-		device.waitForFences(1, &inFlightFences[currentFrameIndex], VK_TRUE, 0);
-		device.resetFences(1, &inFlightFences[currentFrameIndex]);
+		//if (globalFrameNumber > 0) {
+
+			device.waitForFences(1, &inFlightFences[currentFrameIndex], VK_TRUE, 30000000);
+			device.resetFences(1, &inFlightFences[currentFrameIndex]);
+			//}
+			//else {
+			device.resetFences(1, &inFlightFences[currentFrameIndex]);
+		//}
 	}
-	descriptorMegapool.set_frame(currentFrameIndex);
+	{
+		ZoneScopedNC("Reset descriptor pool", tracy::Color::Orange);
+		descriptorMegapool.set_frame(currentFrameIndex);
+	}
+	vk::ResultValue<uint32_t> imageResult = vk::ResultValue(vk::Result::eSuccess,0u);
+	{
+		ZoneScopedNC("Aquire next image", tracy::Color::Orange);
+		imageResult = device.acquireNextImageKHR(swapChain, std::numeric_limits<uint64_t>::max(), imageAvailableSemaphores[currentFrameIndex], nullptr);
 
-	vk::ResultValue<uint32_t> imageResult = device.acquireNextImageKHR(swapChain, std::numeric_limits<uint64_t>::max(), imageAvailableSemaphores[currentFrameIndex], nullptr);
-
-	if (imageResult.result == vk::Result::eErrorOutOfDateKHR) {
-		recreate_swapchain();
-		return;
+		if (imageResult.result == vk::Result::eErrorOutOfDateKHR) {
+			recreate_swapchain();
+			return;
+		}
 	}
 
 
 	uint32_t imageIndex = imageResult.value;
 	//std::cout << "swapchain image is " << imageIndex << "engine index is " << currentFrameIndex << std::endl;
-	vk::SubmitInfo submitInfo;
 
-
-	vk::Semaphore waitSemaphores[] = { imageAvailableSemaphores[currentFrameIndex] };
-	vk::PipelineStageFlags waitStages[] = { vk::PipelineStageFlagBits::eColorAttachmentOutput };
-
-	submitInfo.waitSemaphoreCount = 1;
-	submitInfo.pWaitSemaphores = waitSemaphores;
-	submitInfo.pWaitDstStageMask = waitStages;
 
 
 
@@ -1344,14 +1362,9 @@ void VulkanEngine::draw_frame()
 
 	update_uniform_buffer(currentFrameIndex/*imageIndex*/);
 
-	vk::CommandBufferAllocateInfo allocInfo;
-	allocInfo.commandPool = commandPool;
-	allocInfo.level = vk::CommandBufferLevel::ePrimary;
-	allocInfo.commandBufferCount = 1;
-
 	eng_stats.drawcalls = 0;
 
-	vk::CommandBuffer cmd = commandBuffers.get(globalFrameNumber);//commandBuffers[currentFrameIndex];
+	vk::CommandBuffer cmd = commandBuffers.get(globalFrameNumber);
 
 	begin_frame_command_buffer(cmd);
 	tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(cmd);
@@ -1411,27 +1424,39 @@ void VulkanEngine::draw_frame()
 	}
 	end_frame_command_buffer(cmd);
 
-	vk::Semaphore signalSemaphores[] = { frameTimelineSemaphore, renderFinishedSemaphores[currentFrameIndex]  };
+	vk::Semaphore signalSemaphores[] = { renderFinishedSemaphores[currentFrameIndex],  frameTimelineSemaphore  };
 	{
-		const uint64_t waitValue3 = 0; 
-		const uint64_t signalValues[] = {
-			globalFrameNumber + 1000,globalFrameNumber + 1000
+		const uint64_t waitValue3[] = {
+			current_frame_timeline_value(98),current_frame_timeline_value(98)
 		};
-		//const uint64_t globalFrameNumber = 8;
+		const uint64_t signalValues[] = {
+			current_frame_timeline_value(100),current_frame_timeline_value(100)
+		};
 
 		VkTimelineSemaphoreSubmitInfoKHR timelineInfo3;
 		timelineInfo3.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO_KHR;
 		timelineInfo3.pNext = NULL;
-		timelineInfo3.waitSemaphoreValueCount = 1;
-		timelineInfo3.pWaitSemaphoreValues = &waitValue3;
+		timelineInfo3.waitSemaphoreValueCount = 2;
+		timelineInfo3.pWaitSemaphoreValues = waitValue3;
 		timelineInfo3.signalSemaphoreValueCount = 2;
 		timelineInfo3.pSignalSemaphoreValues = signalValues;
+
+		vk::SubmitInfo submitInfo;
+
+
+		vk::Semaphore waitSemaphores[] = { imageAvailableSemaphores[currentFrameIndex],frameTimelineSemaphore };
+		vk::PipelineStageFlags waitStages[] = { vk::PipelineStageFlagBits::eColorAttachmentOutput,vk::PipelineStageFlagBits::eColorAttachmentOutput };
+
+		submitInfo.waitSemaphoreCount = 2;
+		submitInfo.pWaitSemaphores = waitSemaphores;
+		submitInfo.pWaitDstStageMask = waitStages;
 
 		submitInfo.commandBufferCount = 1;
 		submitInfo.pCommandBuffers = &cmd;
 		submitInfo.signalSemaphoreCount = 2;
-		//submitInfo.pSignalSemaphores = signalSemaphores;
 		submitInfo.pSignalSemaphores = signalSemaphores;
+		//submitInfo.pSignalSemaphores = &renderFinishedSemaphores[currentFrameIndex];
+		//submitInfo.pNext = nullptr;
 		submitInfo.pNext = &timelineInfo3;
 		{
 			ZoneScopedNC("Submit", tracy::Color::Red);
@@ -1461,7 +1486,23 @@ void VulkanEngine::draw_frame()
 	}
 }
 
-void set_pipeline_state_depth(int height, int width, const vk::CommandBuffer& cmd)
+uint64_t VulkanEngine::last_frame_timeline_value()
+{
+	uint64_t waitValue = (globalFrameNumber - MAX_FRAMES_IN_FLIGHT) * 100;
+	if (globalFrameNumber < MAX_FRAMES_IN_FLIGHT) {
+		return 0;
+	}
+	else {
+		return waitValue + 1000;
+	}
+}
+
+uint64_t VulkanEngine::current_frame_timeline_value(int pass_id /*= 0*/)
+{
+	return (globalFrameNumber * 100) + 1000 + pass_id;
+}
+
+void set_pipeline_state_depth(int width,int height, const vk::CommandBuffer& cmd, bool bDoBias = true)
 {
 	vk::Viewport viewport;
 	viewport.height = height;
@@ -1472,17 +1513,17 @@ void set_pipeline_state_depth(int height, int width, const vk::CommandBuffer& cm
 	cmd.setViewport(0, viewport);
 
 	vk::Rect2D scissor;
-	scissor.extent.width = height;
-	scissor.extent.height = width;
+	scissor.extent.width = width;
+	scissor.extent.height = height;
 
 	cmd.setScissor(0, scissor);
 
 	// Set depth bias (aka "Polygon offset")
 				// Required to avoid shadow mapping artefacts
 
-	float depthBiasConstant = 1.25f;
+	float depthBiasConstant = bDoBias? 1.25f : 0.f;
 	// Slope depth bias factor, applied depending on polygon's slope
-	float depthBiasSlope = 1.75f;
+	float depthBiasSlope = bDoBias ? 1.75f : 0.f;
 
 	cmd.setDepthBias(depthBiasConstant, 0, depthBiasSlope);
 }
@@ -1532,7 +1573,7 @@ void VulkanEngine::render_shadow_pass(const vk::CommandBuffer& cmd, int height, 
 		if (bShouldBindPipeline) {
 			cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, shadowPipeline);
 
-			set_pipeline_state_depth(height, width, cmd);
+			set_pipeline_state_depth(width,height,  cmd);
 
 			piplayout = (vk::PipelineLayout)effect->build_pipeline_layout(device);
 			last_pipeline = shadowPipeline;
@@ -1751,6 +1792,7 @@ void VulkanEngine::RenderMainPass(const vk::CommandBuffer& cmd)
 
 		if (bShouldBindPipeline) {
 			cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, unit.pipeline);
+			set_pipeline_state_depth(swapChainExtent.width, swapChainExtent.height, cmd,false);
 			piplayout = (vk::PipelineLayout)unit.effect->build_pipeline_layout(device);
 			last_pipeline = unit.pipeline;
 
@@ -1758,6 +1800,7 @@ void VulkanEngine::RenderMainPass(const vk::CommandBuffer& cmd)
 
 			vk::DescriptorBufferInfo camBufferInfo;
 			if (config_parameters.ShadowView)
+			//if(globalFrameNumber % 2)
 			{
 				camBufferInfo.buffer = shadowDataBuffers[currentFrameIndex].buffer;
 			}
@@ -1897,6 +1940,7 @@ void VulkanEngine::RenderGBufferPass(const vk::CommandBuffer& cmd)
 
 		if (bShouldBindPipeline) {
 			cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, unit.pipeline);
+			set_pipeline_state_depth(swapChainExtent.width, swapChainExtent.height, cmd, false);
 			piplayout = (vk::PipelineLayout)unit.effect->build_pipeline_layout(device);
 			last_pipeline = unit.pipeline;
 
@@ -1904,6 +1948,7 @@ void VulkanEngine::RenderGBufferPass(const vk::CommandBuffer& cmd)
 
 			vk::DescriptorBufferInfo camBufferInfo;
 			if (config_parameters.ShadowView)
+			//if (globalFrameNumber % 2)
 			{
 				camBufferInfo.buffer = shadowDataBuffers[currentFrameIndex].buffer;
 			}
@@ -2067,14 +2112,14 @@ void VulkanEngine::update_uniform_buffer(uint32_t currentImage)
 			copyidx++;
 		});
 
-		if (copyidx > 0) {
-			ZoneScopedN("Uniform copy");
+	if (copyidx > 0) {
+		ZoneScopedN("Uniform copy");
 
-			void* matdata = mapBuffer(object_buffers[currentImage]);
-			memcpy(matdata, object_matrices.data(), object_matrices.size() * sizeof(glm::mat4));
+		void* matdata = mapBuffer(object_buffers[currentImage]);
+		memcpy(matdata, object_matrices.data(), object_matrices.size() * sizeof(glm::mat4));
 
-			unmapBuffer(object_buffers[currentImage]);
-		}
+		unmapBuffer(object_buffers[currentImage]);
+	}
 }
 
 
@@ -2194,7 +2239,7 @@ void VulkanEngine::create_semaphores()
 
 	vk::SemaphoreCreateInfo timeline;
 	timeline.setPNext(&timelineSemaphoreInfo);
-	
+
 	frameTimelineSemaphore = device.createSemaphore(timeline);
 
 	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
@@ -2202,6 +2247,8 @@ void VulkanEngine::create_semaphores()
 		renderFinishedSemaphores[i] = device.createSemaphore(semaphoreInfo);
 		inFlightFences[i] = device.createFence(fenceInfo);
 	}
+
+	//device.resetFences(inFlightFences.size(),inFlightFences.data());
 }
 
 void VulkanEngine::create_shadow_framebuffer()
@@ -2276,10 +2323,10 @@ EntityID VulkanEngine::load_mesh(const char* model_path, std::string modelName)
 	vk::DeviceSize indexBufferSize = sizeof(newMesh.indices[0]) * newMesh.indices.size();
 	
 	AllocatedBuffer vertex_staging_allocation;
-	createBuffer(vertexBufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, vertex_staging_allocation);
+	createBuffer(vertexBufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_UNKNOWN, vertex_staging_allocation);
 
 	AllocatedBuffer index_staging_allocation;
-	createBuffer(indexBufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, index_staging_allocation);
+	createBuffer(indexBufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_UNKNOWN, index_staging_allocation);
 
 	//copy vertex data
 	void* data;
@@ -2298,7 +2345,7 @@ EntityID VulkanEngine::load_mesh(const char* model_path, std::string modelName)
 
 
 	
-	createBuffer(vertexBufferSize, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer, vk::MemoryPropertyFlagBits::eDeviceLocal, newMesh.vertexBuffer);//vertexBuffer, vertexBufferMemory);
+	createBuffer(vertexBufferSize, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer, vk::MemoryPropertyFlagBits::eDeviceLocal, VMA_MEMORY_USAGE_UNKNOWN, newMesh.vertexBuffer);//vertexBuffer, vertexBufferMemory);
 	
 	copyBuffer(vertex_staging_allocation.buffer, newMesh.vertexBuffer.buffer, vertexBufferSize);
 
@@ -2307,7 +2354,7 @@ EntityID VulkanEngine::load_mesh(const char* model_path, std::string modelName)
 	
 
 	//AllocatedBuffer index_buffer;
-	createBuffer(indexBufferSize, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer, vk::MemoryPropertyFlagBits::eDeviceLocal, newMesh.indexBuffer);
+	createBuffer(indexBufferSize, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer, vk::MemoryPropertyFlagBits::eDeviceLocal, VMA_MEMORY_USAGE_UNKNOWN, newMesh.indexBuffer);
 
 	copyBuffer(index_staging_allocation.buffer, newMesh.indexBuffer.buffer, indexBufferSize);
 
@@ -2381,10 +2428,10 @@ EntityID VulkanEngine::load_assimp_mesh(aiMesh* mesh)
 	vk::DeviceSize indexBufferSize = sizeof(newMesh.indices[0]) * newMesh.indices.size();
 
 	AllocatedBuffer vertex_staging_allocation;
-	createBuffer(vertexBufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, vertex_staging_allocation);
+	createBuffer(vertexBufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_UNKNOWN, vertex_staging_allocation);
 
 	AllocatedBuffer index_staging_allocation;
-	createBuffer(indexBufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, index_staging_allocation);
+	createBuffer(indexBufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_UNKNOWN, index_staging_allocation);
 
 	//copy vertex data
 	void* data;
@@ -2403,7 +2450,7 @@ EntityID VulkanEngine::load_assimp_mesh(aiMesh* mesh)
 
 
 
-	createBuffer(vertexBufferSize, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer, vk::MemoryPropertyFlagBits::eDeviceLocal, newMesh.vertexBuffer);//vertexBuffer, vertexBufferMemory);
+	createBuffer(vertexBufferSize, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer, vk::MemoryPropertyFlagBits::eDeviceLocal, VMA_MEMORY_USAGE_UNKNOWN, newMesh.vertexBuffer);//vertexBuffer, vertexBufferMemory);
 
 	copyBuffer(vertex_staging_allocation.buffer, newMesh.vertexBuffer.buffer, vertexBufferSize);
 
@@ -2412,7 +2459,7 @@ EntityID VulkanEngine::load_assimp_mesh(aiMesh* mesh)
 
 
 	//AllocatedBuffer index_buffer;
-	createBuffer(indexBufferSize, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer, vk::MemoryPropertyFlagBits::eDeviceLocal, newMesh.indexBuffer);
+	createBuffer(indexBufferSize, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer, vk::MemoryPropertyFlagBits::eDeviceLocal, VMA_MEMORY_USAGE_UNKNOWN, newMesh.indexBuffer);
 
 	copyBuffer(index_staging_allocation.buffer, newMesh.indexBuffer.buffer, indexBufferSize);
 

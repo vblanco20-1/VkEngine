@@ -14,7 +14,7 @@
 #endif
 #define MAKE_ASSET_PATH(path) ASSET_PATH ## path
 
-constexpr int MAX_FRAMES_IN_FLIGHT =3;
+constexpr int MAX_FRAMES_IN_FLIGHT =2;
 constexpr int MAX_UNIFORM_BUFFER = 5000;
 constexpr int SHADOWMAP_DIM = 2048;
 
@@ -239,17 +239,8 @@ public:
 
 	void draw_frame();
 
-	uint64_t get_last_frame_timeline_value()
-	{
-		uint64_t waitValue = globalFrameNumber - 2;
-		if (globalFrameNumber < 2) {
-			return 0;
-		}
-		else {
-			return waitValue +  1000;
-		}
-		
-	}
+	uint64_t last_frame_timeline_value();
+	uint64_t current_frame_timeline_value(int pass_id = 0);
 
 	void render_shadow_pass(const vk::CommandBuffer& cmd, int height, int width);
 	void render_ssao_pass(const vk::CommandBuffer& cmd, int height, int width);
@@ -264,7 +255,7 @@ public:
 	void pick_physical_device();
 	uint32_t findMemoryType(uint32_t typeFilter, const vk::MemoryPropertyFlags& properties);
 
-	void createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties, AllocatedBuffer& allocatedbuffer);
+	void createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties, VmaMemoryUsage vmaUsage, AllocatedBuffer& allocatedbuffer);
 
 	void copyBuffer(vk::Buffer srcBuffer, vk::Buffer dstBuffer, vk::DeviceSize size);
 

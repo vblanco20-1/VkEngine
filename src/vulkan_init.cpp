@@ -132,7 +132,6 @@ void findQueueFamilies(vk::PhysicalDevice& physicalDevice, vk::SurfaceKHR& surfa
 				presentFamilyIndex = i;
 				break;
 			}
-
 		}
 		i++;
 	}
@@ -343,8 +342,7 @@ void VulkanEngine::create_command_pool()
 	transferPoolInfo.queueFamilyIndex = graphicsFamilyIndex;
 	transferPoolInfo.flags = vk::CommandPoolCreateFlagBits::eTransient;
 
-	transferCommandPool = device.createCommandPool(transferPoolInfo);
-	
+	transferCommandPool = device.createCommandPool(transferPoolInfo);	
 }
 
 void VulkanEngine::init_vulkan_debug()

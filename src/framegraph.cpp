@@ -175,6 +175,7 @@ void build_render_pass(RenderPass* pass, VulkanEngine* eng)
 
 bool FrameGraph::build(class VulkanEngine* engine)
 {
+	owner = engine;
 	//grab all render targets
 	for (auto pass : passes) {
 		for (const auto& coloratch : pass->color_attachments) {
@@ -409,7 +410,7 @@ bool FrameGraph::build(class VulkanEngine* engine)
 	return true;
 }
 
-RenderPass* FrameGraph::add_pass(std::string pass_name, std::function<void(vk::CommandBuffer, RenderPass*)> execution, PassType type)
+RenderPass* FrameGraph::add_pass(std::string pass_name, std::function<void(vk::CommandBuffer, RenderPass*)> execution, PassType type, bool bPerformSubmit /*= false*/)
 {
 	pass_definitions[pass_name] = RenderPass();
 
@@ -418,6 +419,7 @@ RenderPass* FrameGraph::add_pass(std::string pass_name, std::function<void(vk::C
 	ptr->owner = this;
 	ptr->draw_callback = execution;
 	ptr->type = type;
+	ptr->perform_submit = bPerformSubmit;
 	passes.push_back(ptr);
 
 	return ptr;
@@ -440,8 +442,37 @@ FrameGraph::GraphAttachment* FrameGraph::get_attachment(std::string name)
 
 
 
-void FrameGraph::execute(vk::CommandBuffer cmd)
+vk::CommandBuffer FrameGraph::create_graphics_buffer(int threadID)
 {
+	int frameid = owner->globalFrameNumber;
+
+	auto pool = commandPools.get(frameid)[threadID];
+
+	vk::CommandBufferAllocateInfo allocInfo;
+	allocInfo.commandPool = pool;
+	allocInfo.level = vk::CommandBufferLevel::ePrimary;
+	allocInfo.commandBufferCount = 1;
+
+	return owner->device.allocateCommandBuffers(allocInfo)[0];
+}
+
+void FrameGraph::execute(vk::CommandBuffer _cmd)
+{
+	int frameid = owner->globalFrameNumber;
+
+	auto pool = commandPools.get(frameid)[0];
+	owner->device.resetCommandPool(pool, vk::CommandPoolResetFlagBits{});
+
+	vk::CommandBufferBeginInfo beginInfo;
+	beginInfo.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
+	beginInfo.pInheritanceInfo = nullptr; // Optional
+
+	vk::CommandBuffer cmd = create_graphics_buffer(0);
+
+	cmd.begin(beginInfo);
+	
+
+	int current_submission_id = 0;
 	for (auto pass : passes) {
 
 		if (pass->draw_callback)
@@ -463,13 +494,106 @@ void FrameGraph::execute(vk::CommandBuffer cmd)
 				pass->draw_callback(cmd, pass);
 
 				cmd.endRenderPass();
+
+				if (pass->perform_submit) {
+				
+					cmd.end();
+				
+					submit_commands(cmd, current_submission_id, current_submission_id + 1);
+					current_submission_id++;
+				
+					cmd = create_graphics_buffer(0);
+				
+					cmd.begin(beginInfo);
+				}
 			}
 			else {
 				pass->draw_callback(cmd, pass);
-			}
-			
+			}			
 		}
 	}
+	
+	cmd.end();
+	submit_commands(cmd, current_submission_id, 98);
+}
+
+void FrameGraph::submit_commands(vk::CommandBuffer cmd, int wait_pass_index, int signal_pass_index)
+{
+	vk::Semaphore signalSemaphores[] = { owner->frameTimelineSemaphore };
+	{
+		uint64_t waitValue3[3];
+
+		waitValue3[0] = { 1 };			
+		waitValue3[1] = wait_pass_index == 0 ? 0 :  owner->current_frame_timeline_value(wait_pass_index);
+		
+		
+		const uint64_t signalValues[] = {
+			owner->current_frame_timeline_value(signal_pass_index),owner->current_frame_timeline_value(signal_pass_index)
+		};
+
+		VkTimelineSemaphoreSubmitInfoKHR timelineInfo3;
+		timelineInfo3.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO_KHR;
+		timelineInfo3.pNext = NULL;
+		//timelineInfo3.waitSemaphoreValueCount = 1;
+		//if (wait_pass_index != 0) {
+			timelineInfo3.waitSemaphoreValueCount = 2;
+		//}
+		timelineInfo3.pWaitSemaphoreValues = waitValue3;
+		timelineInfo3.signalSemaphoreValueCount = 1;
+		timelineInfo3.pSignalSemaphoreValues = signalValues;
+	
+		vk::SubmitInfo submitInfo;
+
+		vk::Semaphore waitSemaphores[] = { owner->imageAvailableSemaphores[owner->currentFrameIndex],owner->frameTimelineSemaphore };
+		//if (wait_pass_index != 0) {
+		//	waitSemaphores[0] = owner->frameTimelineSemaphore;
+		//}
+		vk::PipelineStageFlags waitStages[] = { vk::PipelineStageFlagBits::eColorAttachmentOutput,vk::PipelineStageFlagBits::eColorAttachmentOutput };
+
+		//submitInfo.waitSemaphoreCount = 1;
+		//if (wait_pass_index != 0) {
+			submitInfo.waitSemaphoreCount = 2;
+		//}
+		
+		submitInfo.pWaitSemaphores = waitSemaphores;
+		submitInfo.pWaitDstStageMask = waitStages;
+
+		submitInfo.commandBufferCount = 1;
+		submitInfo.pCommandBuffers = &cmd;
+		submitInfo.signalSemaphoreCount = 1;
+		submitInfo.pSignalSemaphores = signalSemaphores;
+		submitInfo.pNext = &timelineInfo3;
+		{
+			ZoneScopedNC("Submit", tracy::Color::Red);
+			owner->graphicsQueue.submit(1, &submitInfo, vk::Fence{},/*owner->inFlightFences[owner->currentFrameIndex],*/ owner->extensionDispatcher); //
+
+		}
+	}
+}
+
+void FrameGraph::build_command_pools()
+{
+	//--- QUEUE FAMILY
+	std::vector<vk::QueueFamilyProperties> queueFamilyProperties = owner->physicalDevice.getQueueFamilyProperties();
+	int graphicsFamilyIndex = 0;
+
+	int i = 0;
+	for (const auto& queueFamily : queueFamilyProperties) {
+		if (queueFamily.queueCount > 0 && queueFamily.queueFlags & vk::QueueFlagBits::eGraphics) {
+			graphicsFamilyIndex = i;
+			break;
+		}
+		i++;
+	}	
+
+	vk::CommandPoolCreateInfo poolInfo;
+	poolInfo.queueFamilyIndex = graphicsFamilyIndex;
+	poolInfo.flags = vk::CommandPoolCreateFlagBits::eTransient;
+	for (int i = 0; i < commandPools.num; i++) {
+		for(auto& pool : commandPools.items[i]){
+			pool = owner->device.createCommandPool(poolInfo);
+		}
+	}	
 }
 
 void RenderAttachmentInfo::set_clear_color(std::array<float, 4> col)
