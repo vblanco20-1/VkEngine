@@ -109,6 +109,10 @@ public:
 	vk::CommandBuffer create_graphics_buffer(int threadID);
 	void execute(vk::CommandBuffer cmd);
 
+	void transform_images_to_write(RenderPass* pass, std::vector<vk::ImageMemoryBarrier>& image_barriers, vk::CommandBuffer& cmd);
+
+	void transform_images_to_read(RenderPass* pass, std::vector<vk::ImageMemoryBarrier>& image_barriers, vk::CommandBuffer& cmd);
+
 	void submit_commands(vk::CommandBuffer cmd, int wait_pass_index, int signal_pass_index);
 
 	void build_command_pools();
@@ -118,6 +122,8 @@ public:
 	std::unordered_map<std::string, GraphAttachment> graph_attachments;
 
 	FrameResource < std::array<vk::CommandPool,4> , 3 > commandPools;
+	FrameResource< std::array<std::vector<vk::CommandBuffer>, 4>, 3>  usableCommands;
+	FrameResource< std::array<std::vector<vk::CommandBuffer>, 4>, 3>  pendingCommands;
 
 	VkExtent2D swapchainSize;
 	std::vector<const char*> attachmentNames;

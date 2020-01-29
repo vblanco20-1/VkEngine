@@ -166,3 +166,20 @@ vk::Pipeline GraphicsPipelineBuilder::build_pipeline(vk::Device device, vk::Rend
 	vk::Pipeline pipeline = device.createGraphicsPipelines(nullptr, pipelineInfo)[0];
 	return pipeline;
 }
+
+
+vk::Pipeline ComputePipelineBuilder::build_pipeline(vk::Device device, ShaderEffect* shaderEffect)
+{
+	//build shader data from effect
+	std::vector<VkPipelineShaderStageCreateInfo> shaderStages = shaderEffect->get_stage_infos();
+
+	vk::PipelineLayout newLayout = vk::PipelineLayout(shaderEffect->build_pipeline_layout(device));
+
+	vk::ComputePipelineCreateInfo pipelineInfo;
+	pipelineInfo.flags = vk::PipelineCreateFlags{};
+	pipelineInfo.layout = newLayout;
+	pipelineInfo.stage = shaderStages[0];
+
+	vk::Pipeline pipeline = device.createComputePipelines(nullptr, pipelineInfo)[0];
+	return pipeline;	
+}

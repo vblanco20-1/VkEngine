@@ -513,6 +513,8 @@ VkShaderStageFlagBits ShaderTypeToVulkanFlag(ShaderType type) {
         return VK_SHADER_STAGE_VERTEX_BIT;
     case ShaderType::Fragment:
         return VK_SHADER_STAGE_FRAGMENT_BIT;
+    case ShaderType::Compute:
+        return VK_SHADER_STAGE_COMPUTE_BIT;
     default:
         return VK_SHADER_STAGE_ALL;
     }
@@ -645,6 +647,29 @@ bool ShaderEffect::build_effect(VkDevice device)
             privData->reflectionData.DataBindings[comp.get_name(resource.id)] = newinfo;
         }
 
+        for (const Resource& resource : res.storage_images) {
+			const SPIRType& type = comp.get_type(resource.base_type_id);
+			//size_t size = comp.get_declared_struct_size(type);
+			unsigned set = comp.get_decoration(resource.id, spv::DecorationDescriptorSet);
+			unsigned binding = comp.get_decoration(resource.id, spv::DecorationBinding);
+
+
+			VkDescriptorSetLayoutBinding vkbind = createLayoutBinding(binding, ShaderTypeToVulkanFlag(ShaderMod.type));
+
+			{
+				vkbind.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+			}
+
+			add_binding(&privData->bindingSets[set], vkbind);
+
+			BindInfo newinfo;
+			newinfo.set = set;
+			newinfo.binding = binding;
+			newinfo.range = 0;//size;
+			newinfo.type = vkbind.descriptorType;
+
+			privData->reflectionData.DataBindings[comp.get_name(resource.id)] = newinfo;
+        }
         for (const Resource& resource : res.sampled_images)
         {
             const SPIRType& type = comp.get_type(resource.base_type_id);

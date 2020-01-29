@@ -75,10 +75,15 @@ void VulkanEngine::create_engine_graph()
 
 	
 
-	auto ssao0_pass = graph.add_pass("SSAO-pre", [&](vk::CommandBuffer cmd, RenderPass* pass) {
+	//auto ssao0_pass = graph.add_pass("SSAO-pre", [&](vk::CommandBuffer cmd, RenderPass* pass) {
+	//	
+	//	//render_ssao_pass(cmd, pass->render_height, pass->render_width);
+	//}, PassType::Graphics, false);
+
+	auto ssao1_pass = graph.add_pass("SSAO-pre-comp", [&](vk::CommandBuffer cmd, RenderPass* pass) {
 		
-		render_ssao_pass(cmd, pass->render_height, pass->render_width);
-		}, PassType::Graphics, false);
+		render_ssao_compute(cmd);
+		}, PassType::Compute, false);
 
 	auto blurx_pass = graph.add_pass("SSAO-blurx", [&](vk::CommandBuffer cmd, RenderPass* pass) {
 		
@@ -152,9 +157,13 @@ void VulkanEngine::create_engine_graph()
 	gbuffer_pass->add_color_attachment("gbuf_normal", gbuffer_normal);
 	gbuffer_pass->set_depth_attachment("depth_prepass", gbuffer_depth);
 
-	ssao0_pass->add_image_dependency("gbuf_pos");
-	ssao0_pass->add_image_dependency("gbuf_normal");
-	ssao0_pass->add_color_attachment("ssao_pre", ssao_pre);
+	//ssao0_pass->add_image_dependency("gbuf_pos");
+	//ssao0_pass->add_image_dependency("gbuf_normal");
+	//ssao0_pass->add_color_attachment("ssao_pre", ssao_pre);
+
+	ssao1_pass->add_image_dependency("gbuf_pos");
+	ssao1_pass->add_image_dependency("gbuf_normal");
+	ssao1_pass->add_color_attachment("ssao_pre", ssao_pre);
 
 	blurx_pass->add_image_dependency("ssao_pre");
 	blurx_pass->add_color_attachment("ssao_mid", ssao_midblur);
@@ -760,35 +769,64 @@ void VulkanEngine::create_ssao_pipelines()
 		pipelineEffect = getResource<ShaderEffectHandle>("ssao").handle;
 	}
 
+	ShaderEffect* pipelineEffect_Comp;
+	if (!doesResourceExist<ShaderEffectHandle>("ssao-comp")) {
+
+		ShaderEffectHandle newShader;
+		newShader.handle = new ShaderEffect();
+
+		newShader.handle->add_shader_from_file(MAKE_ASSET_PATH("shaders/ssao.comp"));
+
+		newShader.handle->build_effect(device);
+
+		pipelineEffect_Comp = newShader.handle;
+
+		createResource<ShaderEffectHandle>("ssao-comp", newShader);
+	}
+	else
+	{
+		pipelineEffect_Comp = getResource<ShaderEffectHandle>("ssao-comp").handle;
+	}
+
 	FrameGraph::GraphAttachment* ssaoAttachment = render_graph.get_attachment("ssao_pre");// &graph.attachments["ssao_pre"];
 
 	int sizex = ssaoAttachment->real_width;
 	int sizey = ssaoAttachment->real_height;
 
-	ssaoPipelineBuilder = new GraphicsPipelineBuilder();
-	ssaoPipelineBuilder->data.vertexInputInfo = vk::PipelineVertexInputStateCreateInfo{};// = Vertex::getPipelineCreateInfo();
-	ssaoPipelineBuilder->data.inputAssembly = VkPipelineInitializers::build_input_assembly(vk::PrimitiveTopology::eTriangleList);
-	ssaoPipelineBuilder->data.viewport = VkPipelineInitializers::build_viewport(sizex, sizey);
-	ssaoPipelineBuilder->data.scissor = VkPipelineInitializers::build_rect2d(0, 0, sizex, sizey);
-	ssaoPipelineBuilder->data.multisampling = VkPipelineInitializers::build_multisampling();
-	ssaoPipelineBuilder->data.depthStencil = VkPipelineInitializers::build_depth_stencil(true, false, vk::CompareOp::eAlways);
-	ssaoPipelineBuilder->data.rasterizer = VkPipelineInitializers::build_rasterizer();
-	ssaoPipelineBuilder->data.rasterizer.cullMode = vk::CullModeFlagBits::eNone;
-	//1 color attachments
-	ssaoPipelineBuilder->data.colorAttachmentStates.push_back(VkPipelineInitializers::build_color_blend_attachment_state());
+	//ssaoPipelineBuilder = new GraphicsPipelineBuilder();
+	//ssaoPipelineBuilder->data.vertexInputInfo = vk::PipelineVertexInputStateCreateInfo{};// = Vertex::getPipelineCreateInfo();
+	//ssaoPipelineBuilder->data.inputAssembly = VkPipelineInitializers::build_input_assembly(vk::PrimitiveTopology::eTriangleList);
+	//ssaoPipelineBuilder->data.viewport = VkPipelineInitializers::build_viewport(sizex, sizey);
+	//ssaoPipelineBuilder->data.scissor = VkPipelineInitializers::build_rect2d(0, 0, sizex, sizey);
+	//ssaoPipelineBuilder->data.multisampling = VkPipelineInitializers::build_multisampling();
+	//ssaoPipelineBuilder->data.depthStencil = VkPipelineInitializers::build_depth_stencil(true, false, vk::CompareOp::eAlways);
+	//ssaoPipelineBuilder->data.rasterizer = VkPipelineInitializers::build_rasterizer();
+	//ssaoPipelineBuilder->data.rasterizer.cullMode = vk::CullModeFlagBits::eNone;
+	////1 color attachments
+	//ssaoPipelineBuilder->data.colorAttachmentStates.push_back(VkPipelineInitializers::build_color_blend_attachment_state());
+
+
+	auto ssaoCompBuilder = new ComputePipelineBuilder();
+	vk::Pipeline ssaoPipeline_comp = ssaoCompBuilder->build_pipeline(device,pipelineEffect_Comp);
+
+
+	//RenderPass* pass = render_graph.get_pass("SSAO-pre");
+	//vk::Pipeline ssaoPipeline = ssaoPipelineBuilder->build_pipeline(device, pass->built_pass, 0, pipelineEffect);
 
 	
-	RenderPass* pass = render_graph.get_pass("SSAO-pre");
-	vk::Pipeline ssaoPipeline = ssaoPipelineBuilder->build_pipeline(device, pass->built_pass, 0, pipelineEffect);
+	//PipelineResource pipeline;
+	//pipeline.pipeline = ssaoPipeline;
+	//pipeline.effect = pipelineEffect;
+	//pipeline.pipelineBuilder = ssaoPipelineBuilder;
+	//pipeline.renderPassName = "SSAO-pre";
+	//auto pipeline_id = createResource("pipeline_ssao", pipeline);
 
-	
-	PipelineResource pipeline;
-	pipeline.pipeline = ssaoPipeline;
-	pipeline.effect = pipelineEffect;
-	pipeline.pipelineBuilder = ssaoPipelineBuilder;
-	pipeline.renderPassName = "SSAO-pre";
-	auto pipeline_id = createResource("pipeline_ssao", pipeline);
-
+	PipelineResource pipeline_Comp;
+	pipeline_Comp.pipeline = ssaoPipeline_comp;
+	pipeline_Comp.effect = pipelineEffect_Comp;
+	pipeline_Comp.pipelineBuilder = (GraphicsPipelineBuilder*)ssaoCompBuilder;
+	pipeline_Comp.renderPassName = "SSAO-pre";
+	auto pipeline_id_comp = createResource("pipeline_ssao_comp", pipeline_Comp);
 	//ssaoPipeline = ssaoPipelineBuilder->build_pipeline(device, renderPass, 0, pipelineEffect);
 
 	
@@ -874,12 +912,12 @@ void VulkanEngine::create_ssao_pipelines()
 	vk::Pipeline blurx = blurPipelineBuilder->build_pipeline(device, render_graph.get_pass("SSAO-blurx")->built_pass, 0, pipelineEffect);
 	vk::Pipeline blury = blurPipelineBuilder->build_pipeline(device, render_graph.get_pass("SSAO-blury")->built_pass, 0, pipelineEffect);
 
-	//PipelineResource pipeline;
+	PipelineResource pipeline;
 	pipeline.pipeline = blurx;
 	pipeline.effect = pipelineEffect;
 	pipeline.pipelineBuilder = blurPipelineBuilder;
 	pipeline.renderPassName = "SSAO-blurx";
-	pipeline_id = createResource("pipeline_ssao_blurx", pipeline);
+	auto pipeline_id = createResource("pipeline_ssao_blurx", pipeline);
 
 	
 	pipeline.pipeline = blury;
@@ -1302,7 +1340,7 @@ void VulkanEngine::draw_frame()
 			vk::SemaphoreSignalInfoKHR signal;
 			signal.semaphore = frameTimelineSemaphore;
 			signal.value = current_frame_timeline_value();
-			device.signalSemaphoreKHR(signal,extensionDispatcher);
+			device.signalSemaphoreKHR(signal, extensionDispatcher);
 		}
 
 
@@ -1322,21 +1360,21 @@ void VulkanEngine::draw_frame()
 	}
 	{
 		ZoneScopedNC("Real Fence", tracy::Color::Yellow);
-		
+
 		//if (globalFrameNumber > 0) {
 
-			device.waitForFences(1, &inFlightFences[currentFrameIndex], VK_TRUE, 30000000);
-			device.resetFences(1, &inFlightFences[currentFrameIndex]);
-			//}
-			//else {
-			device.resetFences(1, &inFlightFences[currentFrameIndex]);
+		device.waitForFences(1, &inFlightFences[currentFrameIndex], VK_TRUE, 30000000);
+		device.resetFences(1, &inFlightFences[currentFrameIndex]);
+		//}
+		//else {
+		device.resetFences(1, &inFlightFences[currentFrameIndex]);
 		//}
 	}
 	{
 		ZoneScopedNC("Reset descriptor pool", tracy::Color::Orange);
 		descriptorMegapool.set_frame(currentFrameIndex);
 	}
-	vk::ResultValue<uint32_t> imageResult = vk::ResultValue(vk::Result::eSuccess,0u);
+	vk::ResultValue<uint32_t> imageResult = vk::ResultValue(vk::Result::eSuccess, 0u);
 	{
 		ZoneScopedNC("Aquire next image", tracy::Color::Orange);
 		imageResult = device.acquireNextImageKHR(swapChain, std::numeric_limits<uint64_t>::max(), imageAvailableSemaphores[currentFrameIndex], nullptr);
@@ -1351,14 +1389,6 @@ void VulkanEngine::draw_frame()
 	uint32_t imageIndex = imageResult.value;
 	//std::cout << "swapchain image is " << imageIndex << "engine index is " << currentFrameIndex << std::endl;
 
-
-
-
-	
-
-
-
-	
 
 	update_uniform_buffer(currentFrameIndex/*imageIndex*/);
 
@@ -1376,55 +1406,64 @@ void VulkanEngine::draw_frame()
 		//	}, entt::std_sort{});
 	}
 
-	render_graph.execute(cmd);
+	{
+		ZoneScopedNC("Rendergraph", tracy::Color::Yellow);
+		render_graph.execute(cmd);
+	}
 
-	
-
-	start_frame_renderpass(cmd, swapChainFramebuffers[imageIndex]);
 
 	{
-		
+		ZoneScopedNC("Begin frame renderpass", tracy::Color::Grey);
+		start_frame_renderpass(cmd, swapChainFramebuffers[imageIndex]);
+	}
+
+	{
+
 		VkCommandBuffer commandbuffer = VkCommandBuffer(cmd);
 		TracyVkZone(profilercontext, commandbuffer, "All Frame");
-
-		PipelineResource* blit = GetBlitPipeline();
-		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, blit->pipeline);
-
-		vk::Viewport viewport;
-		viewport.height = swapChainExtent.height;
-		viewport.width = swapChainExtent.width;
-		viewport.minDepth = 0.f;
-		viewport.maxDepth = 1.f;
-
-		cmd.setViewport(0, viewport);
-
-		vk::Rect2D scissor;
-		scissor.extent = swapChainExtent;
-
-		cmd.setScissor(0, scissor);
-
-		DescriptorSetBuilder setBuilder{ blit->effect,&descriptorMegapool };
-
-		setBuilder.bind_image(0,0, render_graph.get_image_descriptor(DisplayImage));
-
-		std::array<vk::DescriptorSet, 2> descriptors;
-		descriptors[0] = setBuilder.build_descriptor(0, DescriptorLifetime::PerFrame);
-
-		cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, blit->effect->build_pipeline_layout(device), 0, 1, &descriptors[0], 0, nullptr);
-		
-		cmd.draw(3, 1, 0, 0);
-		
 		{
-			
+			ZoneScopedNC("Final blit", tracy::Color::Grey);
+			PipelineResource* blit = GetBlitPipeline();
+			cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, blit->pipeline);
+
+			vk::Viewport viewport;
+			viewport.height = swapChainExtent.height;
+			viewport.width = swapChainExtent.width;
+			viewport.minDepth = 0.f;
+			viewport.maxDepth = 1.f;
+
+			cmd.setViewport(0, viewport);
+
+			vk::Rect2D scissor;
+			scissor.extent = swapChainExtent;
+
+			cmd.setScissor(0, scissor);
+
+			DescriptorSetBuilder setBuilder{ blit->effect,&descriptorMegapool };
+
+			setBuilder.bind_image(0, 0, render_graph.get_image_descriptor(DisplayImage));
+
+			std::array<vk::DescriptorSet, 2> descriptors;
+			descriptors[0] = setBuilder.build_descriptor(0, DescriptorLifetime::PerFrame);
+
+			cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, blit->effect->build_pipeline_layout(device), 0, 1, &descriptors[0], 0, nullptr);
+
+			cmd.draw(3, 1, 0, 0);
+		}
+		{
+
 			ZoneScopedNC("Imgui Update", tracy::Color::Grey);
 			TracyVkZone(profilercontext, commandbuffer, "Imgui pass");
 			ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
 		}
 
 	}
-	end_frame_command_buffer(cmd);
+	{
+		ZoneScopedNC("End frame renderpass", tracy::Color::Grey);
+		end_frame_command_buffer(cmd);
+	
 
-	vk::Semaphore signalSemaphores[] = { renderFinishedSemaphores[currentFrameIndex],  frameTimelineSemaphore  };
+	vk::Semaphore signalSemaphores[] = { renderFinishedSemaphores[currentFrameIndex],  frameTimelineSemaphore };
 	{
 		const uint64_t waitValue3[] = {
 			current_frame_timeline_value(98),current_frame_timeline_value(98)
@@ -1463,7 +1502,7 @@ void VulkanEngine::draw_frame()
 			graphicsQueue.submit(1, &submitInfo, inFlightFences[currentFrameIndex]); //vk::Fence{}); //
 			//graphicsQueue.submit(1, &submitInfo, vk::Fence{}); 
 		}
-		
+
 
 
 		vk::PresentInfoKHR presentInfo = {};
@@ -1483,6 +1522,7 @@ void VulkanEngine::draw_frame()
 
 		currentFrameIndex = (currentFrameIndex + 1) % MAX_FRAMES_IN_FLIGHT;
 		globalFrameNumber++;
+	}
 	}
 }
 
@@ -1653,6 +1693,54 @@ void VulkanEngine::render_ssao_pass(const vk::CommandBuffer& cmd, int height, in
 	cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, layout, 0, 1, &descriptors[0], 0, nullptr);
 
 	cmd.draw(3, 1, 0, 0);	
+}
+
+void VulkanEngine::render_ssao_compute(const vk::CommandBuffer& cmd)
+{
+	tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(cmd);
+	TracyVkZoneC(profilercontext, VkCommandBuffer(cmd), "SSAO pass Compute", tracy::Color::Orange);
+
+	ZoneScopedNC("SSAO Pass Compute", tracy::Color::BlueViolet);
+
+	TextureResource bluenoise = getResource<TextureResource>(bluenoiseTexture);
+	PipelineResource ssaopip = getResource<PipelineResource>("pipeline_ssao_comp");
+
+	ShaderEffect* effect = ssaopip.effect;
+
+	VkPipelineLayout layout = effect->build_pipeline_layout((VkDevice)device);
+
+	cmd.bindPipeline(vk::PipelineBindPoint::eCompute, ssaopip.pipeline);
+
+	DescriptorSetBuilder setBuilder{ effect,&descriptorMegapool };
+
+	vk::DescriptorBufferInfo camBufferInfo = make_buffer_info<UniformBufferObject>(cameraDataBuffers[currentFrameIndex]);
+	vk::DescriptorBufferInfo ssaoSamplesbuffer = make_buffer_info(ssaoSamples.buffer, sizeof(glm::vec4) * SSAO_KERNEL_SIZE);
+
+	vk::DescriptorImageInfo noiseImage = {};
+	noiseImage.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+	noiseImage.imageView = bluenoise.imageView;
+	noiseImage.sampler = bluenoise.textureSampler;//bluenoise.textureSampler;
+
+	setBuilder.bind_buffer("ubo", camBufferInfo);
+	setBuilder.bind_buffer("uboSSAOKernel", ssaoSamplesbuffer);
+
+	setBuilder.bind_image(0, 0, render_graph.get_image_descriptor("gbuf_pos"));
+	setBuilder.bind_image(0, 1, render_graph.get_image_descriptor("gbuf_normal"));
+	setBuilder.bind_image(0, 2, noiseImage);
+
+	setBuilder.bind_image(0, 3, render_graph.get_image_descriptor("ssao_pre"),true);
+
+	std::array<vk::DescriptorSet, 2> descriptors;
+	descriptors[0] = setBuilder.build_descriptor(0, DescriptorLifetime::PerFrame);
+
+	cmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, layout, 0, 1, &descriptors[0], 0, nullptr);
+
+
+	int width = render_graph.graph_attachments["ssao_pre"].real_width;
+	int height = render_graph.graph_attachments["ssao_pre"].real_height;
+
+	cmd.dispatch(width / 32 +1, height / 32 + 1, 1);
+	//cmd.draw(3, 1, 0, 0);
 }
 
 void VulkanEngine::render_ssao_blurx(const vk::CommandBuffer& cmd, int height, int width)

@@ -121,8 +121,9 @@ DescriptorSetBuilder::DescriptorSetBuilder(ShaderEffect* _effect, DescriptorMega
 	parentPool = _parentPool;
 }
 
-void DescriptorSetBuilder::bind_image(int set, int binding, const vk::DescriptorImageInfo& imageInfo)
+void DescriptorSetBuilder::bind_image(int set, int binding, const vk::DescriptorImageInfo& imageInfo, bool bImageWrite)
 {
+
 	for (auto& write : imageWrites) {
 		if (write.dstBinding == binding
 			&& write.dstSet == set	)
@@ -135,8 +136,11 @@ void DescriptorSetBuilder::bind_image(int set, int binding, const vk::Descriptor
 	ImageWriteDescriptor newWrite;
 	newWrite.dstSet = set;
 	newWrite.dstBinding = binding;
-	newWrite.descriptorType = vk::DescriptorType::eCombinedImageSampler;	
+	newWrite.descriptorType = bImageWrite ? vk::DescriptorType::eStorageImage :  vk::DescriptorType::eCombinedImageSampler;	
 	newWrite.imageInfo = imageInfo; 
+	if (bImageWrite) {
+		newWrite.imageInfo.imageLayout = vk::ImageLayout::eGeneral;
+	}
 
 	imageWrites.push_back(newWrite);
 }

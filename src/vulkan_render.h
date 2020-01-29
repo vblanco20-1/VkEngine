@@ -244,6 +244,7 @@ public:
 
 	void render_shadow_pass(const vk::CommandBuffer& cmd, int height, int width);
 	void render_ssao_pass(const vk::CommandBuffer& cmd, int height, int width);
+	void render_ssao_compute(const vk::CommandBuffer& cmd);
 	void render_ssao_blurx(const vk::CommandBuffer& cmd, int height, int width);
 	void render_ssao_blury(const vk::CommandBuffer& cmd, int height, int width);
 	vk::DescriptorImageInfo get_image_resource(const char* name);

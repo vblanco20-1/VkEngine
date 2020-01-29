@@ -44,7 +44,7 @@ struct DescriptorSetBuilder {
 	DescriptorMegaPool* parentPool;
 
 
-	void bind_image(int set, int binding,const vk::DescriptorImageInfo& imageInfo);
+	void bind_image(int set, int binding,const vk::DescriptorImageInfo& imageInfo, bool bImageWrite = false);
 	void bind_image(const char* name,const vk::DescriptorImageInfo& imageInfo);
 
 	void bind_buffer(int set, int binding,const vk::DescriptorBufferInfo& bufferInfo, vk::DescriptorType bufferType);

@@ -184,6 +184,12 @@ bool FrameGraph::build(class VulkanEngine* engine)
 			{
 				graph_attachments[coloratch.name].writes++;
 				graph_attachments[coloratch.name].last_writer_pass = pass->name;
+				if (pass->type == PassType::Graphics) {
+					graph_attachments[coloratch.name].usageFlags |= (VkImageUsageFlags)vk::ImageUsageFlagBits::eColorAttachment;
+				}
+				else if (pass->type == PassType::Compute) {
+					graph_attachments[coloratch.name].usageFlags |= (VkImageUsageFlags)vk::ImageUsageFlagBits::eStorage;
+				}
 			}
 			else {
 
@@ -193,7 +199,13 @@ bool FrameGraph::build(class VulkanEngine* engine)
 				attachment.bIsDepth = false;
 				attachment.writes = 1;
 				attachment.reads = 0;
-				attachment.usageFlags = (VkImageUsageFlags)vk::ImageUsageFlagBits::eColorAttachment;
+				if (pass->type == PassType::Graphics) {
+					attachment.usageFlags = (VkImageUsageFlags)vk::ImageUsageFlagBits::eColorAttachment;
+				}
+				else if (pass->type == PassType::Compute) {
+					attachment.usageFlags = (VkImageUsageFlags)vk::ImageUsageFlagBits::eStorage;
+				}
+
 				attachment.creator_pass = pass->name;
 				attachment.last_writer_pass = pass->name;
 				graph_attachments[coloratch.name] = attachment;
@@ -261,10 +273,6 @@ bool FrameGraph::build(class VulkanEngine* engine)
 			pass->clearValues.push_back(ath.info.clearValue);
 
 			pass->physical_attachments.push_back(physAttachment);
-
-			//if (ath.info.bClear) {
-			//	ath.
-			//}
 
 			attachmentIndex++;
 		}
@@ -395,7 +403,8 @@ bool FrameGraph::build(class VulkanEngine* engine)
 
 			std::cout << "building framebuffer for" << pass->name << std::endl;
 			pass->framebuffer = engine->device.createFramebuffer(fbufCreateInfo);
-		}		
+		}	
+		
 	}
 
 	std::cout << "framegraph built";
@@ -447,13 +456,29 @@ vk::CommandBuffer FrameGraph::create_graphics_buffer(int threadID)
 	int frameid = owner->globalFrameNumber;
 
 	auto pool = commandPools.get(frameid)[threadID];
+	auto &usable_pool = usableCommands.get(frameid)[threadID];
 
-	vk::CommandBufferAllocateInfo allocInfo;
-	allocInfo.commandPool = pool;
-	allocInfo.level = vk::CommandBufferLevel::ePrimary;
-	allocInfo.commandBufferCount = 1;
+	vk::CommandBuffer buff;
+	if (usable_pool.size() > 0) {
+		buff = usable_pool.back();
+		usable_pool.pop_back();
+	}
+	else {
+	
+		vk::CommandBufferAllocateInfo allocInfo;
+		allocInfo.commandPool = pool;
+		allocInfo.level = vk::CommandBufferLevel::ePrimary;
+		allocInfo.commandBufferCount = 1;
+		buff = owner->device.allocateCommandBuffers(allocInfo)[0];
+	}
 
-	return owner->device.allocateCommandBuffers(allocInfo)[0];
+	if (buff == vk::CommandBuffer{})
+	{
+		std::cout << "YHo WTF";
+	}
+
+	pendingCommands.get(frameid)[threadID].push_back(buff);
+	return  buff;
 }
 
 void FrameGraph::execute(vk::CommandBuffer _cmd)
@@ -461,7 +486,19 @@ void FrameGraph::execute(vk::CommandBuffer _cmd)
 	int frameid = owner->globalFrameNumber;
 
 	auto pool = commandPools.get(frameid)[0];
-	owner->device.resetCommandPool(pool, vk::CommandPoolResetFlagBits{});
+	{
+
+		ZoneScopedNC("reset command pool", tracy::Color::Red);
+		owner->device.resetCommandPool(pool, vk::CommandPoolResetFlagBits{});
+
+		auto& pending = pendingCommands.get(frameid)[0];
+		auto& usable = usableCommands.get(frameid)[0];
+
+		for (auto cmd : pending) {
+			usable.push_back(cmd);
+		}
+		pending.clear();
+	}
 
 	vk::CommandBufferBeginInfo beginInfo;
 	beginInfo.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
@@ -507,6 +544,30 @@ void FrameGraph::execute(vk::CommandBuffer _cmd)
 					cmd.begin(beginInfo);
 				}
 			}
+			else if (pass->type == PassType::Compute) {
+
+				static std::vector<vk::ImageMemoryBarrier> image_barriers;
+
+				image_barriers.clear();
+				transform_images_to_write(pass, image_barriers, cmd);
+
+				pass->draw_callback(cmd, pass);
+
+				image_barriers.clear();
+				transform_images_to_read(pass, image_barriers, cmd);
+
+				if (pass->perform_submit) {
+
+					cmd.end();
+
+					submit_commands(cmd, current_submission_id, current_submission_id + 1);
+					current_submission_id++;
+
+					cmd = create_graphics_buffer(0);
+
+					cmd.begin(beginInfo);
+				}
+			}
 			else {
 				pass->draw_callback(cmd, pass);
 			}			
@@ -515,6 +576,70 @@ void FrameGraph::execute(vk::CommandBuffer _cmd)
 	
 	cmd.end();
 	submit_commands(cmd, current_submission_id, 98);
+}
+
+void FrameGraph::transform_images_to_read(RenderPass* pass, std::vector<vk::ImageMemoryBarrier>& image_barriers, vk::CommandBuffer& cmd)
+{
+	for (const auto& ath : pass->color_attachments) {
+
+		GraphAttachment* graphAth = &graph_attachments[ath.name];
+
+		vk::ImageMemoryBarrier barrier;
+		barrier.oldLayout = vk::ImageLayout::eGeneral;
+		barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+
+		barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
+		barrier.srcAccessMask = vk::AccessFlagBits::eShaderWrite;
+
+		barrier.image = graphAth->image;
+		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+
+		vk::ImageSubresourceRange range;
+		range.aspectMask = vk::ImageAspectFlagBits::eColor;
+		range.baseMipLevel = 0;
+		range.levelCount = 1;
+		range.baseArrayLayer = 0;
+		range.layerCount = 1;
+
+		barrier.subresourceRange = range;
+
+		image_barriers.push_back(barrier);
+	}
+
+	cmd.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader, vk::PipelineStageFlagBits::eFragmentShader, vk::DependencyFlags{}, 0, nullptr, 0, nullptr, image_barriers.size(), image_barriers.data());
+}
+
+void FrameGraph::transform_images_to_write(RenderPass* pass, std::vector<vk::ImageMemoryBarrier>& image_barriers, vk::CommandBuffer& cmd)
+{
+	for (const auto& ath : pass->color_attachments) {
+
+		GraphAttachment* graphAth = &graph_attachments[ath.name];
+
+		vk::ImageMemoryBarrier barrier;
+		barrier.oldLayout = vk::ImageLayout::eUndefined;
+		barrier.newLayout = vk::ImageLayout::eGeneral;
+
+		barrier.dstAccessMask = vk::AccessFlagBits::eShaderWrite;
+		barrier.srcAccessMask = vk::AccessFlagBits{};
+
+		barrier.image = graphAth->image;
+		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+
+		vk::ImageSubresourceRange range;
+		range.aspectMask = vk::ImageAspectFlagBits::eColor;
+		range.baseMipLevel = 0;
+		range.levelCount = 1;
+		range.baseArrayLayer = 0;
+		range.layerCount = 1;
+
+		barrier.subresourceRange = range;
+
+		image_barriers.push_back(barrier);
+	}
+
+	cmd.pipelineBarrier(vk::PipelineStageFlagBits::eAllGraphics, vk::PipelineStageFlagBits::eComputeShader, vk::DependencyFlags{}, 0, nullptr, 0, nullptr, image_barriers.size(), image_barriers.data());
 }
 
 void FrameGraph::submit_commands(vk::CommandBuffer cmd, int wait_pass_index, int signal_pass_index)
@@ -563,6 +688,7 @@ void FrameGraph::submit_commands(vk::CommandBuffer cmd, int wait_pass_index, int
 		submitInfo.signalSemaphoreCount = 1;
 		submitInfo.pSignalSemaphores = signalSemaphores;
 		submitInfo.pNext = &timelineInfo3;
+		
 		{
 			ZoneScopedNC("Submit", tracy::Color::Red);
 			owner->graphicsQueue.submit(1, &submitInfo, vk::Fence{},/*owner->inFlightFences[owner->currentFrameIndex],*/ owner->extensionDispatcher); //

@@ -44,3 +44,10 @@ struct GraphicsPipelineBuilder {
 
 	vk::Pipeline build_pipeline(vk::Device device, vk::RenderPass renderPass, uint32_t subpass, ShaderEffect* shaderEffect);
 };
+
+struct ComputePipelineBuilder {
+	struct VulkanInfos {
+	};
+
+	vk::Pipeline build_pipeline(vk::Device device,ShaderEffect* shaderEffect);
+};
