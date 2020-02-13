@@ -5,7 +5,8 @@
 #define WIN32_LEAN_AND_MEAN
 #include <vk_mem_alloc.h>  //vk_mem_alloc.h"
 #include <vulkan/vulkan.hpp>
-
+#undef VULKAN_HPP_NAMESPACE
+#include <vulkan_enums.hpp>
 
 
 #define GLM_FORCE_RADIANS
