@@ -65,6 +65,7 @@ struct GPUSceneParams {
 	glm::vec4 fog_a; //xyz color, w power
 	glm::vec4 fog_b; //x min, y far, zw unused
 	glm::vec4 ambient;//xyz color, w power
+	glm::vec4 viewport;
 	float ssao_roughness;
 	float kernel_width;
 };

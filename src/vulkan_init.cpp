@@ -162,17 +162,25 @@ void VulkanEngine::create_device()
 	//--- DEVICE FEATURES
 	vk::PhysicalDeviceFeatures deviceFeatures;
 	deviceFeatures.samplerAnisotropy = true;
+	
 
 	vk::PhysicalDeviceTimelineSemaphoreFeaturesKHR timelineFeatures;
 	timelineFeatures.timelineSemaphore = true;
 
+	
+	//vk::PhysicalDeviceVulkan12Features vk12features;
+	//vk12features.timelineSemaphore = true;
+
 	vk::PhysicalDeviceFeatures2 features2;
 	features2.features = deviceFeatures;
-	features2.pNext = &timelineFeatures;
+	features2.pNext = &timelineFeatures;// &vk12features;
+
 
 	//deviceFeatures.
 	//--- DEVICE CREATE
 	vk::DeviceCreateInfo createInfo;
+
+	//auto extensions = get_extensions();
 
 	if (queueCreateInfo.queueFamilyIndex == presentQueueCreateInfo.queueFamilyIndex) {
 		std::array<vk::DeviceQueueCreateInfo, 2> queues{ queueCreateInfo,presentQueueCreateInfo };

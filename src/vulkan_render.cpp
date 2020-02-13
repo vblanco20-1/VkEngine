@@ -57,6 +57,8 @@ void VulkanEngine::create_engine_graph()
 	VkDevice device = (VkDevice)engine->device;
 	VmaAllocator allocator = engine->allocator;
 	VkExtent2D swapChainSize = engine->swapChainExtent;
+	swapChainSize.height *= 2;
+	swapChainSize.width *= 2;
 
 	graph.swapchainSize = swapChainSize;
 
@@ -77,11 +79,11 @@ void VulkanEngine::create_engine_graph()
 
 	//auto ssao0_pass = graph.add_pass("SSAO-pre", [&](vk::CommandBuffer cmd, RenderPass* pass) {
 	//	
-	//	//render_ssao_pass(cmd, pass->render_height, pass->render_width);
+	//	render_ssao_pass(cmd, pass->render_height, pass->render_width);
 	//}, PassType::Graphics, false);
 
 	auto ssao1_pass = graph.add_pass("SSAO-pre-comp", [&](vk::CommandBuffer cmd, RenderPass* pass) {
-		
+
 		render_ssao_compute(cmd);
 		}, PassType::Compute, false);
 
@@ -102,7 +104,7 @@ void VulkanEngine::create_engine_graph()
 		//	VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,    // destination stage
 		//	);
 		RenderMainPass(cmd);
-		}, PassType::Graphics,false);
+	}, PassType::Graphics,false);
 	
 	//auto test_pass = graph.add_pass("test", [&](vk::CommandBuffer cmd, RenderPass* pass) {
 	//	if (engine->globalFrameNumber > 3)
@@ -132,11 +134,10 @@ void VulkanEngine::create_engine_graph()
 	gbuffer_depth.format = (VkFormat)engine->findDepthFormat();
 	gbuffer_depth.set_clear_depth(0.0f, 0);
 
-
-
 	RenderAttachmentInfo ssao_pre;
+
 	ssao_pre.format = VK_FORMAT_R8_UNORM;
-#if 0
+#if 1
 	ssao_pre.size_x = 1.f; // 0.5f;
 	ssao_pre.size_y = 1.f; // 0.5f;
 #else
@@ -147,9 +148,16 @@ void VulkanEngine::create_engine_graph()
 
 	RenderAttachmentInfo ssao_midblur = gbuffer_position;
 	ssao_midblur.format = VK_FORMAT_R8_UNORM;
+
+
 	RenderAttachmentInfo ssao_post = ssao_midblur;
 
-	RenderAttachmentInfo render_output = gbuffer_position;
+
+	RenderAttachmentInfo main_image = gbuffer_position;
+
+
+	RenderAttachmentInfo output_image = main_image;
+
 
 	shadow_pass->set_depth_attachment("shadow_buffer_1", shadowbuffer);
 
@@ -163,6 +171,7 @@ void VulkanEngine::create_engine_graph()
 
 	ssao1_pass->add_image_dependency("gbuf_pos");
 	ssao1_pass->add_image_dependency("gbuf_normal");
+	//ssao1_pass->add_image_dependency("gbuf_normal");
 	ssao1_pass->add_color_attachment("ssao_pre", ssao_pre);
 
 	blurx_pass->add_image_dependency("ssao_pre");
@@ -176,11 +185,11 @@ void VulkanEngine::create_engine_graph()
 	forward_pass->add_image_dependency("shadow_buffer_1");
 	forward_pass->add_image_dependency("ssao_post");
 
-	forward_pass->add_color_attachment("main_image", render_output);
+	forward_pass->add_color_attachment("main_image", main_image);
 	forward_pass->set_depth_attachment("depth_prepass", gbuffer_depth);
 
 	display_pass->add_image_dependency("main_image");
-	display_pass->add_color_attachment("_output_", render_output);
+	display_pass->add_color_attachment("_output_", output_image);
 
 	graph.build(engine);
 }
@@ -338,6 +347,11 @@ void VulkanEngine::init_vulkan()
 	sceneParameters.fog_b.x = 0.f;
 	sceneParameters.fog_b.y = 10000.f;
 	sceneParameters.ambient = glm::vec4(1.f);
+
+
+	auto mainpass = render_graph.get_pass("MainPass");
+
+	sceneParameters.viewport = {0.f,0.f,mainpass->render_width,mainpass->render_height};
 	sceneParameters.kernel_width = 4;
 	sceneParameters.ssao_roughness = 600;
 	//load_scene("E:/Gamedev/tps-demo/level/geometry/demolevel.blend");
@@ -578,6 +592,22 @@ vk::ShaderModule VulkanEngine::createShaderModule(const std::vector<unsigned int
 
 
 
+void VulkanEngine::name_object(vk::Semaphore object, const char* name)
+{
+	static auto func = (PFN_vkSetDebugUtilsObjectNameEXT)vkGetInstanceProcAddr(instance, "vkSetDebugUtilsObjectNameEXT");
+
+	if (func != nullptr)//features.bDebugNames) {
+	{
+		vk::DebugUtilsObjectNameInfoEXT inf;
+		inf.objectHandle = (uint64_t)VkSemaphore(object);
+		inf.objectType = vk::ObjectType::eSemaphore;
+		inf.pObjectName = name;
+
+		func(device,(VkDebugUtilsObjectNameInfoEXT*)&inf);
+		//device.setDebugUtilsObjectNameEXT(inf, extensionDispatcher);
+	}	
+}
+
 PipelineResource* VulkanEngine::GetBlitPipeline()
 {
 	if (!doesResourceExist<PipelineResource>("output_blit")) {
@@ -793,33 +823,33 @@ void VulkanEngine::create_ssao_pipelines()
 	int sizex = ssaoAttachment->real_width;
 	int sizey = ssaoAttachment->real_height;
 
-	//ssaoPipelineBuilder = new GraphicsPipelineBuilder();
-	//ssaoPipelineBuilder->data.vertexInputInfo = vk::PipelineVertexInputStateCreateInfo{};// = Vertex::getPipelineCreateInfo();
-	//ssaoPipelineBuilder->data.inputAssembly = VkPipelineInitializers::build_input_assembly(vk::PrimitiveTopology::eTriangleList);
-	//ssaoPipelineBuilder->data.viewport = VkPipelineInitializers::build_viewport(sizex, sizey);
-	//ssaoPipelineBuilder->data.scissor = VkPipelineInitializers::build_rect2d(0, 0, sizex, sizey);
-	//ssaoPipelineBuilder->data.multisampling = VkPipelineInitializers::build_multisampling();
-	//ssaoPipelineBuilder->data.depthStencil = VkPipelineInitializers::build_depth_stencil(true, false, vk::CompareOp::eAlways);
-	//ssaoPipelineBuilder->data.rasterizer = VkPipelineInitializers::build_rasterizer();
-	//ssaoPipelineBuilder->data.rasterizer.cullMode = vk::CullModeFlagBits::eNone;
-	////1 color attachments
-	//ssaoPipelineBuilder->data.colorAttachmentStates.push_back(VkPipelineInitializers::build_color_blend_attachment_state());
+	ssaoPipelineBuilder = new GraphicsPipelineBuilder();
+	ssaoPipelineBuilder->data.vertexInputInfo = vk::PipelineVertexInputStateCreateInfo{};// = Vertex::getPipelineCreateInfo();
+	ssaoPipelineBuilder->data.inputAssembly = VkPipelineInitializers::build_input_assembly(vk::PrimitiveTopology::eTriangleList);
+	ssaoPipelineBuilder->data.viewport = VkPipelineInitializers::build_viewport(sizex, sizey);
+	ssaoPipelineBuilder->data.scissor = VkPipelineInitializers::build_rect2d(0, 0, sizex, sizey);
+	ssaoPipelineBuilder->data.multisampling = VkPipelineInitializers::build_multisampling();
+	ssaoPipelineBuilder->data.depthStencil = VkPipelineInitializers::build_depth_stencil(true, false, vk::CompareOp::eAlways);
+	ssaoPipelineBuilder->data.rasterizer = VkPipelineInitializers::build_rasterizer();
+	ssaoPipelineBuilder->data.rasterizer.cullMode = vk::CullModeFlagBits::eNone;
+	//1 color attachments
+	ssaoPipelineBuilder->data.colorAttachmentStates.push_back(VkPipelineInitializers::build_color_blend_attachment_state());
 
 
 	auto ssaoCompBuilder = new ComputePipelineBuilder();
 	vk::Pipeline ssaoPipeline_comp = ssaoCompBuilder->build_pipeline(device,pipelineEffect_Comp);
 
 
-	//RenderPass* pass = render_graph.get_pass("SSAO-pre");
-	//vk::Pipeline ssaoPipeline = ssaoPipelineBuilder->build_pipeline(device, pass->built_pass, 0, pipelineEffect);
+	RenderPass* pass = render_graph.get_pass("SSAO-pre");
+	vk::Pipeline ssaoPipeline;// = ssaoPipelineBuilder->build_pipeline(device, pass->built_pass, 0, pipelineEffect);
 
 	
-	//PipelineResource pipeline;
-	//pipeline.pipeline = ssaoPipeline;
-	//pipeline.effect = pipelineEffect;
-	//pipeline.pipelineBuilder = ssaoPipelineBuilder;
-	//pipeline.renderPassName = "SSAO-pre";
-	//auto pipeline_id = createResource("pipeline_ssao", pipeline);
+	PipelineResource pipeline;
+	pipeline.pipeline = ssaoPipeline;
+	pipeline.effect = pipelineEffect;
+	pipeline.pipelineBuilder = ssaoPipelineBuilder;
+	pipeline.renderPassName = "SSAO-pre";
+	auto pipeline_id = createResource("pipeline_ssao", pipeline);
 
 	PipelineResource pipeline_Comp;
 	pipeline_Comp.pipeline = ssaoPipeline_comp;
@@ -909,16 +939,20 @@ void VulkanEngine::create_ssao_pipelines()
 	blurPipelineBuilder->data.colorAttachmentStates.push_back(VkPipelineInitializers::build_color_blend_attachment_state());
 
 
+	blurPipelineBuilder->data.dynamicStates = {
+		vk::DynamicState::eViewport,
+		vk::DynamicState::eScissor
+	};
+
 	vk::Pipeline blurx = blurPipelineBuilder->build_pipeline(device, render_graph.get_pass("SSAO-blurx")->built_pass, 0, pipelineEffect);
 	vk::Pipeline blury = blurPipelineBuilder->build_pipeline(device, render_graph.get_pass("SSAO-blury")->built_pass, 0, pipelineEffect);
 
-	PipelineResource pipeline;
+	//PipelineResource pipeline;
 	pipeline.pipeline = blurx;
 	pipeline.effect = pipelineEffect;
 	pipeline.pipelineBuilder = blurPipelineBuilder;
 	pipeline.renderPassName = "SSAO-blurx";
-	auto pipeline_id = createResource("pipeline_ssao_blurx", pipeline);
-
+	/*auto */pipeline_id = createResource("pipeline_ssao_blurx", pipeline);
 	
 	pipeline.pipeline = blury;
 	pipeline.effect = pipelineEffect;
@@ -1333,6 +1367,12 @@ void VulkanEngine::draw_frame()
 	ZoneNamedNC(Framemark3, "Draw Frame 2 ", tracy::Color::Blue3, currentFrameIndex == 2);
 	//("Draw Frame", color);
 	{
+		ZoneScopedNC("Real Fence", tracy::Color::Yellow);
+		device.waitForFences(1, &inFlightFences[currentFrameIndex], VK_TRUE, 30000000);
+		device.resetFences(1, &inFlightFences[currentFrameIndex]);
+
+	}
+	{
 		ZoneScopedNC("WaitFences", tracy::Color::Red);
 
 		if (globalFrameNumber == 0) {
@@ -1343,7 +1383,6 @@ void VulkanEngine::draw_frame()
 			device.signalSemaphoreKHR(signal, extensionDispatcher);
 		}
 
-
 		uint64_t waitValue = last_frame_timeline_value();
 
 		vk::SemaphoreWaitInfoKHR waitInfo;
@@ -1353,23 +1392,17 @@ void VulkanEngine::draw_frame()
 		waitInfo.pValues = &waitValue;
 		//std::cout << "cpu pre pass: " << globalFrameNumber << " - " << device.getSemaphoreCounterValueKHR(frameTimelineSemaphore, extensionDispatcher) << std::endl;
 
-		//device.waitSemaphoresKHR(waitInfo, UINT64_MAX, extensionDispatcher);
+		device.waitSemaphoresKHR(waitInfo, 300000000, extensionDispatcher);
 		//std::cout << "cpu frame pass: " << globalFrameNumber << " - " << device.getSemaphoreCounterValueKHR(frameTimelineSemaphore, extensionDispatcher) << std::endl;
 
 		//vkWaitSemaphoresKHR(device, (VkSemaphoreWaitInfoKHR*)&waitInfo, UINT64_MAX);
 	}
-	{
-		ZoneScopedNC("Real Fence", tracy::Color::Yellow);
-
-		//if (globalFrameNumber > 0) {
-
-		device.waitForFences(1, &inFlightFences[currentFrameIndex], VK_TRUE, 30000000);
-		device.resetFences(1, &inFlightFences[currentFrameIndex]);
-		//}
-		//else {
-		device.resetFences(1, &inFlightFences[currentFrameIndex]);
-		//}
-	}
+	//{
+	//	ZoneScopedNC("Real Fence", tracy::Color::Yellow);
+	//	device.waitForFences(1, &inFlightFences[currentFrameIndex], VK_TRUE, 30000000);
+	//	device.resetFences(1, &inFlightFences[currentFrameIndex]);
+	//	
+	//}
 	{
 		ZoneScopedNC("Reset descriptor pool", tracy::Color::Orange);
 		descriptorMegapool.set_frame(currentFrameIndex);
@@ -1472,9 +1505,7 @@ void VulkanEngine::draw_frame()
 			current_frame_timeline_value(100),current_frame_timeline_value(100)
 		};
 
-		VkTimelineSemaphoreSubmitInfoKHR timelineInfo3;
-		timelineInfo3.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO_KHR;
-		timelineInfo3.pNext = NULL;
+		vk::TimelineSemaphoreSubmitInfo timelineInfo3;		
 		timelineInfo3.waitSemaphoreValueCount = 2;
 		timelineInfo3.pWaitSemaphoreValues = waitValue3;
 		timelineInfo3.signalSemaphoreValueCount = 2;
@@ -1542,7 +1573,7 @@ uint64_t VulkanEngine::current_frame_timeline_value(int pass_id /*= 0*/)
 	return (globalFrameNumber * 100) + 1000 + pass_id;
 }
 
-void set_pipeline_state_depth(int width,int height, const vk::CommandBuffer& cmd, bool bDoBias = true)
+void set_pipeline_state_depth(int width,int height, const vk::CommandBuffer& cmd, bool bDoBias = true, bool bSetBias = true)
 {
 	vk::Viewport viewport;
 	viewport.height = height;
@@ -1558,14 +1589,17 @@ void set_pipeline_state_depth(int width,int height, const vk::CommandBuffer& cmd
 
 	cmd.setScissor(0, scissor);
 
-	// Set depth bias (aka "Polygon offset")
+	if (bSetBias) {
+		// Set depth bias (aka "Polygon offset")
 				// Required to avoid shadow mapping artefacts
 
-	float depthBiasConstant = bDoBias? 1.25f : 0.f;
-	// Slope depth bias factor, applied depending on polygon's slope
-	float depthBiasSlope = bDoBias ? 1.75f : 0.f;
+		float depthBiasConstant = bDoBias ? 1.25f : 0.f;
+		// Slope depth bias factor, applied depending on polygon's slope
+		float depthBiasSlope = bDoBias ? 1.75f : 0.f;
 
-	cmd.setDepthBias(depthBiasConstant, 0, depthBiasSlope);
+		cmd.setDepthBias(depthBiasConstant, 0, depthBiasSlope);
+	}
+	
 }
 
 vk::DescriptorBufferInfo make_buffer_info(vk::Buffer buffer, size_t size, uint32_t offset = 0) {
@@ -1758,6 +1792,10 @@ void VulkanEngine::render_ssao_blurx(const vk::CommandBuffer& cmd, int height, i
 
 	cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, ssaopip.pipeline);
 
+
+
+	set_pipeline_state_depth(width, height, cmd, false,false);
+
 	DescriptorSetBuilder setBuilder{ effect,&descriptorMegapool };	
 	
 
@@ -1770,8 +1808,10 @@ void VulkanEngine::render_ssao_blurx(const vk::CommandBuffer& cmd, int height, i
 
 	cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, layout, 0, 1, &descriptors[0], 0, nullptr);
 
+	//render_graph.get_image_descriptor("gbuf_pos")
+
 	glm::vec4 blur_dir;
-	blur_dir.x = (1.f /(float) swapChainExtent.width) * 2.f;;
+	blur_dir.x = (1.f /(float)width/*swapChainExtent.width*/) * 2.f;
 	blur_dir.y = 0;
 	blur_dir.z = sceneParameters.ssao_roughness;
 	blur_dir.w = sceneParameters.kernel_width;
@@ -1796,6 +1836,9 @@ void VulkanEngine::render_ssao_blury(const vk::CommandBuffer& cmd, int height, i
 
 	cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, ssaopip.pipeline);
 
+
+	set_pipeline_state_depth(width, height, cmd, false, false);
+
 	DescriptorSetBuilder setBuilder{ effect,&descriptorMegapool };
 
 
@@ -1809,7 +1852,7 @@ void VulkanEngine::render_ssao_blury(const vk::CommandBuffer& cmd, int height, i
 	cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, layout, 0, 1, &descriptors[0], 0, nullptr);
 
 	glm::vec4 blur_dir;
-	blur_dir.y = (1.f / (float)swapChainExtent.height)*2.f;
+	blur_dir.y = (1.f / (float)height/*swapChainExtent.height*/)*2.f;
 	blur_dir.x = 0;
 	blur_dir.z = sceneParameters.ssao_roughness;
 	blur_dir.w = sceneParameters.kernel_width;
@@ -1880,7 +1923,11 @@ void VulkanEngine::RenderMainPass(const vk::CommandBuffer& cmd)
 
 		if (bShouldBindPipeline) {
 			cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, unit.pipeline);
-			set_pipeline_state_depth(swapChainExtent.width, swapChainExtent.height, cmd,false);
+
+
+			auto pass = render_graph.get_pass("GBuffer");
+
+			set_pipeline_state_depth(pass->render_width, pass->render_height, cmd,false);
 			piplayout = (vk::PipelineLayout)unit.effect->build_pipeline_layout(device);
 			last_pipeline = unit.pipeline;
 
@@ -2028,7 +2075,11 @@ void VulkanEngine::RenderGBufferPass(const vk::CommandBuffer& cmd)
 
 		if (bShouldBindPipeline) {
 			cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, unit.pipeline);
-			set_pipeline_state_depth(swapChainExtent.width, swapChainExtent.height, cmd, false);
+
+			auto pass = render_graph.get_pass("GBuffer");
+
+			set_pipeline_state_depth(pass->render_width, pass->render_height, cmd, false);
+			//set_pipeline_state_depth(swapChainExtent.width, swapChainExtent.height, cmd, false);
 			piplayout = (vk::PipelineLayout)unit.effect->build_pipeline_layout(device);
 			last_pipeline = unit.pipeline;
 
@@ -2117,8 +2168,14 @@ void VulkanEngine::update_uniform_buffer(uint32_t currentImage)
 	UniformBufferObject ubo = {};
 	ubo.model = glm::mat4(1.0f);
 
-	ubo.proj = glm::perspective(glm::radians(config_parameters.fov), swapChainExtent.width / (float)swapChainExtent.height,  50000.0f, 0.1f);
-	glm::mat4 revproj = glm::perspective(glm::radians(config_parameters.fov), swapChainExtent.width / (float)swapChainExtent.height, 0.1f, 50000.0f);
+	auto pass = render_graph.get_pass("GBuffer");
+	//set_pipeline_state_depth(pass->render_width, pass->render_height, cmd, false);
+
+	float render_height = pass->render_height;
+	float render_width = pass->render_width;
+
+	ubo.proj = glm::perspective(glm::radians(config_parameters.fov), render_width / render_height,  50000.0f, 0.1f);
+	glm::mat4 revproj = glm::perspective(glm::radians(config_parameters.fov), render_width / render_height, 0.1f, 50000.0f);
 	ubo.proj[1][1] *= -1;
 	if (!config_parameters.PlayerCam) {
 
@@ -2321,22 +2378,27 @@ void VulkanEngine::create_semaphores()
 	renderFinishedSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
 	inFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
 
-	vk::SemaphoreTypeCreateInfoKHR timelineSemaphoreInfo;
-	timelineSemaphoreInfo.semaphoreType = vk::SemaphoreTypeKHR::eTimeline;
+	vk::SemaphoreTypeCreateInfo timelineSemaphoreInfo;
+	timelineSemaphoreInfo.semaphoreType = vk::SemaphoreType::eTimeline;
 	timelineSemaphoreInfo.initialValue = 0;
 
 	vk::SemaphoreCreateInfo timeline;
 	timeline.setPNext(&timelineSemaphoreInfo);
 
 	frameTimelineSemaphore = device.createSemaphore(timeline);
-
+	//passTimelineSemaphore = device.createSemaphore(timeline);
 	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
 		imageAvailableSemaphores[i] = device.createSemaphore(semaphoreInfo);
 		renderFinishedSemaphores[i] = device.createSemaphore(semaphoreInfo);
 		inFlightFences[i] = device.createFence(fenceInfo);
+
+		name_object(imageAvailableSemaphores[i], "Image Availible Semaphore");
+		name_object(renderFinishedSemaphores[i], "Render Finished Semaphore");		
 	}
 
-	//device.resetFences(inFlightFences.size(),inFlightFences.data());
+	name_object(frameTimelineSemaphore, "Timeline Semaphore");
+
+	device.resetFences(inFlightFences.size(), inFlightFences.data());
 }
 
 void VulkanEngine::create_shadow_framebuffer()

@@ -35,7 +35,7 @@ const std::vector<const char*> validationLayers = {
 
 const std::vector<const char*> deviceExtensions = {
 	VK_KHR_SWAPCHAIN_EXTENSION_NAME ,
-	VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME
+	VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME//,
 	//VK_NV_GLSL_SHADER_EXTENSION_NAME
 };
 
@@ -45,12 +45,15 @@ struct Camera {
 	Frustum camfrustum;
 };
 
+struct ExtensionFeatures {
+	bool bDebugNames = 0;
+};
 
 
 class TextureLoader;
 class VulkanEngine {
 public:
-
+	ExtensionFeatures features{};
 	TextureLoader* tex_loader;
 	PlayerCamera playerCam;
 	Camera mainCam; 
@@ -122,6 +125,7 @@ public:
 	std::vector<vk::Semaphore> renderFinishedSemaphores;
 	std::vector<vk::Fence> inFlightFences;
 	vk::Semaphore frameTimelineSemaphore;
+	vk::Semaphore passTimelineSemaphore;
 
 	vk::DispatchLoaderDynamic extensionDispatcher;
 
@@ -286,6 +290,8 @@ public:
 	vk::ShaderModule createShaderModule(const std::vector<char>& code);
 	vk::ShaderModule createShaderModule(const std::vector<unsigned int>& code);
 	bool isDeviceSuitable(vk::PhysicalDevice device);
+
+	void name_object(vk::Semaphore, const char* name);
 
 
 	void debug_resources();
