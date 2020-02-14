@@ -367,7 +367,7 @@ void FrameGraph::build_compute_barriers(RenderPass* pass, VulkanEngine* eng)
 				}
 			}
 			else {
-				if (nextUsage == RenderGraphImageAccess::Read ) {
+				if (nextUsage == RenderGraphImageAccess::Read) {
 					next_layout = vk::ImageLayout::eShaderReadOnlyOptimal;
 				}
 				else {
@@ -746,66 +746,12 @@ void FrameGraph::execute(vk::CommandBuffer _cmd)
 
 void FrameGraph::transform_images_to_read(RenderPass* pass, std::vector<vk::ImageMemoryBarrier>& image_barriers, vk::CommandBuffer& cmd)
 {
-	//for (const auto& ath : pass->color_attachments) {
-	//
-	//	GraphAttachment* graphAth = &graph_attachments[ath.name];
-	//
-	//	vk::ImageMemoryBarrier barrier;
-	//	barrier.oldLayout = vk::ImageLayout::eGeneral;
-	//	barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-	//
-	//	barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
-	//	barrier.srcAccessMask = vk::AccessFlagBits::eShaderWrite;
-	//
-	//	barrier.image = graphAth->image;
-	//	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	//	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	//
-	//	vk::ImageSubresourceRange range;
-	//	range.aspectMask = vk::ImageAspectFlagBits::eColor;
-	//	range.baseMipLevel = 0;
-	//	range.levelCount = 1;
-	//	range.baseArrayLayer = 0;
-	//	range.layerCount = 1;
-	//
-	//	barrier.subresourceRange = range;
-	//
-	//	image_barriers.push_back(barrier);
-	//}
-
-	cmd.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader, vk::PipelineStageFlagBits::eFragmentShader, vk::DependencyFlags{}, 0, nullptr, 0, nullptr, pass->endBarriers.size(), pass->endBarriers.data());
+	cmd.pipelineBarrier(vk::PipelineStageFlagBits::eAllGraphics, vk::PipelineStageFlagBits::eAllGraphics, vk::DependencyFlags{}, 0, nullptr, 0, nullptr, pass->endBarriers.size(), pass->endBarriers.data());
 }
 
 void FrameGraph::transform_images_to_write(RenderPass* pass, std::vector<vk::ImageMemoryBarrier>& image_barriers, vk::CommandBuffer& cmd)
 {
-	//for (const auto& ath : pass->color_attachments) {
-	//
-	//	GraphAttachment* graphAth = &graph_attachments[ath.name];
-	//
-	//	vk::ImageMemoryBarrier barrier;
-	//	barrier.oldLayout = vk::ImageLayout::eUndefined;
-	//	barrier.newLayout = vk::ImageLayout::eGeneral;
-	//
-	//	barrier.dstAccessMask = vk::AccessFlagBits::eShaderWrite;
-	//	barrier.srcAccessMask = vk::AccessFlagBits{};
-	//
-	//	barrier.image = graphAth->image;
-	//	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	//	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	//
-	//	vk::ImageSubresourceRange range;
-	//	range.aspectMask = vk::ImageAspectFlagBits::eColor;
-	//	range.baseMipLevel = 0;
-	//	range.levelCount = 1;
-	//	range.baseArrayLayer = 0;
-	//	range.layerCount = 1;
-	//
-	//	barrier.subresourceRange = range;
-	//
-	//	image_barriers.push_back(barrier);
-	//}
-
-	cmd.pipelineBarrier(vk::PipelineStageFlagBits::eAllGraphics, vk::PipelineStageFlagBits::eComputeShader, vk::DependencyFlags{}, 0, nullptr, 0, nullptr, pass->startBarriers.size(), pass->startBarriers.data());
+	cmd.pipelineBarrier(vk::PipelineStageFlagBits::eAllGraphics, vk::PipelineStageFlagBits::eAllGraphics, vk::DependencyFlags{}, 0, nullptr, 0, nullptr, pass->startBarriers.size(), pass->startBarriers.data());
 }
 
 void FrameGraph::submit_commands(vk::CommandBuffer cmd, int wait_pass_index, int signal_pass_index)

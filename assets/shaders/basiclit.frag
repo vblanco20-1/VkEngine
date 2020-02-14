@@ -22,6 +22,7 @@ layout(set = 1, binding = 0) uniform SceneParameters {
 	vec4 fog_a; //xyz color, w power
     vec4 fog_b; //x min, y far, zw unused
     vec4 ambient;//xyz color, w power
+	vec4 viewport;
 } sceneParams;
 
 layout(location = 0) in vec3 fragColor;
@@ -180,8 +181,8 @@ vec3 Uncharted2Tonemap(vec3 x)
 void main() {
 
 	vec2 screenspace = vec2(0.f);
-	screenspace.y = gl_FragCoord.y / 900.f;
-	screenspace.x = gl_FragCoord.x / 1700.f;
+	screenspace.y = gl_FragCoord.y / sceneParams.viewport.w;//900.f;
+	screenspace.x = gl_FragCoord.x / sceneParams.viewport.z;//1700.f;
 
 	float ssao =  clamp( pow(texture(ssaoMap,screenspace).r , 2.f),0.f,1.f);
 	
@@ -277,7 +278,7 @@ void main() {
 	//vec4 tex_test  = vec4(texture(tex3, fragTexCoord));//.rgba;
 	//float tex_test  = texture(tex3, fragTexCoord);
 	//outColor = tex_test;
-	//outColor = vec4(tex3,1.f);
+	//outColor = vec4(ssao);
 
 	outColor = vec4(color, 1.0);
 	

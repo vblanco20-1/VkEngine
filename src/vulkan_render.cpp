@@ -87,8 +87,12 @@ void VulkanEngine::create_engine_graph()
 		render_ssao_compute(cmd);
 		}, PassType::Compute, false);
 
+
+#if 0
 	auto blurx_pass = graph.add_pass("SSAO-blurx", [&](vk::CommandBuffer cmd, RenderPass* pass) {
 		
+	
+
 		render_ssao_blurx(cmd, pass->render_height, pass->render_width);
 		}, PassType::Graphics);
 
@@ -96,7 +100,26 @@ void VulkanEngine::create_engine_graph()
 	
 		render_ssao_blury(cmd, pass->render_height, pass->render_width);
 		}, PassType::Graphics);
+#else
+	auto blurx_pass = graph.add_pass("SSAO-blurx", [&](vk::CommandBuffer cmd, RenderPass* pass) {
+		glm::vec2 blur_dir;
+		blur_dir.x = 2.f;
+		blur_dir.y = 0;
 
+		render_ssao_blur_compute(cmd, "ssao_pre", "ssao_mid", blur_dir);
+		
+		}, PassType::Compute);
+
+	auto blury_pass = graph.add_pass("SSAO-blury", [&](vk::CommandBuffer cmd, RenderPass* pass) {
+
+		glm::vec2 blur_dir;		
+		blur_dir.x = 0; 
+		blur_dir.y = 2.f;
+
+		render_ssao_blur_compute(cmd, "ssao_mid", "ssao_post", blur_dir);
+
+		}, PassType::Compute);
+#endif
 	auto forward_pass = graph.add_pass("MainPass", [&](vk::CommandBuffer cmd, RenderPass* pass) {
 		//vkCmdPipelineBarrier(
 		//	cmd,
@@ -779,45 +802,26 @@ constexpr int SSAO_NOISE_DIM = 4;
 
 void VulkanEngine::create_ssao_pipelines()
 {
-	ShaderEffect* pipelineEffect;
-	if (!doesResourceExist<ShaderEffectHandle>("ssao")) {
+	ShaderEffect* ssaoEffect = build_shader_effect(
+		{ MAKE_ASSET_PATH("shaders/fullscreen.vert"),
+		  MAKE_ASSET_PATH("shaders/ssao.frag")
+		},
+		"ssao");
+	
+	ShaderEffect* ssaoEffect_Comp = build_shader_effect(
+		{ MAKE_ASSET_PATH("shaders/ssao.comp") },		
+		"ssao-comp");
 
-		ShaderEffectHandle newShader;
-		newShader.handle = new ShaderEffect();
+	ShaderEffect* ssaoBlur = build_shader_effect(
+		{ MAKE_ASSET_PATH("shaders/fullscreen.vert"),
+		  MAKE_ASSET_PATH("shaders/blur.frag")
+		},
+		"ssao-blur");
 
-		newShader.handle->add_shader_from_file(MAKE_ASSET_PATH("shaders/fullscreen.vert"));
-		newShader.handle->add_shader_from_file(MAKE_ASSET_PATH("shaders/ssao.frag"));
-
-		newShader.handle->build_effect(device);
-
-		pipelineEffect = newShader.handle;
-
-		createResource<ShaderEffectHandle>("ssao", newShader);
-	}
-	else
-	{
-		pipelineEffect = getResource<ShaderEffectHandle>("ssao").handle;
-	}
-
-	ShaderEffect* pipelineEffect_Comp;
-	if (!doesResourceExist<ShaderEffectHandle>("ssao-comp")) {
-
-		ShaderEffectHandle newShader;
-		newShader.handle = new ShaderEffect();
-
-		newShader.handle->add_shader_from_file(MAKE_ASSET_PATH("shaders/ssao.comp"));
-
-		newShader.handle->build_effect(device);
-
-		pipelineEffect_Comp = newShader.handle;
-
-		createResource<ShaderEffectHandle>("ssao-comp", newShader);
-	}
-	else
-	{
-		pipelineEffect_Comp = getResource<ShaderEffectHandle>("ssao-comp").handle;
-	}
-
+	ShaderEffect* ssaoBlur_Comp = build_shader_effect(
+		{ MAKE_ASSET_PATH("shaders/blur.comp") },
+		"ssao-comp-blur");
+	
 	FrameGraph::GraphAttachment* ssaoAttachment = render_graph.get_attachment("ssao_pre");// &graph.attachments["ssao_pre"];
 
 	int sizex = ssaoAttachment->real_width;
@@ -837,8 +841,10 @@ void VulkanEngine::create_ssao_pipelines()
 
 
 	auto ssaoCompBuilder = new ComputePipelineBuilder();
-	vk::Pipeline ssaoPipeline_comp = ssaoCompBuilder->build_pipeline(device,pipelineEffect_Comp);
+	vk::Pipeline ssaoPipeline_comp = ssaoCompBuilder->build_pipeline(device,ssaoEffect_Comp);
 
+	
+	vk::Pipeline ssaoBlurPipeline_comp = ssaoCompBuilder->build_pipeline(device, ssaoBlur_Comp);
 
 	RenderPass* pass = render_graph.get_pass("SSAO-pre");
 	vk::Pipeline ssaoPipeline;// = ssaoPipelineBuilder->build_pipeline(device, pass->built_pass, 0, pipelineEffect);
@@ -846,20 +852,24 @@ void VulkanEngine::create_ssao_pipelines()
 	
 	PipelineResource pipeline;
 	pipeline.pipeline = ssaoPipeline;
-	pipeline.effect = pipelineEffect;
+	pipeline.effect = ssaoEffect;
 	pipeline.pipelineBuilder = ssaoPipelineBuilder;
 	pipeline.renderPassName = "SSAO-pre";
 	auto pipeline_id = createResource("pipeline_ssao", pipeline);
 
 	PipelineResource pipeline_Comp;
 	pipeline_Comp.pipeline = ssaoPipeline_comp;
-	pipeline_Comp.effect = pipelineEffect_Comp;
+	pipeline_Comp.effect = ssaoEffect_Comp;
 	pipeline_Comp.pipelineBuilder = (GraphicsPipelineBuilder*)ssaoCompBuilder;
 	pipeline_Comp.renderPassName = "SSAO-pre";
 	auto pipeline_id_comp = createResource("pipeline_ssao_comp", pipeline_Comp);
-	//ssaoPipeline = ssaoPipelineBuilder->build_pipeline(device, renderPass, 0, pipelineEffect);
 
-	
+	PipelineResource pipelineBlur_Comp;
+	pipelineBlur_Comp.pipeline = ssaoBlurPipeline_comp;
+	pipelineBlur_Comp.effect = ssaoBlur_Comp;
+	pipelineBlur_Comp.pipelineBuilder = (GraphicsPipelineBuilder*)ssaoCompBuilder;
+	pipelineBlur_Comp.renderPassName = "SSAO-blur-comp";
+	auto pipelineblur_id_comp = createResource("pipeline_ssao_blur_comp", pipelineBlur_Comp);
 
 
 	//cam buffer
@@ -906,25 +916,6 @@ void VulkanEngine::create_ssao_pipelines()
 
 	// BLUR--------------
 
-	
-	if (!doesResourceExist<ShaderEffectHandle>("ssao-blur")) {
-
-		ShaderEffectHandle newShader;
-		newShader.handle = new ShaderEffect();
-
-		newShader.handle->add_shader_from_file(MAKE_ASSET_PATH("shaders/fullscreen.vert"));
-		newShader.handle->add_shader_from_file(MAKE_ASSET_PATH("shaders/blur.frag"));
-
-		newShader.handle->build_effect(device);
-
-		pipelineEffect = newShader.handle;
-
-		createResource<ShaderEffectHandle>("ssao-blur", newShader);
-	}
-	else
-	{
-		pipelineEffect = getResource<ShaderEffectHandle>("ssao-blur").handle;
-	}
 
 	blurPipelineBuilder = new GraphicsPipelineBuilder();
 	blurPipelineBuilder->data.vertexInputInfo = vk::PipelineVertexInputStateCreateInfo{};// = Vertex::getPipelineCreateInfo();
@@ -944,23 +935,50 @@ void VulkanEngine::create_ssao_pipelines()
 		vk::DynamicState::eScissor
 	};
 
-	vk::Pipeline blurx = blurPipelineBuilder->build_pipeline(device, render_graph.get_pass("SSAO-blurx")->built_pass, 0, pipelineEffect);
-	vk::Pipeline blury = blurPipelineBuilder->build_pipeline(device, render_graph.get_pass("SSAO-blury")->built_pass, 0, pipelineEffect);
-
-	//PipelineResource pipeline;
-	pipeline.pipeline = blurx;
-	pipeline.effect = pipelineEffect;
-	pipeline.pipelineBuilder = blurPipelineBuilder;
-	pipeline.renderPassName = "SSAO-blurx";
-	/*auto */pipeline_id = createResource("pipeline_ssao_blurx", pipeline);
-	
-	pipeline.pipeline = blury;
-	pipeline.effect = pipelineEffect;
-	pipeline.pipelineBuilder = blurPipelineBuilder;
-	pipeline.renderPassName = "SSAO-blury";
-	pipeline_id = createResource("pipeline_ssao_blury", pipeline);
+	//vk::Pipeline blurx = blurPipelineBuilder->build_pipeline(device, render_graph.get_pass("SSAO-blurx")->built_pass, 0, ssaoBlur);
+	//vk::Pipeline blury = blurPipelineBuilder->build_pipeline(device, render_graph.get_pass("SSAO-blury")->built_pass, 0, ssaoBlur);
+	//
+	////PipelineResource pipeline;
+	//pipeline.pipeline = blurx;
+	//pipeline.effect = ssaoBlur;
+	//pipeline.pipelineBuilder = blurPipelineBuilder;
+	//pipeline.renderPassName = "SSAO-blurx";
+	///*auto */pipeline_id = createResource("pipeline_ssao_blurx", pipeline);
+	//
+	//pipeline.pipeline = blury;
+	//pipeline.effect = ssaoBlur;
+	//pipeline.pipelineBuilder = blurPipelineBuilder;
+	//pipeline.renderPassName = "SSAO-blury";
+	//pipeline_id = createResource("pipeline_ssao_blury", pipeline);
 }
 
+
+ShaderEffect* VulkanEngine::build_shader_effect(std::vector<const char*> shader_paths, const char* effect_name)
+{
+	ShaderEffect* effect;
+	if (!doesResourceExist<ShaderEffectHandle>(effect_name)) {
+
+		ShaderEffectHandle newShader;
+		newShader.handle = new ShaderEffect();
+
+		for (auto s : shader_paths) {
+			newShader.handle->add_shader_from_file(s);
+		}
+		
+
+		newShader.handle->build_effect(device);
+
+		effect = newShader.handle;
+
+		createResource<ShaderEffectHandle>(effect_name, newShader);
+	}
+	else
+	{
+		effect = getResource<ShaderEffectHandle>(effect_name).handle;
+	}	
+
+	return effect;
+}
 
 void VulkanEngine::create_gbuffer_pipeline()
 {
@@ -1019,7 +1037,6 @@ void VulkanEngine::create_render_pass()
 
 	colorAttachment.initialLayout = vk::ImageLayout::eUndefined;
 	colorAttachment.finalLayout = vk::ImageLayout::ePresentSrcKHR;
-
 
 	vk::AttachmentDescription depthAttachment;
 	depthAttachment.format = findDepthFormat();
@@ -1861,6 +1878,45 @@ void VulkanEngine::render_ssao_blury(const vk::CommandBuffer& cmd, int height, i
 	cmd.draw(3, 1, 0, 0);
 }
 
+
+void VulkanEngine::render_ssao_blur_compute(const vk::CommandBuffer& cmd, const char* image_source, const char* image_target, glm::vec2 blur_direction)
+{	
+	int width = render_graph.graph_attachments[image_target].real_width;
+	int height = render_graph.graph_attachments[image_target].real_height;
+
+
+	tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(cmd);
+	TracyVkZoneC(profilercontext, VkCommandBuffer(cmd), "SSAO blurcompute", tracy::Color::Red);
+	ZoneScopedNC("SSAO Blur Y", tracy::Color::BlueViolet);
+
+	PipelineResource ssaopip = getResource<PipelineResource>("pipeline_ssao_blur_comp");
+
+	ShaderEffect* effect = ssaopip.effect;
+
+	VkPipelineLayout layout = effect->build_pipeline_layout((VkDevice)device);
+
+	cmd.bindPipeline(vk::PipelineBindPoint::eCompute, ssaopip.pipeline);
+
+	DescriptorSetBuilder setBuilder{ effect,&descriptorMegapool };
+
+	setBuilder.bind_image(0, 0, render_graph.get_image_descriptor(image_source));
+	setBuilder.bind_image(0, 1, render_graph.get_image_descriptor("gbuf_pos"));
+	setBuilder.bind_image(0, 3, render_graph.get_image_descriptor(image_target),true);
+
+	std::array<vk::DescriptorSet, 2> descriptors;
+	descriptors[0] = setBuilder.build_descriptor(0, DescriptorLifetime::PerFrame);
+
+	cmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, layout, 0, 1, &descriptors[0], 0, nullptr);
+
+	glm::vec4 blur_dir;
+	blur_dir.y = (1.f / height) * blur_direction.y;
+	blur_dir.x = (1.f / width)*blur_direction.x;
+	blur_dir.z = sceneParameters.ssao_roughness;
+	blur_dir.w = sceneParameters.kernel_width;
+	cmd.pushConstants(layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(float) * 4, &blur_dir);
+
+	cmd.dispatch((width / 32) + 1, (height / 32) + 1, 1);
+}
 
 void VulkanEngine::RenderMainPass(const vk::CommandBuffer& cmd)
 {

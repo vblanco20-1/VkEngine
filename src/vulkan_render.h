@@ -194,6 +194,8 @@ public:
 	void create_shadow_pipeline();
 	void create_ssao_pipelines();
 
+	ShaderEffect* build_shader_effect(std::vector<const char*> shader_paths, const char* effect_name);
+
 	void create_gbuffer_pipeline();
 	void create_render_pass();
 
@@ -251,6 +253,7 @@ public:
 	void render_ssao_compute(const vk::CommandBuffer& cmd);
 	void render_ssao_blurx(const vk::CommandBuffer& cmd, int height, int width);
 	void render_ssao_blury(const vk::CommandBuffer& cmd, int height, int width);
+	void render_ssao_blur_compute(const vk::CommandBuffer& cmd, const char* image_source,const char *image_target, glm::vec2 blur_direction);
 	vk::DescriptorImageInfo get_image_resource(const char* name);
 	void RenderMainPass(const vk::CommandBuffer& cmd);
 	void RenderGBufferPass(const vk::CommandBuffer& cmd);
