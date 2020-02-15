@@ -393,21 +393,21 @@ void VulkanEngine::init_vulkan()
 	sp::SceneLoader* loader = sp::SceneLoader::Create();
 
 	sp::SceneProcessConfig loadConfig;
-	loadConfig.bLoadMeshes = true;
-	loadConfig.bLoadNodes = true;
+	//loadConfig.bLoadMeshes = true;
+	//loadConfig.bLoadNodes = true;
 	//textures take a huge amount of time
-	loadConfig.bLoadTextures = true;
+	//loadConfig.bLoadTextures = true;
 	
 	//loadConfig.rootMatrix = &glm::rotate(glm::scale(glm::vec3(100.f)), glm::radians(90.f), glm::vec3(1, 0, 0))[0][0];
 	//loader->transform_scene(MAKE_ASSET_PATH("models/sponza/sponza_light.glb"),//glm::mat4(100.f));
 	//	loadConfig);
 
 	
-
+	loadConfig.bLoadMaterials = true;
 	loadConfig.database_name = "bistro_ext.db";
 	loadConfig.rootMatrix =& glm::mat4(1.f)[0][0];//&glm::rotate(glm::scale(glm::vec3(100.f)), glm::radians(90.f), glm::vec3(1, 0, 0))[0][0];
-	//loader->transform_scene(MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Exterior.fbx"),//glm::mat4(100.f));
-	//	loadConfig);
+	loader->transform_scene(MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Exterior.fbx"),//glm::mat4(100.f));
+		loadConfig);
 
 	load_scene("bistro_ext.db",MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Exterior.fbx"), glm::rotate(glm::scale(glm::vec3(100.f)), glm::radians(90.f), glm::vec3(1, 0, 0)));
 
@@ -2834,45 +2834,8 @@ bool VulkanEngine::load_scene(const char* db_path, const char* scene_path, glm::
 		std::string scenepath = sc_path.parent_path().string();
 		ZoneScopedNC("Texture request building", tracy::Color::Green);
 		tex_loader->load_all_textures(loader, scenepath);
-		//for (int i = 0; i < scene->mNumMaterials; i++)
-		//{
-		//	std::string matname = scene->mMaterials[i]->GetName().C_Str();
-		//	
-		//	//std::string find = "Pavement";
-		//	bool bdebug = true;// (matname.find(find) != std::string::npos);
-		//
-		//
-		//	if (bdebug || outputMaterialInfo) {
-		//
-		//
-		//		std::cout << std::endl;
-		//		std::cout << "iterating material" << scene->mMaterials[i]->GetName().C_Str() << std::endl;
-		//	}
-		//	TextureLoadRequest request;
-		//	std::string scenepath = sc_path.parent_path().string();
-		//
-		//	tex_loader->add_request_from_assimp_db(loader,scene->mMaterials[i], aiTextureType_DIFFUSE, scenepath);
-		//	tex_loader->add_request_from_assimp_db(loader,scene->mMaterials[i], aiTextureType_NORMALS, scenepath);
-		//	tex_loader->add_request_from_assimp_db(loader,scene->mMaterials[i], aiTextureType_SPECULAR, scenepath);
-		//	tex_loader->add_request_from_assimp_db(loader,scene->mMaterials[i], aiTextureType_METALNESS, scenepath);
-		//	tex_loader->add_request_from_assimp_db(loader,scene->mMaterials[i], aiTextureType_EMISSIVE, scenepath);
-		//	tex_loader->add_request_from_assimp_db(loader,scene->mMaterials[i], aiTextureType_OPACITY, scenepath);
-		//	tex_loader->add_request_from_assimp_db(loader,scene->mMaterials[i], aiTextureType_DIFFUSE_ROUGHNESS, scenepath);
-		//	tex_loader->add_request_from_assimp_db(loader,scene->mMaterials[i], aiTextureType_EMISSION_COLOR, scenepath);
-		//	tex_loader->add_request_from_assimp_db(loader,scene->mMaterials[i], aiTextureType_BASE_COLOR, scenepath);
-		//	tex_loader->add_request_from_assimp_db(loader,scene->mMaterials[i], aiTextureType_UNKNOWN, scenepath);
-		//	
-		//	if (outputMaterialInfo) {
-		//		for (int j = 0; j < scene->mMaterials[i]->mNumProperties; j++)
-		//		{
-		//			std::cout << "found param:" << scene->mMaterials[i]->mProperties[j]->mKey.C_Str() << " val: ";
-		//
-		//			Coutproperty(scene->mMaterials[i]->mProperties[j]);
-		//			std::cout << std::endl;
-		//		}
-		//	}
-		//}
 	}
+
 
 	{
 		ZoneScopedNC("Texture request bulk load", tracy::Color::Yellow);
@@ -2881,9 +2844,6 @@ bool VulkanEngine::load_scene(const char* db_path, const char* scene_path, glm::
 		//load_textures_bulk(textureLoadRequests.data(), textureLoadRequests.size());
 	}
 
-	
-
-	materials.resize(scene->mNumMaterials);
 
 	std::array<EntityID, 8> blank_textures;
 	for (int i = 0; i < 8; i++) {
@@ -2899,43 +2859,41 @@ bool VulkanEngine::load_scene(const char* db_path, const char* scene_path, glm::
 	{
 		ZoneScopedNC("Material gather", tracy::Color::Yellow);
 
-		for (int i = 0; i < scene->mNumMaterials; i++)
+		std::vector<sp::DbMaterial> dbmaterials;
+		{
+			ZoneScopedNC("Database fetch material metadata", tracy::Color::Yellow1);
+			loader->load_materials_from_db("", dbmaterials);
+			materials.resize(dbmaterials.size());
+		}
+		for (int i = 0; i < dbmaterials.size(); i++)
 		{
 			SimpleMaterial newMat;
-			newMat.textureIDs = blank_textures;
+			newMat.textureIDs = blank_textures;			
 
-			EntityID textureId; 
-			if (GrabTextureID(scene->mMaterials[i], aiTextureType_DIFFUSE, this, textureId)) {
-				newMat.textureIDs[0] = textureId;
-			}
-			if (GrabTextureID(scene->mMaterials[i], aiTextureType_NORMALS, this, textureId)) {
-				newMat.textureIDs[1] = textureId;
-			}
-			if (GrabTextureID(scene->mMaterials[i], aiTextureType_SPECULAR, this, textureId)) {
-				newMat.textureIDs[2] = textureId;
-			}
-			if (GrabTextureID(scene->mMaterials[i], aiTextureType_UNKNOWN, this, textureId)) {
-				newMat.textureIDs[3] = textureId;
-			}
-			//if (GrabTextureID(scene->mMaterials[i], aiTextureType_METALNESS, this, textureId)) {
-			//	mat.textureIDs[3] = textureId;
-			//}
-			//else{
-			//	
-			//}
-			if (GrabTextureID(scene->mMaterials[i], aiTextureType_EMISSION_COLOR, this, textureId)) {
-				newMat.textureIDs[4] = textureId;
-			}
-			if (GrabTextureID(scene->mMaterials[i], aiTextureType_BASE_COLOR, this, textureId)) {
-				newMat.textureIDs[5] = textureId;
-			}
-			if (GrabTextureID(scene->mMaterials[i], aiTextureType_DIFFUSE_ROUGHNESS, this, textureId)) {
-				newMat.textureIDs[6] = textureId;
+			for (auto t : dbmaterials[i].textures) {
+				int slot = 0;
+				aiTextureType type = (aiTextureType)t.texture_slot;
+				switch (type) {
+				case aiTextureType_DIFFUSE:
+					slot = 0; break;
+				case aiTextureType_NORMALS:
+					slot = 1; break;
+				case aiTextureType_SPECULAR:
+					slot = 2; break;
+				case aiTextureType_UNKNOWN:
+					slot = 3; break;
+				case aiTextureType_EMISSION_COLOR:
+					slot = 4; break;
+				case	aiTextureType_BASE_COLOR:
+					slot = 5; break;
+				case aiTextureType_DIFFUSE_ROUGHNESS:
+					slot = 6; break;
+				}
+				newMat.textureIDs[slot] = resourceMap[t.texture_name];
 			}
 
 			materials[i] = newMat;
 		}
-
 	}
 
 	EntityID pipeline_id;
@@ -3039,8 +2997,6 @@ bool VulkanEngine::load_scene(const char* db_path, const char* scene_path, glm::
 			meshBounds.center_rad.z = center.z;
 
 			registry.assign<ObjectBounds>(id, meshBounds);
-
-			
 		}
 		
 		for (int ch = 0; ch < node->mNumChildren; ch++)

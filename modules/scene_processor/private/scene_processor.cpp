@@ -30,10 +30,13 @@ class RealSceneLoader : public  sp::SceneLoader {
 public:
 
 
+	void add_request_from_assimp(DbMaterial &mat, const aiScene* scene, aiMaterial* material, aiTextureType textype, const std::string& scenepath);
 
 	void add_request_from_assimp(std::unordered_map<std::string, DbTexture>& texturemap, const aiScene* scene, aiMaterial* material, aiTextureType textype, const std::string& scenepath);
 	virtual int transform_scene(const char* scene_path, const SceneProcessConfig& config)override;
 	virtual int load_textures_from_db(const char* scene_path, std::vector<DbTexture>& out_textures)override;
+
+	virtual int load_materials_from_db(const char* scene_path, std::vector<DbMaterial>& out_materials) override;
 
 
 	virtual int open_db(const char* database_path) override;
@@ -103,6 +106,18 @@ static const char* query_insert_texture = R"(
 INSERT INTO Textures(id, name,size_x,size_y,channels,pixels,metadata) VALUES (?, ? , ? , ?,?,?,?);
 )";
 
+static const char* query_create_material_table = R"(
+DROP TABLE IF EXISTS Materials;
+CREATE TABLE Materials(
+	id INT , 
+	name TEXT PRIMARY KEY, 	
+	metadata TEXT);
+)";
+
+static const char* query_insert_material = R"(
+INSERT INTO Materials(id, name,metadata) VALUES (?, ? , ?);
+)";
+
 
 
 int clear_db(sqlite3* db, const SceneProcessConfig & config)
@@ -153,7 +168,22 @@ int clear_db(sqlite3* db, const SceneProcessConfig & config)
 		}
 		else {
 
-			fprintf(stdout, "Table Friends created successfully\n");
+			fprintf(stdout, "Table Textures created successfully\n");
+		}
+	}
+	if (config.bLoadMaterials) {
+		rc = sqlite3_exec(db, query_create_material_table, 0, 0, &err_msg);
+
+		if (rc != SQLITE_OK) {
+
+			fprintf(stderr, "Failed to create table\n");
+			fprintf(stderr, "SQL error: %s\n", err_msg);
+			sqlite3_free(err_msg);
+
+		}
+		else {
+
+			fprintf(stdout, "Table Materials created successfully\n");
 		}
 	}
 
@@ -356,33 +386,89 @@ int insert_textures(sqlite3* db, std::vector<DbTexture>& textures)
 		return 1;
 	}
 }
+
+
+int insert_materials(sqlite3* db, std::vector<DbMaterial>& materials)
+{
+	using nlohmann::json;
+
+	sqlite3_stmt* res;
+	int rc = sqlite3_prepare_v2(db, query_insert_material, -1, &res, 0);
+
+	if (rc == SQLITE_OK) {
+		for (int i = 0; i < materials.size(); i++) {
+			const DbMaterial& m = materials[i];
+
+			sqlite3_bind_int(res, 1, i);
+			sqlite3_bind_text(res, 2, m.name.c_str(), m.name.size(), SQLITE_TRANSIENT);
+
+		
+		
+			json metadata;
+
+			json texList;
+			for (auto t : m.textures) {
+				json tex;
+				tex["name"] = t.texture_name;
+				tex["slot"] = t.texture_slot;
+				texList.push_back(tex);
+			}
+
+			metadata["texture_bindings"] = texList;
+			
+			std::string mtstring = metadata.dump();
+
+			sqlite3_bind_text(res, 3, mtstring.c_str(), mtstring.size(), SQLITE_TRANSIENT);
+
+			rc = sqlite3_step(res);
+
+			if (rc != SQLITE_DONE) {
+
+				printf("execution failed: %s", sqlite3_errmsg(db));
+				return 1;
+			}
+
+			sqlite3_reset(res);
+		}
+
+		sqlite3_finalize(res);
+
+		return 0;
+	}
+	else {
+
+		fprintf(stderr, "Failed to execute statement: %s\n", sqlite3_errmsg(db));
+		return 1;
+	}
+}
+
 void RealSceneLoader::add_request_from_assimp(std::unordered_map<std::string,DbTexture> &texturemap, const aiScene* scene, aiMaterial* material, aiTextureType textype,
 	const std::string& scenepath) 
 {
-	aiString texpath;
+	aiString assimppath;
 	if (material->GetTextureCount(textype))
 	{
-		material->GetTexture(textype, 0, &texpath);
+		material->GetTexture(textype, 0, &assimppath);
 
-		const char* txpath = &texpath.data[0];
-		char* ch = &texpath.data[1];
+		const char* texname = &assimppath.data[0];
+		char* ch = &assimppath.data[1];
 
-		for (int i = 0; i < texpath.length; i++)
+		for (int i = 0; i < assimppath.length; i++)
 		{
-			if (texpath.data[i] == '\\')
+			if (assimppath.data[i] == '\\')
 			{
-				texpath.data[i] = '/';
+				assimppath.data[i] = '/';
 			}
 		}
-		std::filesystem::path texture_path{ txpath };
+		std::filesystem::path texture_path{ texname };
 
-		std::string tx_path = scenepath + "/" + texture_path.string();
+		std::string texpath = scenepath + "/" + texture_path.string();
 		
-		auto load_entity = texturemap.find(tx_path);
+		auto load_entity = texturemap.find(texpath);
 		if (load_entity == texturemap.end()) {
-			std::cout << "loading texture" << tx_path << std::endl;
+			std::cout << "loading texture" << texpath << std::endl;
 
-			if (auto texture = scene->GetEmbeddedTexture(texpath.C_Str())) {
+			if (auto texture = scene->GetEmbeddedTexture(assimppath.C_Str())) {
 				size_t tex_size = texture->mHeight * texture->mWidth;
 				if (texture->mHeight == 0) {
 					tex_size = texture->mWidth;
@@ -390,8 +476,8 @@ void RealSceneLoader::add_request_from_assimp(std::unordered_map<std::string,DbT
 				int x, y, c;
 				
 				DbTexture tex;
-				tex.name = txpath;
-				tex.path = tx_path;
+				tex.name = texname;
+				tex.path = texpath;
 				tex.data_raw = stbi_load_from_memory((stbi_uc*)texture->pcData, tex_size, &tex.size_x, &tex.size_y, &tex.channels, 0);
 				//rgb format is not supported in almost any gpu, re-open as 4 channels
 				if (tex.data_raw && tex.channels == STBI_rgb) {
@@ -405,7 +491,7 @@ void RealSceneLoader::add_request_from_assimp(std::unordered_map<std::string,DbT
 					tex.byte_size = tex.size_x * tex.size_y * tex.channels;
 					stb_delete_queue.push_back((stbi_uc*)tex.data_raw);
 					tex.id = texturemap.size();
-					texturemap[tx_path] = tex;
+					texturemap[texpath] = tex;
 				}
 
 				
@@ -416,15 +502,15 @@ void RealSceneLoader::add_request_from_assimp(std::unordered_map<std::string,DbT
 				
 				this->gli_delete_queue.push_back(textu);
 
-				*textu = gli::load(tx_path);
+				*textu = gli::load(texpath);
 				gli::gl GL(gli::gl::PROFILE_GL33);
 				gli::gl::format const Format = GL.translate(textu->format(), textu->swizzles());
 
 				VkFormat format = vkGetFormatFromOpenGLInternalFormat(Format.Internal);
 
 				DbTexture tex;
-				tex.name = txpath;
-				tex.path = tx_path;
+				tex.name = texname;
+				tex.path = texpath;
 				tex.data_raw = textu->data();
 				tex.byte_size = textu->size();
 				tex.channels = 4;	
@@ -433,18 +519,40 @@ void RealSceneLoader::add_request_from_assimp(std::unordered_map<std::string,DbT
 				tex.id = texturemap.size();
 				tex.size_x = textu->extent().x;
 				tex.size_y = textu->extent().y;
-				texturemap[tx_path] = tex;
+				texturemap[texpath] = tex;
 				
 
 
 
 				//image_format = vk::Format(format);
-				std::cout << "GLI loading texture: " << tx_path  << std::endl;
+				std::cout << "GLI loading texture: " << texpath  << std::endl;
 			}
 		}
 	}
 }
 
+
+void RealSceneLoader::add_request_from_assimp(DbMaterial& mat, const aiScene* scene, aiMaterial* material, aiTextureType textype, const std::string& scenepath)
+{
+	aiString texpath;
+	if (material->GetTextureCount(textype))
+	{
+		material->GetTexture(textype, 0, &texpath);
+
+		const char* texname = &texpath.data[0];
+		for (int i = 0; i < texpath.length; i++)
+		{
+			if (texpath.data[i] == '\\')
+			{
+				texpath.data[i] = '/';
+			}
+		}
+		DbMaterial::TextureAssignement assignement;
+		assignement.texture_name = texname;
+		assignement.texture_slot = textype;
+		mat.textures.push_back(assignement);
+	}
+}
 
 int RealSceneLoader::transform_scene(const char* scene_path, const SceneProcessConfig& config)
 {
@@ -516,6 +624,7 @@ int RealSceneLoader::transform_scene(const char* scene_path, const SceneProcessC
 	}
 	
 
+
 	if (config.bLoadTextures)
 	{
 		std::string scenepath = sc_path.parent_path().string();
@@ -535,8 +644,7 @@ int RealSceneLoader::transform_scene(const char* scene_path, const SceneProcessC
 		std::vector<DbTexture> textures;
 		textures.reserve(texturemap.size());
 		for (auto [K, V] : texturemap) {
-			textures.push_back(V);
-			
+			textures.push_back(V);			
 		}
 
 		insert_textures(db, textures);
@@ -549,6 +657,33 @@ int RealSceneLoader::transform_scene(const char* scene_path, const SceneProcessC
 		}
 	}
 
+	if (config.bLoadMaterials)
+	{
+		std::string scenepath = sc_path.parent_path().string();
+		std::vector<DbMaterial> allMaterials;
+		allMaterials.reserve(scene->mNumMaterials);
+		for (int i = 0; i < scene->mNumMaterials; i++) {
+			DbMaterial mat;
+			mat.id = i;
+			const char* matname = &scene->mMaterials[i]->GetName().data[0];
+			mat.name = matname;
+
+			add_request_from_assimp(mat, scene, scene->mMaterials[i], aiTextureType_DIFFUSE, scenepath);
+			add_request_from_assimp(mat, scene, scene->mMaterials[i], aiTextureType_NORMALS, scenepath);
+			add_request_from_assimp(mat, scene, scene->mMaterials[i], aiTextureType_SPECULAR, scenepath);
+			add_request_from_assimp(mat, scene, scene->mMaterials[i], aiTextureType_METALNESS, scenepath);
+			add_request_from_assimp(mat, scene, scene->mMaterials[i], aiTextureType_EMISSIVE, scenepath);
+			add_request_from_assimp(mat, scene, scene->mMaterials[i], aiTextureType_OPACITY, scenepath);
+			add_request_from_assimp(mat, scene, scene->mMaterials[i], aiTextureType_DIFFUSE_ROUGHNESS, scenepath);
+			add_request_from_assimp(mat, scene, scene->mMaterials[i], aiTextureType_EMISSION_COLOR, scenepath);
+			add_request_from_assimp(mat, scene, scene->mMaterials[i], aiTextureType_BASE_COLOR, scenepath);
+			add_request_from_assimp(mat, scene, scene->mMaterials[i], aiTextureType_UNKNOWN, scenepath);
+
+			allMaterials.push_back(mat);
+		}
+
+		insert_materials(db, allMaterials);
+	}
 	
 	std::unordered_map<std::string, Matrix> node_matrices;
 	int node_id = 0;
@@ -707,6 +842,71 @@ int RealSceneLoader::load_textures_from_db(const char* scene_path, std::vector<D
 
 	return 0;
 }
+
+int RealSceneLoader::load_materials_from_db(const char* scene_path, std::vector<DbMaterial>& out_materials)
+{
+	using nlohmann::json;
+
+	sqlite3_stmt* pStmt;
+	char* err_msg = 0;
+
+
+	char* sql = "SELECT name,metadata FROM Materials";
+
+	int error = sqlite3_prepare_v2(loaded_db, sql, -1, &pStmt, 0);
+	if (error != SQLITE_OK) {
+
+		fprintf(stderr, "Failed to prepare statement\n");
+		return 1;
+	}
+	while (true) {
+		int rc = sqlite3_step(pStmt);
+
+		int bytes = 0;
+
+		if (rc == SQLITE_ROW) {
+
+			DbMaterial outMaterial;
+						
+			
+			auto tx = sqlite3_column_text(pStmt, 0);
+			auto meta = sqlite3_column_text(pStmt, 1);
+
+			json metadata = json::parse(meta);
+
+			
+
+			json texList = metadata["texture_bindings"];
+			
+			for (auto t : texList) {
+				
+				DbMaterial::TextureAssignement tex;
+				tex.texture_name = t["name"] ;
+				tex.texture_slot = t["slot"];
+				outMaterial.textures.push_back(tex);
+			}
+
+			outMaterial.json_metadata = reinterpret_cast<const char*>(meta);
+			outMaterial.name = reinterpret_cast<const char*>(tx);			
+
+			out_materials.push_back(outMaterial);
+		}
+		else if (rc == SQLITE_DONE)
+		{
+			break;
+		}
+		else {
+			sqlite3_finalize(pStmt);
+			return 1;
+		}
+
+	}
+
+	sqlite3_finalize(pStmt);
+
+	return 0;
+}
+
 
 int callback(void* NotUsed, int argc, char** argv,
 	char** azColName) {

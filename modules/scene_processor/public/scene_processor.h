@@ -100,6 +100,16 @@ namespace sp {
 		int num_indices;
 		int material;
 	};
+	struct DbMaterial {
+		struct TextureAssignement {
+			int texture_slot;
+			std::string texture_name;
+		};
+		int id;
+		std::string name;
+		std::string json_metadata;
+		std::vector<TextureAssignement> textures;
+	};
 	struct DbTexture {
 		int id;
 		std::string name;
@@ -111,8 +121,7 @@ namespace sp {
 		int channels;
 		uint64_t byte_size;
 		uint64_t vk_format;
-		//size_t buffer_size;
-		//~DbTexture();
+
 	};
 
 	struct SceneProcessConfig {
@@ -121,6 +130,7 @@ namespace sp {
 		bool bLoadMeshes{false};
 		bool bLoadNodes{ false };
 		bool bLoadTextures{ false };
+		bool bLoadMaterials{false};
 	};
 
 	struct SceneLoader {
@@ -138,6 +148,7 @@ namespace sp {
 		virtual int open_db(const char* database_path) = 0;
 		virtual int transform_scene(const char* scene_path,const SceneProcessConfig& config) = 0;
 		virtual int load_textures_from_db(const char* scene_path, std::vector<DbTexture>& out_textures) = 0;
+		virtual int load_materials_from_db(const char* scene_path, std::vector < DbMaterial > & out_materials) = 0;
 		virtual int load_db_texture(std::string texture_name, DbTexture& outTexture) = 0;
 		virtual int load_db_texture(std::string texture_name, void* outData) = 0;
 	};
