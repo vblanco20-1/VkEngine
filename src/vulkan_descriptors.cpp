@@ -30,6 +30,19 @@ vk::DescriptorPool create_descriptor_pool(vk::Device device, int count) {
 }
 vk::DescriptorSet DescriptorMegaPool::allocate_descriptor(vk::DescriptorSetLayout layout, DescriptorLifetime lifetime)
 {
+	if (lifetime == DescriptorLifetime::Static) {
+		VkDescriptorSet set;
+		bool goodAlloc = staticHandle.Allocate(layout, set);
+		return set;
+	}
+	else {
+		VkDescriptorSet set;
+		bool goodAlloc = dynamicHandle.Allocate(layout, set);
+		return set;
+	}
+
+	
+
 	//find pool by dynamic type
 	PoolStorage* selectedPool;
 	switch (lifetime) {
@@ -96,6 +109,10 @@ void DescriptorMegaPool::initialize(int numFrames,vk::Device _device)
 {
 	
 	device = _device;
+
+	allocatorPool = vke::DescriptorAllocatorPool::Create(device, numFrames);
+	dynamicHandle = allocatorPool->GetAllocator(vke::DescriptorAllocatorLifetime::PerFrame);
+	staticHandle = allocatorPool->GetAllocator(vke::DescriptorAllocatorLifetime::Static);
 	for (int i = 0; i < numFrames; i++) {
 		dynamic_pools.push_back(new PoolStorage);
 	}
@@ -103,6 +120,11 @@ void DescriptorMegaPool::initialize(int numFrames,vk::Device _device)
 
 void DescriptorMegaPool::set_frame(int frameNumber)
 {
+	dynamicHandle.Return();
+
+	allocatorPool->Flip();
+	dynamicHandle = allocatorPool->GetAllocator(vke::DescriptorAllocatorLifetime::PerFrame);
+
 	PoolStorage* framePool = dynamic_pools[frameNumber];
 
 	for (DescriptorAllocator* alloc : *framePool) {

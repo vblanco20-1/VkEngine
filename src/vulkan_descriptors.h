@@ -1,5 +1,6 @@
 #pragma once
 #include "vulkan_types.h"
+#include "descriptor_allocator.h"
 
 
 struct DescriptorUBOParams {
@@ -78,11 +79,15 @@ struct DescriptorMegaPool {
 	//one per frame
 	std::vector<PoolStorage*> dynamic_pools;
 
+	vke::DescriptorAllocatorHandle dynamicHandle;
+	vke::DescriptorAllocatorHandle staticHandle;
+
+	vke::DescriptorAllocatorPool* allocatorPool;
+
 	PoolStorage empty_pools;
 
 	vk::Device device;
 };
-
 
 
 

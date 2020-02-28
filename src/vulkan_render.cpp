@@ -25,7 +25,7 @@
 #include "cubemap_loader.h"
 #include "vulkan_textures.h"
 #include "../../scene_processor/public/scene_processor.h"
-
+#include <future>
 
 
 
@@ -52,6 +52,7 @@ static std::vector<char> readFile(const std::string& filename) {
 
 void VulkanEngine::create_engine_graph()
 {
+	ZoneScopedNC("Engine Graph", tracy::Color::Blue);
 	VulkanEngine* engine = this;
 	FrameGraph& graph = engine->render_graph;
 	VkDevice device = (VkDevice)engine->device;
@@ -219,7 +220,8 @@ void VulkanEngine::create_engine_graph()
 
 
 void VulkanEngine::init_vulkan()
- {
+{
+	ZoneScopedNC("Engine init", tracy::Color::Blue);
 	
 	vk::ApplicationInfo appInfo{ "VkEngine",VK_MAKE_VERSION(0,0,0),"VkEngine:Demo",VK_MAKE_VERSION(0,0,0),VK_API_VERSION_1_1 };
 
@@ -286,6 +288,8 @@ void VulkanEngine::init_vulkan()
 
 	descriptorMegapool.initialize(MAX_FRAMES_IN_FLIGHT,device);
 
+
+
 	VmaAllocatorCreateInfo allocatorInfo = {};
 	allocatorInfo.physicalDevice = physicalDevice;
 	allocatorInfo.device = device;
@@ -304,6 +308,67 @@ void VulkanEngine::init_vulkan()
 
 	create_gfx_pipeline();	
 
+#if 0
+	const int total_count = 100000;
+
+	ShaderEffectHandle ssaopip = getResource<ShaderEffectHandle>("basiclit");
+	ShaderEffect* effect = ssaopip.handle;
+	VkDescriptorSetLayout layout = effect->build_descriptor_layouts((VkDevice)device)[0];
+	for (int n = 0; n < 10; n++)
+	{
+		{
+			ZoneScopedNC("Flip", tracy::Color::Red);
+			descriptorMegapool.allocatorPool->Flip();
+		}
+		{
+			ZoneScopedNC("Linear bench", tracy::Color::Red);
+			vke::DescriptorAllocatorHandle handle;
+			{
+				ZoneScopedNC("grab allocator", tracy::Color::Yellow);
+				handle = descriptorMegapool.allocatorPool->GetAllocator(vke::DescriptorAllocatorLifetime::PerFrame);
+			}
+			for (int i = 0; i < total_count; i++) {
+				VkDescriptorSet set;
+				ZoneScopedNC("alloc", tracy::Color::Orange);
+				handle.Allocate(layout, set);
+			}
+		}
+		{
+			ZoneScopedNC("Flip", tracy::Color::Red);
+			descriptorMegapool.allocatorPool->Flip();
+		}
+		{
+			ZoneScopedNC("Thread bench", tracy::Color::Blue);
+
+			std::vector<int> idx = { 0,1,2 ,3,4,5,6,7 };
+			int per_it = total_count / idx.size();
+
+			std::vector<std::future<void>> futures;
+			for (auto id : idx) {
+				auto handle = std::async(std::launch::async,
+					[&](auto idx) {
+						ZoneScopedNC("worker", tracy::Color::Red);
+						vke::DescriptorAllocatorHandle handle;
+						{
+							ZoneScopedNC("grab allocator", tracy::Color::Yellow);
+							handle = descriptorMegapool.allocatorPool->GetAllocator(vke::DescriptorAllocatorLifetime::PerFrame);
+						}
+						for (int i = idx * per_it; i < (idx + 1) * per_it; i++) {
+							VkDescriptorSet set;
+							ZoneScopedNC("alloc", tracy::Color::Orange);
+							handle.Allocate(layout, set);
+						}
+					}, id);
+				futures.push_back(std::move(handle));
+			}
+
+			for (auto&& f : futures) {
+				f.get();
+			}
+		}
+	}
+
+#endif
 	create_ssao_pipelines();
 
 	create_descriptor_pool();
@@ -406,8 +471,8 @@ void VulkanEngine::init_vulkan()
 	loadConfig.bLoadMaterials = true;
 	loadConfig.database_name = "bistro_ext.db";
 	loadConfig.rootMatrix =& glm::mat4(1.f)[0][0];//&glm::rotate(glm::scale(glm::vec3(100.f)), glm::radians(90.f), glm::vec3(1, 0, 0))[0][0];
-	loader->transform_scene(MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Exterior.fbx"),//glm::mat4(100.f));
-		loadConfig);
+	//loader->transform_scene(MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Exterior.fbx"),//glm::mat4(100.f));
+	//	loadConfig);
 
 	load_scene("bistro_ext.db",MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Exterior.fbx"), glm::rotate(glm::scale(glm::vec3(100.f)), glm::radians(90.f), glm::vec3(1, 0, 0)));
 
@@ -1468,7 +1533,6 @@ void VulkanEngine::draw_frame()
 	}
 
 	{
-
 		VkCommandBuffer commandbuffer = VkCommandBuffer(cmd);
 		TracyVkZone(profilercontext, commandbuffer, "All Frame");
 		{
@@ -2573,8 +2637,7 @@ EntityID VulkanEngine::load_mesh(const char* model_path, std::string modelName)
 
 EntityID VulkanEngine::load_assimp_mesh(aiMesh* mesh)
 {
-	MeshResource newMesh;
-	
+	MeshResource newMesh;	
 
 	glm::vec3 bmin = { mesh->mAABB.mMin.x,mesh->mAABB.mMin.y,mesh->mAABB.mMin.z };
 	glm::vec3 bmax = { mesh->mAABB.mMax.x,mesh->mAABB.mMax.y,mesh->mAABB.mMax.z };
@@ -2662,9 +2725,6 @@ EntityID VulkanEngine::load_assimp_mesh(aiMesh* mesh)
 
 	vmaDestroyBuffer(allocator, vertex_staging_allocation.buffer, vertex_staging_allocation.allocation);
 
-
-
-	//AllocatedBuffer index_buffer;
 	createBuffer(indexBufferSize, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer, vk::MemoryPropertyFlagBits::eDeviceLocal, VMA_MEMORY_USAGE_UNKNOWN, newMesh.indexBuffer);
 
 	copyBuffer(index_staging_allocation.buffer, newMesh.indexBuffer.buffer, indexBufferSize);
@@ -2790,6 +2850,7 @@ void Coutproperty(aiMaterialProperty* property) {
 
 bool VulkanEngine::load_scene(const char* db_path, const char* scene_path, glm::mat4 rootMatrix)
 {
+	ZoneScopedNC("Full Scene Load", tracy::Color::Blue);
 	auto start1 = std::chrono::system_clock::now();
 
 	std::filesystem::path sc_path{ std::string(scene_path) };
@@ -2915,15 +2976,23 @@ bool VulkanEngine::load_scene(const char* db_path, const char* scene_path, glm::
 	std::vector<EntityID> loaded_meshes;
 	std::vector<EntityID> mesh_descriptors;
 	{
-		ZoneScopedNC("Descriptor creation", tracy::Color::Magenta);
+		ZoneScopedNC("Mesh creation", tracy::Color::Blue);
 
 		for (int i = 0; i < scene->mNumMeshes; i++)
 		{
 			loaded_meshes.push_back(load_assimp_mesh(scene->mMeshes[i]));
+		}
+	}
+	{
+		ZoneScopedNC("Descriptor creation", tracy::Color::Magenta);
+
+		for (int i = 0; i < scene->mNumMeshes; i++)
+		{
+			//loaded_meshes.push_back(load_assimp_mesh(scene->mMeshes[i]));
 
 			try {
 				std::string matname = scene->mMaterials[scene->mMeshes[i]->mMaterialIndex]->GetName().C_Str();
-				//blank_textures[0] = textures;
+			
 				auto descriptor_id = create_basic_descriptor_sets(pipeline_id, matname, materials[scene->mMeshes[i]->mMaterialIndex].textureIDs);
 				mesh_descriptors.push_back(descriptor_id);
 			}
@@ -2940,16 +3009,7 @@ bool VulkanEngine::load_scene(const char* db_path, const char* scene_path, glm::
 	std::function<void(aiNode * node, aiMatrix4x4 & parentmat)> process_node = [&](aiNode* node, aiMatrix4x4& parentmat) {
 
 		aiMatrix4x4 node_mat = parentmat *node->mTransformation;
-		//std::cout << "node transforms: ";
-		//for (int y = 0; y < 4; y++)
-		//{
-		//	for (int x = 0; x < 4; x++)
-		//	{
-		//		std::cout << node_mat[x][y] << " ";
-		//
-		//	}
-		//	std::cout << std::endl;
-		//}
+
 		for (int msh = 0; msh < node->mNumMeshes; msh++) {
 			nodemeshes++;
 			RenderMeshComponent renderable;
@@ -2960,11 +3020,6 @@ bool VulkanEngine::load_scene(const char* db_path, const char* scene_path, glm::
 
 			renderable.pass_pipelines[(size_t)MeshPasIndex::MainPass] = pipeline_id;
 			//renderable.pass_pipelines[MeshPasIndex::ShadowPass] = shadowPipeline;
-
-
-			
-			
-
 
 			EntityID id = registry.create();
 			registry.assign<RenderMeshComponent>(id, renderable);

@@ -187,6 +187,7 @@ struct CubemapBlitVertex {
 
 void CubemapLoader::initialize(VulkanEngine* engine)
 {
+	ZoneScopedNC("Init cubemap loader", tracy::Color::Red);
 	const int32_t dim = 64;
 	eng = engine;
 
@@ -278,7 +279,8 @@ void CubemapLoader::initialize(VulkanEngine* engine)
 }
 
 TextureResource CubemapLoader::load_cubemap(const char* path, int32_t dim, CubemapFilterMode mode)
-{	
+{
+	ZoneScopedNC("Load Cubemap", tracy::Color::Red);
 	const uint32_t numMips = static_cast<uint32_t>(floor(log2(dim))) + 1;
 
 	vk::ImageCreateInfo imageCI ={};
@@ -373,8 +375,8 @@ TextureResource CubemapLoader::load_cubemap(const char* path, int32_t dim, Cubem
 	};
 
 	vk::CommandBuffer cmd = eng->beginSingleTimeCommands();
-
-
+	tracy::VkCtx* profilercontext = (tracy::VkCtx*)eng->get_profiler_context(cmd);
+	//TracyVkZoneC(profilercontext, VkCommandBuffer(cmd), "Cubemap pass", tracy::Color::Red);
 	vk::Viewport viewport;
 	viewport.height = (float)dim;
 	viewport.width = (float)dim;
@@ -444,6 +446,7 @@ TextureResource CubemapLoader::load_cubemap(const char* path, int32_t dim, Cubem
 	vk::DescriptorSet envMapSet = setBuilder.build_descriptor(0, DescriptorLifetime::Static);
 	
 	for (uint32_t m = 0; m < numMips; m++) {
+		//TracyVkZoneC(profilercontext, VkCommandBuffer(cmd), "Mip Building", tracy::Color::Red);
 		for (uint32_t f = 0; f < 6; f++) {
 			viewport.width = static_cast<float>(dim * std::pow(0.5f, m));
 			viewport.height = static_cast<float>(dim * std::pow(0.5f, m));
@@ -528,9 +531,9 @@ TextureResource CubemapLoader::load_cubemap(const char* path, int32_t dim, Cubem
 		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 		subresourceRange);
-
-	eng->endSingleTimeCommands(cmd);
-
+	//TracyVkCollect(profilercontext, cmd);
+	//eng->endSingleTimeCommands(cmd);
+	//
 	TextureResource loaded;
 	loaded.image.image = cubemapImage;
 	loaded.image.allocation = alloc;

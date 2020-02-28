@@ -20,5 +20,5 @@ add_executable(vkEngine ${SOURCE_FILES})
 target_link_libraries(vkEngine  imgui entt glm gli assimp sdl2 vma Vulkan::Vulkan tracy)
 target_link_libraries(vkEngine shader_processor scene_processor)
 set_target_properties(vkEngine PROPERTIES
-            CXX_STANDARD 17  
+            CXX_STANDARD 17
             ) 

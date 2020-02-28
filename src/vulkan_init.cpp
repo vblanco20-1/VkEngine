@@ -13,7 +13,7 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL vulkanValidationErrorCallback(
 
 	if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT || messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT || messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT) {
 
-
+		ZoneScopedNC("Vulkan Debug Callback", tracy::Color::Red);
 
 		auto printtype = [](auto messageType) {
 			if (messageType & VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT) {
@@ -48,7 +48,7 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL vulkanValidationErrorCallback(
 	return VK_FALSE;
 }
 bool VulkanEngine::check_layer_support() {
-
+	ZoneScoped;
 	auto availibleLayers = vk::enumerateInstanceLayerProperties();
 
 	for (auto&& layerName : validationLayers) {
@@ -69,6 +69,7 @@ bool VulkanEngine::check_layer_support() {
 
 std::vector<const char*> VulkanEngine::get_extensions()
 {
+	ZoneScoped;
 	uint32_t extensionCount;
 	SDL_Vulkan_GetInstanceExtensions(sdl_get_window(), &extensionCount, nullptr);
 	std::vector<const char*> extensionNames(extensionCount);
@@ -85,6 +86,7 @@ std::vector<const char*> VulkanEngine::get_extensions()
 
 void VulkanEngine::pick_physical_device()
 {
+	ZoneScoped;
 	std::vector<vk::PhysicalDevice> devices = instance.enumeratePhysicalDevices();
 	if (devices.size() == 0) {
 		throw std::runtime_error("failed to find GPUs with Vulkan support!");
@@ -141,6 +143,7 @@ void findQueueFamilies(vk::PhysicalDevice& physicalDevice, vk::SurfaceKHR& surfa
 
 void VulkanEngine::create_device()
 {
+	ZoneScoped;
 	//--- QUEUE FAMILY
 	int graphicsFamilyIndex = 0;
 	int presentFamilyIndex = 0;
@@ -251,7 +254,7 @@ vk::PresentModeKHR chooseSwapPresentMode(const std::vector<vk::PresentModeKHR>& 
 }
 
 vk::Extent2D chooseSwapExtent(const vk::SurfaceCapabilitiesKHR& capabilities) {
-
+	ZoneScoped;
 	int w, h;
 	SDL_GetWindowSize(sdl_get_window(), &w, &h);
 
@@ -272,6 +275,7 @@ vk::Extent2D chooseSwapExtent(const vk::SurfaceCapabilitiesKHR& capabilities) {
 
 void VulkanEngine::createSwapChain()
 {
+	ZoneScoped;
 	SwapChainSupportDetails swapChainSupport = querySwapChainSupport(physicalDevice, surface);
 
 	vk::SurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(swapChainSupport.formats);
@@ -337,6 +341,7 @@ bool VulkanEngine::isDeviceSuitable(vk::PhysicalDevice device) {
 }
 void VulkanEngine::create_command_pool()
 {
+	ZoneScoped;
 	int graphicsFamilyIndex = 0;
 	int presentFamilyIndex = 0;
 	findQueueFamilies(physicalDevice, surface, graphicsFamilyIndex, presentFamilyIndex);
@@ -355,6 +360,7 @@ void VulkanEngine::create_command_pool()
 
 void VulkanEngine::init_vulkan_debug()
 {
+	ZoneScoped;
 	vk::DebugUtilsMessengerCreateInfoEXT createInfo;
 
 	createInfo.messageSeverity = vk::DebugUtilsMessageSeverityFlagBitsEXT::eError | vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose | vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning | vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo;

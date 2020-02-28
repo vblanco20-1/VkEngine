@@ -21,7 +21,7 @@ constexpr int SHADOWMAP_DIM = 2048;
 #ifdef NDEBUG
 const bool enableValidationLayers = false;
 #else
-const bool enableValidationLayers = true;
+const bool enableValidationLayers = false;
 #endif
 
 const std::vector<const char*> validationLayers = {

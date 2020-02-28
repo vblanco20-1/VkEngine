@@ -119,6 +119,7 @@ std::pair<TextureResource,TextureResourceMetadata> VulkanEngine::load_texture_re
 
 EntityID VulkanEngine::load_texture(const char* image_path, std::string textureName, bool bIsCubemap)
 {
+	ZoneScopedNC("Load Texture", tracy::Color::Red);
 	auto texture = load_texture_resource(image_path, bIsCubemap);
 
 	auto res = createResource(textureName.c_str(), texture.first);

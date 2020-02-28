@@ -100,6 +100,12 @@ namespace sp {
 		int num_indices;
 		int material;
 	};
+	//use this one as it controls memory of dbmesh properly
+	struct ManagedMesh {
+		DbMesh mesh;
+		std::vector<char> memory_buffer;
+		~ManagedMesh();
+	};
 	struct DbMaterial {
 		struct TextureAssignement {
 			int texture_slot;
@@ -149,6 +155,10 @@ namespace sp {
 		virtual int transform_scene(const char* scene_path,const SceneProcessConfig& config) = 0;
 		virtual int load_textures_from_db(const char* scene_path, std::vector<DbTexture>& out_textures) = 0;
 		virtual int load_materials_from_db(const char* scene_path, std::vector < DbMaterial > & out_materials) = 0;
+		virtual int load_meshes_from_db(const char* scene_path, std::vector < ManagedMesh >& out_meshes) = 0;
+
+		//virtual int load_nodes_from_db(const char* scene_path, std::vector < std::unique_ptr<DbNode> >& out_nodes) = 0;
+
 		virtual int load_db_texture(std::string texture_name, DbTexture& outTexture) = 0;
 		virtual int load_db_texture(std::string texture_name, void* outData) = 0;
 	};
