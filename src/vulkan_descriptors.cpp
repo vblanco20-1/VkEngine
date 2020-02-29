@@ -40,101 +40,23 @@ vk::DescriptorSet DescriptorMegaPool::allocate_descriptor(vk::DescriptorSetLayou
 		bool goodAlloc = dynamicHandle.Allocate(layout, set);
 		return set;
 	}
-
-	
-
-	//find pool by dynamic type
-	PoolStorage* selectedPool;
-	switch (lifetime) {
-	case DescriptorLifetime::Static:
-		selectedPool = &static_pools;
-		break;
-	case DescriptorLifetime::PerFrame:
-		selectedPool = dynamic_pools[currentFrame];
-		break;
-	}
-	//find vector by descriptor type
-	std::vector<DescriptorAllocator*> * selected_vector = selectedPool;
-
-	DescriptorAllocator* selected_allocator;
-	//first initialization
-	if (selected_vector->size() == 0) {
-		selected_allocator = get_allocator();
-		selected_vector->push_back(selected_allocator);
-	}
-	else
-	{
-		selected_allocator = selected_vector->back();
-		if (selected_allocator->current_descriptors >= selected_allocator->max_descriptors) {
-
-			selected_allocator = get_allocator();
-			selected_vector->push_back(selected_allocator);
-		}
-	}
-
-	vk::DescriptorSetAllocateInfo allocInfo;
-	allocInfo.descriptorPool = selected_allocator->pool;
-	allocInfo.descriptorSetCount = 1;
-	allocInfo.pSetLayouts = &layout;
-
-	vk::DescriptorSet newSet;
-	selected_allocator->current_descriptors++;
-
-	device.allocateDescriptorSets(&allocInfo, &newSet);
-
-	return newSet;
-}
-
-DescriptorAllocator* DescriptorMegaPool::get_allocator()
-{
-	if (empty_pools.size() == 0) {
-		const int descriptor_size = 512;
-
-		DescriptorAllocator* selected_allocator = new DescriptorAllocator();
-
-		selected_allocator->current_descriptors = 0;
-		selected_allocator->max_descriptors = descriptor_size;
-		selected_allocator->pool = create_descriptor_pool(device, descriptor_size);
-
-		return selected_allocator;
-	}
-	else {
-		DescriptorAllocator* selected_allocator = empty_pools.back();
-		empty_pools.pop_back();
-		return selected_allocator;
-	}
 }
 
 void DescriptorMegaPool::initialize(int numFrames,vk::Device _device)
-{
-	
+{	
 	device = _device;
 
 	allocatorPool = vke::DescriptorAllocatorPool::Create(device, numFrames);
 	dynamicHandle = allocatorPool->GetAllocator(vke::DescriptorAllocatorLifetime::PerFrame);
-	staticHandle = allocatorPool->GetAllocator(vke::DescriptorAllocatorLifetime::Static);
-	for (int i = 0; i < numFrames; i++) {
-		dynamic_pools.push_back(new PoolStorage);
-	}
+	staticHandle = allocatorPool->GetAllocator(vke::DescriptorAllocatorLifetime::Static);	
 }
 
 void DescriptorMegaPool::set_frame(int frameNumber)
 {
-	dynamicHandle.Return();
+	//dynamicHandle.Return();
 
 	allocatorPool->Flip();
 	dynamicHandle = allocatorPool->GetAllocator(vke::DescriptorAllocatorLifetime::PerFrame);
-
-	PoolStorage* framePool = dynamic_pools[frameNumber];
-
-	for (DescriptorAllocator* alloc : *framePool) {
-		device.resetDescriptorPool(alloc->pool);
-
-		empty_pools.push_back(alloc);
-	}
-	framePool->clear();
-
-	currentFrame = frameNumber;
 }
 
 DescriptorSetBuilder::DescriptorSetBuilder(ShaderEffect* _effect, DescriptorMegaPool* _parentPool)
@@ -145,7 +67,6 @@ DescriptorSetBuilder::DescriptorSetBuilder(ShaderEffect* _effect, DescriptorMega
 
 void DescriptorSetBuilder::bind_image(int set, int binding, const vk::DescriptorImageInfo& imageInfo, bool bImageWrite)
 {
-
 	for (auto& write : imageWrites) {
 		if (write.dstBinding == binding
 			&& write.dstSet == set	)

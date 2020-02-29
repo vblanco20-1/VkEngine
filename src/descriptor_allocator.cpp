@@ -1,7 +1,6 @@
 #include <descriptor_allocator.h>
 #include <vector>
 #include <memory>
-#include <array>
 #include <mutex>
 
 
@@ -26,16 +25,6 @@ namespace vke {
 		std::vector<DescriptorAllocator> _fullAllocators;
 	};
 
-	struct HandleUnpack {	
-		union {
-			struct {
-				uint64_t poolIdx : 8;
-				uint64_t allocatorIdx : 24;
-				uint64_t extra : 32;
-			};
-			uint64_t handle;
-		};
-	};
 	struct PoolSize {
 		VkDescriptorType type;
 		float multiplier;
@@ -99,8 +88,7 @@ namespace vke {
 	{
 		DescriptorAllocatorPoolImpl* implPool = static_cast<DescriptorAllocatorPoolImpl*>(ownerPool);
 		if (implPool) {
-			HandleUnpack realHandle;
-			realHandle.handle = handle;
+			
 			implPool->ReturnAllocator(*this, false);
 		}
 
@@ -108,21 +96,27 @@ namespace vke {
 
 	DescriptorAllocatorHandle::DescriptorAllocatorHandle(DescriptorAllocatorHandle&& other)
 	{
+		Return();
+
 		vkPool = other.vkPool;
-		handle = other.handle;
+		poolIdx = other.poolIdx;
 		ownerPool = other.ownerPool;
+
 		other.ownerPool = nullptr;
-		other.handle = 0;
+		other.poolIdx = -1;
 		other.vkPool = VkDescriptorPool{};
 	}
 
 	vke::DescriptorAllocatorHandle& DescriptorAllocatorHandle::operator=(DescriptorAllocatorHandle&& other)
 	{
-		this->vkPool = other.vkPool;
-		this->handle = other.handle;
-		this->ownerPool = other.ownerPool;
+		Return();
+
+		vkPool = other.vkPool;
+		poolIdx = other.poolIdx;
+		ownerPool = other.ownerPool;
+
 		other.ownerPool = nullptr;
-		other.handle = 0;
+		other.poolIdx = -1;
 		other.vkPool = VkDescriptorPool{};
 
 		return *this;
@@ -131,21 +125,20 @@ namespace vke {
 	void DescriptorAllocatorHandle::Return()
 	{
 		DescriptorAllocatorPoolImpl* implPool = static_cast<DescriptorAllocatorPoolImpl*>(ownerPool);
-		HandleUnpack realHandle;
-		realHandle.handle = handle;
-		implPool->ReturnAllocator(*this, false);
+
+		if (implPool) {
+			implPool->ReturnAllocator(*this, false);
+		}		
 
 		vkPool = VkDescriptorPool{ };
-		handle = 0;
+		poolIdx = -1;
 		ownerPool = nullptr;
 	}
 
 	bool DescriptorAllocatorHandle::Allocate(const VkDescriptorSetLayout& layout, VkDescriptorSet& builtSet)
 	{
 		DescriptorAllocatorPoolImpl*implPool = static_cast<DescriptorAllocatorPoolImpl*>(ownerPool);
-		//DescriptorAllocator allocator = implPool->find_allocator(handle);				
-		HandleUnpack realHandle;
-		realHandle.handle = handle;
+	
 
 		VkDescriptorSetAllocateInfo allocInfo;
 		allocInfo.pNext = nullptr;
@@ -164,13 +157,13 @@ namespace vke {
 			
 				implPool->ReturnAllocator(*this, true);
 
-				DescriptorAllocatorHandle newHandle = implPool->GetAllocator(realHandle.poolIdx == 0 ? DescriptorAllocatorLifetime::Static : DescriptorAllocatorLifetime::PerFrame);
+				DescriptorAllocatorHandle newHandle = implPool->GetAllocator(poolIdx == 0 ? DescriptorAllocatorLifetime::Static : DescriptorAllocatorLifetime::PerFrame);
 				
 				vkPool = newHandle.vkPool;
-				handle = newHandle.handle;
+				poolIdx = newHandle.poolIdx;
 
 				newHandle.vkPool = VkDescriptorPool{};
-				newHandle.handle = 0;
+				newHandle.poolIdx = -1;
 				newHandle.ownerPool = nullptr;
 				//could be good idea to avoid infinite loop here
 				return Allocate(layout, builtSet);
@@ -231,23 +224,27 @@ namespace vke {
 		for (auto& s : _poolSizes.sizes) {
 			if (s.type == type) {
 				s.multiplier = multiplier;
+				return;
 			}
 		}
-		return;
+
+		//not found, so add it
+		PoolSize newSize;
+		newSize.type = type;
+		newSize.multiplier = multiplier;
+		_poolSizes.sizes.push_back(newSize);
 	}
 
 	void DescriptorAllocatorPoolImpl::ReturnAllocator(DescriptorAllocatorHandle& handle, bool bIsFull)
 	{
 		std::lock_guard<std::mutex> lk(_poolMutex);
 
-		HandleUnpack unpacked;
-		unpacked.handle = handle.handle;
-
+		
 		if (bIsFull) {
-			_descriptorPools[unpacked.poolIdx]->_fullAllocators.push_back(DescriptorAllocator{ handle.vkPool });
+			_descriptorPools[handle.poolIdx]->_fullAllocators.push_back(DescriptorAllocator{ handle.vkPool });
 		}
 		else {
-			_descriptorPools[unpacked.poolIdx]->_usableAllocators.push_back(DescriptorAllocator{ handle.vkPool });
+			_descriptorPools[handle.poolIdx]->_usableAllocators.push_back(DescriptorAllocator{ handle.vkPool });
 		}
 	}
 
@@ -256,7 +253,7 @@ namespace vke {
 		std::lock_guard<std::mutex> lk(_poolMutex);
 
 		int poolIndex = 0;
-		int allocatorIndex = 0;
+		bool foundAllocator = false;
 		if (lifetime == DescriptorAllocatorLifetime::PerFrame) {
 			poolIndex = _frameIndex + 1;
 		}
@@ -266,19 +263,17 @@ namespace vke {
 		if (_clearAllocators.size() != 0) {
 			allocator = _clearAllocators.back();
 			_clearAllocators.pop_back();
-			allocatorIndex = 1;
-
-				
+			foundAllocator = true;				
 		}
 		else {
 			if (_descriptorPools[poolIndex]->_usableAllocators.size() > 0) {
 				allocator = _descriptorPools[poolIndex]->_usableAllocators.back();
 				_descriptorPools[poolIndex]->_usableAllocators.pop_back();
-				allocatorIndex = 1;
+				foundAllocator = 1;
 			}
 		}
 		//need a new pool
-		if (allocatorIndex == 0)
+		if (!foundAllocator)
 		{
 			//static pool has to be free-able
 			VkDescriptorPoolCreateFlags flags = 0;
@@ -290,18 +285,14 @@ namespace vke {
 
 			allocator.pool = newPool;		
 
-			allocatorIndex = 1;				
+			foundAllocator = true;
 		}
 
-		HandleUnpack handle;
-		handle.poolIdx = poolIndex;
-		handle.allocatorIdx = allocatorIndex;
 		DescriptorAllocatorHandle newHandle;
 		newHandle.ownerPool = this;
-		newHandle.handle = handle.handle;
+		newHandle.poolIdx = poolIndex;
 		newHandle.vkPool = allocator.pool;
 
 		return newHandle;
 	}
-
 }

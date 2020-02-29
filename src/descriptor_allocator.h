@@ -27,7 +27,7 @@ namespace vke {
 
 		DescriptorAllocatorPool* ownerPool{nullptr};
 		VkDescriptorPool vkPool;
-		uint64_t handle{0};
+		int8_t poolIdx;
 	};
 
 	struct DescriptorAllocatorPool {
