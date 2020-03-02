@@ -722,7 +722,7 @@ void FrameGraph::execute(vk::CommandBuffer _cmd)
 				image_barriers.clear();
 				transform_images_to_read(pass, image_barriers, cmd);
 
-				if (pass->perform_submit) {
+				if (true){//pass->perform_submit) {
 
 					cmd.end();
 

@@ -419,7 +419,7 @@ void VulkanEngine::init_vulkan()
 	bluenoiseTexture = load_texture(MAKE_ASSET_PATH("sprites/bluenoise256.png"), "blunoise");
 	//testCubemap = load_texture(MAKE_ASSET_PATH("sprites/cubemap_yokohama_bc3_unorm.ktx"), "cubemap",true);
 	testCubemap = load_texture(MAKE_ASSET_PATH("sprites/pisa_cube.ktx"), "cubemap", true);
-	testCubemap = load_texture(MAKE_ASSET_PATH("sprites/pisa_cube.ktx"), "cubemap", true);
+	//testCubemap = load_texture(MAKE_ASSET_PATH("sprites/pisa_cube.ktx"), "cubemap", true);
 	load_texture(MAKE_ASSET_PATH("sprites/ibl_brdf_lut.png"), "brdf", false);
 
 	CubemapLoader cubeLoad;
@@ -1450,7 +1450,7 @@ void VulkanEngine::draw_frame()
 	//("Draw Frame", color);
 	{
 		ZoneScopedNC("Real Fence", tracy::Color::Yellow);
-		device.waitForFences(1, &inFlightFences[currentFrameIndex], VK_TRUE, 30000000);
+		device.waitForFences(1, &inFlightFences[currentFrameIndex], VK_TRUE, 100000000);
 		device.resetFences(1, &inFlightFences[currentFrameIndex]);
 
 	}

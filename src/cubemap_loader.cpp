@@ -532,7 +532,7 @@ TextureResource CubemapLoader::load_cubemap(const char* path, int32_t dim, Cubem
 		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 		subresourceRange);
 	//TracyVkCollect(profilercontext, cmd);
-	//eng->endSingleTimeCommands(cmd);
+	eng->endSingleTimeCommands(cmd);
 	//
 	TextureResource loaded;
 	loaded.image.image = cubemapImage;

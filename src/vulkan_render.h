@@ -14,14 +14,14 @@
 #endif
 #define MAKE_ASSET_PATH(path) ASSET_PATH ## path
 
-constexpr int MAX_FRAMES_IN_FLIGHT =2;
+constexpr int MAX_FRAMES_IN_FLIGHT =1;
 constexpr int MAX_UNIFORM_BUFFER = 5000;
 constexpr int SHADOWMAP_DIM = 2048;
 
 #ifdef NDEBUG
 const bool enableValidationLayers = false;
 #else
-const bool enableValidationLayers = false;
+const bool enableValidationLayers = true;
 #endif
 
 const std::vector<const char*> validationLayers = {
