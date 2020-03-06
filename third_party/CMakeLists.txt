@@ -17,11 +17,11 @@ add_library(vma INTERFACE)
 #add_library(glslang INTERFACE)
 #add_library(spirv INTERFACE)
 
-find_package(Vulkan REQUIRED)
+find_package(Vulkan REQUIRED) 
 
 add_subdirectory(json)
 add_subdirectory(sqlite)
-
+add_subdirectory(cppcoro)
 #SDL ------------------------------------------
 
 set(sdl2_DIR "K:/Programming/SDL2-2.0.8" CACHE FILEPATH "Path to SDL2")
