@@ -14,6 +14,9 @@ layout(set = 0, binding = 0) uniform UniformBufferObject {
     mat4 model;
     mat4 view;
     mat4 proj;
+	mat4 inv_model;
+    mat4 inv_view;
+    mat4 inv_proj;
 	vec4 eye;
 } ubo;
 
@@ -41,15 +44,16 @@ layout(location = 3) out vec3 fragPos;
 void main() {
 
 	mat4 objectMatrix = MainObjectBuffer.objects[object_id].model;
+	vec4 pointPos  = ubo.proj * ubo.view * objectMatrix * vec4(inPosition, 1.0);
 
-	gl_Position = ubo.proj * ubo.view * objectMatrix * vec4(inPosition, 1.0);
+	gl_Position =pointPos;
     fragColor = inColor;
     fragTexCoord = inTexCoord;
-#if 0 // WORLD SPACE
+#if 1 // WORLD SPACE
 	fragNormal = normalize(objectMatrix * vec4(inNormal, 0.0)).xyz;
 	fragPos = (objectMatrix * vec4(inPosition, 1.0)).xyz;
 #else
-	fragPos = vec3(ubo.view * objectMatrix * vec4(inPosition, 1.0));
+	fragPos = pointPos.xyz;//vec3(ubo.view * objectMatrix * vec4(inPosition, 1.0));
 	fragNormal = vec3(ubo.view * objectMatrix * vec4(inNormal, 0.0));
 #endif
 }

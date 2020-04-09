@@ -1,12 +1,17 @@
 #pragma once
 
 //disable conversion related annoying warnings
-#pragma warning( disable : 4018 4244 4267 4101 4838 4305)
+//#pragma warning( disable : 4018 4244 4267 4101 4838 4305)
 #define WIN32_LEAN_AND_MEAN
+#define VMA_BUFFER_DEVICE_ADDRESS
 #include <vk_mem_alloc.h>  //vk_mem_alloc.h"
+
+#define VK_ENABLE_BETA_EXTENSIONS
+
+#include <vulkan/vulkan_beta.h>
 #include <vulkan/vulkan.hpp>
 #undef VULKAN_HPP_NAMESPACE
-#include <vulkan_enums.hpp>
+//#include <vulkan_enums.hpp>
 
 
 #define GLM_FORCE_RADIANS

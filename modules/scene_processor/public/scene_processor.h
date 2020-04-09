@@ -3,6 +3,8 @@
 #include <string>
 #include <array>
 
+#include <cppcoro/generator.hpp>
+
 typedef unsigned char stbi_uc;
 namespace sp {
 	enum class SceneNodeType : uint8_t {
@@ -154,6 +156,7 @@ namespace sp {
 		virtual int open_db(const char* database_path) = 0;
 		virtual int transform_scene(const char* scene_path,const SceneProcessConfig& config) = 0;
 		virtual int load_textures_from_db(const char* scene_path, std::vector<DbTexture>& out_textures) = 0;
+		virtual cppcoro::generator<DbTexture> load_all_textures()=0;
 		virtual int load_materials_from_db(const char* scene_path, std::vector < DbMaterial > & out_materials) = 0;
 		virtual int load_meshes_from_db(const char* scene_path, std::vector < ManagedMesh >& out_meshes) = 0;
 

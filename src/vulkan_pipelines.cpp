@@ -26,8 +26,8 @@ vk::PipelineViewportStateCreateInfo VkPipelineInitializers::build_viewport_state
 vk::Rect2D VkPipelineInitializers::build_rect2d(int32_t x, int32_t y, uint32_t width, uint32_t height)
 {
 	vk::Rect2D rect;
-	rect.offset = { x, y };
-	rect.extent = {width,height};
+	rect.offset = vk::Offset2D{ x, y };
+	rect.extent = vk::Extent2D{width,height};
 	return rect;
 }
 
@@ -50,8 +50,8 @@ vk::PipelineDepthStencilStateCreateInfo VkPipelineInitializers::build_depth_sten
 	depthStencil.minDepthBounds = 0.0f; // Optional
 	depthStencil.maxDepthBounds = 1.0f; // Optional
 	depthStencil.stencilTestEnable = VK_FALSE;
-	depthStencil.front = {}; // Optional
-	depthStencil.back = {}; // Optional
+	//depthStencil.front = {}; // Optional
+	//depthStencil.back = {}; // Optional
 
 	return depthStencil;
 }

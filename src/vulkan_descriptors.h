@@ -37,6 +37,7 @@ struct DescriptorSetBuilder {
 		int dstBinding;
 		vk::DescriptorType descriptorType;
 		vk::DescriptorBufferInfo bufferInfo;
+		vk::WriteDescriptorSetAccelerationStructureKHR accelinfo;
 	};
 
 	DescriptorSetBuilder(ShaderEffect* _effect,DescriptorMegaPool *_parentPool);
@@ -50,6 +51,8 @@ struct DescriptorSetBuilder {
 
 	void bind_buffer(int set, int binding,const vk::DescriptorBufferInfo& bufferInfo, vk::DescriptorType bufferType);
 	void bind_buffer(const char* name, const vk::DescriptorBufferInfo& bufferInfo);
+
+	void bind_raystructure(int set, int binding, const vk::WriteDescriptorSetAccelerationStructureKHR& info);
 
 	void update_descriptor(int set, vk::DescriptorSet& descriptor,const vk::Device& device);
 	vk::DescriptorSet build_descriptor(int set, DescriptorLifetime lifetime);
@@ -74,7 +77,8 @@ struct DescriptorMegaPool {
 	vke::DescriptorAllocatorHandle dynamicHandle;
 	vke::DescriptorAllocatorHandle staticHandle;
 
-	vke::DescriptorAllocatorPool* allocatorPool;
+	vke::DescriptorAllocatorPool* dynamicAllocatorPool;
+	vke::DescriptorAllocatorPool* staticAllocatorPool;
 
 	vk::Device device;
 };

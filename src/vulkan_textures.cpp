@@ -417,8 +417,8 @@ void VulkanEngine::copyBufferToImage(vk::Buffer buffer, vk::Image image, uint32_
 				region.imageSubresource.baseArrayLayer = face;
 				region.imageSubresource.layerCount = 1;
 
-				region.imageOffset = { 0, 0, 0 };
-				region.imageExtent = {
+				region.imageOffset = vk::Offset3D{ 0, 0, 0 };
+				region.imageExtent = vk::Extent3D{
 					width,
 					height,
 					1
@@ -451,8 +451,8 @@ void VulkanEngine::cmd_copyBufferToImage(vk::CommandBuffer& cmd, vk::Buffer buff
 	region.imageSubresource.baseArrayLayer = 0;
 	region.imageSubresource.layerCount = 1;
 
-	region.imageOffset = { 0, 0, 0 };
-	region.imageExtent = {
+	region.imageOffset = vk::Offset3D{ 0, 0, 0 };
+	region.imageExtent = vk::Extent3D{
 		width,
 		height,
 		1
@@ -624,6 +624,7 @@ public:
 
 
 
+	void add_load_from_db_coro(EntityID e, SceneLoader* loader, DbTexture& texture);
 	void add_load_from_db(EntityID e, SceneLoader* loader, DbTexture& texture);
 
 	vk::CommandBuffer get_upload_command_buffer() {
@@ -704,7 +705,7 @@ public:
 	void add_request_from_assimp_db(SceneLoader* loader, aiMaterial* material, aiTextureType textype, const std::string& scenepath);
 
 	virtual void load_all_textures(SceneLoader* loader, const std::string& scenepath) override;
-
+	void load_all_textures_coroutines(SceneLoader* loader, const std::string& scenepath);
 };
 
 
@@ -944,7 +945,36 @@ void RealTextureLoader::uploadImage(vk::CommandBuffer cmd, vk::Image target_imag
 
 	owner->cmd_transitionImageLayout(cmd, target_image, format, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
 }
+void RealTextureLoader::add_load_from_db_coro(EntityID e, SceneLoader* loader, DbTexture& texture)
+{
+	ZoneScopedNC("Texture upload-direct", tracy::Color::Orange);
 
+
+	LoadStagingBuffer& staging = load_registry.assign<LoadStagingBuffer>(e);
+	LoadImageAlloc& texresource = load_registry.assign<LoadImageAlloc>(e);
+	const BaseTextureLoad& texload = load_registry.get<BaseTextureLoad>(e);
+	size_t image_size = texture.byte_size;
+
+	texresource.format = vk::Format{ texture.vk_format };
+	texresource.x = texture.size_x;
+	texresource.y = texture.size_y;
+	texresource.channels = texture.channels;
+
+
+	owner->createBuffer(image_size, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_UNKNOWN,
+		staging.buffer);
+
+	void* data;
+	vmaMapMemory(owner->allocator, staging.buffer.allocation, &data);
+
+	memcpy(data, texture.data_raw, image_size);
+
+	vmaUnmapMemory(owner->allocator, staging.buffer.allocation);
+
+	owner->createImage(texture.size_x, texture.size_y, texresource.format,
+		vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+		vk::MemoryPropertyFlagBits::eDeviceLocal, texresource.image);
+}
 void RealTextureLoader::add_load_from_db(EntityID e ,SceneLoader* loader,DbTexture& texture)
 {
 	ZoneScopedNC("Texture upload-direct", tracy::Color::Orange);
@@ -1122,44 +1152,45 @@ void RealTextureLoader::add_request_from_assimp_db(SceneLoader* loader, aiMateri
 
 void RealTextureLoader::load_all_textures(SceneLoader* loader, const std::string& scenepath)
 {
+	//load_all_textures_coroutines(loader, scenepath);
 	if (!bLoadedDB) {
 		ZoneScopedNC("Database load all textures", tracy::Color::Red);
-		std::vector<DbTexture> textures;
+		//std::vector<DbTexture> textures;
 		{
 			ZoneScopedNC("Database fetch textures metadata", tracy::Color::Yellow1);
-			loader->load_textures_from_db("", textures);
+			//loader->load_textures_from_db("", textures);
 		}
-
+	
 		owner->device.resetCommandPool(owner->transferCommandPool, vk::CommandPoolResetFlagBits{});
-
+	
 		vk::CommandBuffer cmd = get_upload_command_buffer();
 		auto upload_view = load_registry.view<LoadStagingBuffer, LoadImageAlloc>();
 		tracy::VkCtx* profilercontext = (tracy::VkCtx*)owner->get_profiler_context(cmd);
 		int ntextures = 0;
-		for (auto t : textures) {
+		for (auto t : loader->load_all_textures()){//textures) {
 			
 			EntityID load_id = load_registry.create();
-
-
+	
+	
 			std::string tx_path = scenepath + "/" + t.name;
-
+	
 			BaseTextureLoad bload;
 			bload.path = tx_path;
 			bload.name = t.name;
-
+	
 			load_registry.assign_or_replace<BaseTextureLoad>(load_id, bload);
-
+	
 			this->add_load_from_db(load_id, loader, t);
-
+	
 			const LoadStagingBuffer& staging = load_registry.get<LoadStagingBuffer>(load_id);
 			const LoadImageAlloc& texresource = load_registry.get<LoadImageAlloc>(load_id);
-
+	
 			vk::Image target_image = texresource.image.image; 
 			{
 			TracyVkZone(profilercontext, VkCommandBuffer(cmd), "Upload Image");
 			uploadImage(cmd, target_image, texresource.format, staging, texresource);
 			}
-
+	
 			ntextures++;
 			if (ntextures > 20) {
 				ZoneScopedNC("Texture batch submit", tracy::Color::Red);
@@ -1170,14 +1201,14 @@ void RealTextureLoader::load_all_textures(SceneLoader* loader, const std::string
 			}
 		}
 	
-
+	
 		{
 			ZoneScopedNC("Texture batch wait load queue", tracy::Color::Red);
-
+	
 			submit_command_buffer(cmd);
 			wait_queue_idle();
 			//finish_upload_command_buffer();0
-
+	
 			finish_image_batch();
 		}
 	}
@@ -1185,15 +1216,109 @@ void RealTextureLoader::load_all_textures(SceneLoader* loader, const std::string
 
 	
 	
-	//{
-		//	ZoneScopedNC("Texture request flush load", tracy::Color::Yellow);
-		//	upload_pending_images();
-		//	bLoadedDB = true;
-		//}
-	//}
+	{
+			ZoneScopedNC("Texture request flush load", tracy::Color::Yellow);
+			upload_pending_images();
+			bLoadedDB = true;
+	}
 
 
-	//return;
+	return;
+}
+
+struct LoadBatch {
+	std::vector<BaseTextureLoad> loads;
+	std::vector< LoadStagingBuffer> stagings;
+	std::vector< LoadImageAlloc> allocs;
+};
+
+void RealTextureLoader::load_all_textures_coroutines(SceneLoader* loader, const std::string& scenepath)
+{
+	if (!bLoadedDB) {
+		ZoneScopedNC("Database load all textures", tracy::Color::Red);
+		
+		owner->device.resetCommandPool(owner->transferCommandPool, vk::CommandPoolResetFlagBits{});
+
+		vk::CommandBuffer cmd = get_upload_command_buffer();
+		auto upload_view = load_registry.view<LoadStagingBuffer, LoadImageAlloc>();
+		tracy::VkCtx* profilercontext = (tracy::VkCtx*)owner->get_profiler_context(cmd);
+		int ntextures = 20;
+
+		auto texture_generator = loader->load_all_textures();
+
+		auto texture_iterator = texture_generator.begin();
+		while (texture_iterator != texture_generator.end())
+		{
+			for (int ntex = 0; ntex < ntextures; ntex++) {
+				if (texture_iterator != texture_generator.end()) {
+					DbTexture &t = (*texture_iterator);
+
+					EntityID load_id = load_registry.create();
+					std::string tx_path = scenepath + "/" + t.name;
+
+					BaseTextureLoad bload;
+					bload.path = tx_path;
+					bload.name = t.name;
+
+					load_registry.assign_or_replace<BaseTextureLoad>(load_id, bload);
+
+					{
+						ZoneScopedNC("Texture upload-direct", tracy::Color::Orange);
+
+
+						LoadStagingBuffer& staging = load_registry.assign<LoadStagingBuffer>(load_id);
+						LoadImageAlloc& texresource = load_registry.assign<LoadImageAlloc>(load_id);
+						const BaseTextureLoad& texload = load_registry.get<BaseTextureLoad>(load_id);
+						size_t image_size = t.byte_size;
+
+						texresource.format = vk::Format{ t.vk_format };
+						texresource.x = t.size_x;
+						texresource.y = t.size_y;
+						texresource.channels = t.channels;
+
+
+						owner->createBuffer(image_size, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_UNKNOWN,
+							staging.buffer);
+
+						void* data;
+						vmaMapMemory(owner->allocator, staging.buffer.allocation, &data);
+
+						memcpy(data, t.data_raw, image_size);
+
+						vmaUnmapMemory(owner->allocator, staging.buffer.allocation);
+
+						owner->createImage(t.size_x, t.size_y, texresource.format,
+							vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+							vk::MemoryPropertyFlagBits::eDeviceLocal, texresource.image);
+					}
+					const LoadStagingBuffer& staging = load_registry.get<LoadStagingBuffer>(load_id);
+					const LoadImageAlloc& texresource = load_registry.get<LoadImageAlloc>(load_id);
+
+					vk::Image target_image = texresource.image.image;
+					{
+						TracyVkZone(profilercontext, VkCommandBuffer(cmd), "Upload Image");
+						uploadImage(cmd, target_image, texresource.format, staging, texresource);
+					}
+
+					texture_iterator++;
+
+					free(t.data_raw);
+				}				
+			}
+
+			ZoneScopedNC("Texture batch submit", tracy::Color::Red);
+			submit_command_buffer(cmd);
+			cmd = get_upload_command_buffer();
+			profilercontext = (tracy::VkCtx*)owner->get_profiler_context(cmd);
+		}
+
+		{
+			ZoneScopedNC("Texture batch wait load queue", tracy::Color::Red);
+			
+			wait_queue_idle();
+			finish_image_batch();
+		}
+	}
 }
 
 TextureLoader* TextureLoader::create_new_loader(VulkanEngine* ownerEngine)

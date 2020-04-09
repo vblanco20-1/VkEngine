@@ -37,7 +37,7 @@ public:
 	virtual int transform_scene(const char* scene_path, const SceneProcessConfig& config)override;
 	
 
-
+	virtual cppcoro::generator<DbTexture> load_all_textures();
 	virtual int load_meshes_from_db(const char* scene_path, std::vector < ManagedMesh >& out_meshes) override;
 	virtual int load_textures_from_db(const char* scene_path, std::vector<DbTexture>& out_textures)override;
 	virtual int load_materials_from_db(const char* scene_path, std::vector<DbMaterial>& out_materials) override;
@@ -790,6 +790,8 @@ int RealSceneLoader::transform_scene(const char* scene_path, const SceneProcessC
 	return 0;
 }
 
+
+
 int callback(void *, int, char **, char **);
 
 int RealSceneLoader::load_meshes_from_db(const char* scene_path, std::vector < ManagedMesh >& out_meshes)
@@ -850,6 +852,67 @@ int RealSceneLoader::load_meshes_from_db(const char* scene_path, std::vector < M
 
 	return 0;
 }
+
+cppcoro::generator<sp::DbTexture> RealSceneLoader::load_all_textures()
+{
+	using nlohmann::json;
+
+	sqlite3_stmt* pStmt;
+	char* err_msg = 0;
+
+	char* sql = "SELECT size_x,size_y,channels,name,metadata,pixels FROM Textures";
+
+	int error = sqlite3_prepare_v2(loaded_db, sql, -1, &pStmt, 0);
+	if (error != SQLITE_OK) {
+
+		fprintf(stderr, "Failed to prepare statement\n");
+		co_return;
+	}
+	while (true) {
+		int rc = sqlite3_step(pStmt);
+
+		int bytes = 0;
+
+		if (rc == SQLITE_ROW) {
+
+			DbTexture outTexture;
+	
+			outTexture.size_x = sqlite3_column_int(pStmt, 0);
+			outTexture.size_y = sqlite3_column_int(pStmt, 1);
+			outTexture.channels = sqlite3_column_int(pStmt, 2);
+			auto tx   = sqlite3_column_text(pStmt, 3);
+			auto meta = sqlite3_column_text(pStmt, 4);
+
+			json metadata = json::parse(meta);
+
+			outTexture.path = metadata["original-path"];
+			outTexture.vk_format = metadata["format-n"];
+			outTexture.byte_size = metadata["blob_size"];
+
+			outTexture.name = reinterpret_cast<const char*>(tx);
+
+			bytes = sqlite3_column_bytes(load_texture_query, 5);
+			const void* ptr = sqlite3_column_blob(load_texture_query, 5);
+
+			outTexture.data_raw = (stbi_uc*)malloc(bytes);
+			memcpy(outTexture.data_raw, ptr, bytes);
+
+			co_yield outTexture;
+		}
+		else if (rc == SQLITE_DONE)
+		{
+			break;
+		}
+		else {
+			sqlite3_finalize(pStmt);
+			co_return ;
+		}
+	}
+
+	sqlite3_finalize(pStmt);
+	co_return;
+}
+
 int RealSceneLoader::load_textures_from_db(const char* scene_path, std::vector<DbTexture>& out_textures)
 {
 	using nlohmann::json;
@@ -867,6 +930,7 @@ int RealSceneLoader::load_textures_from_db(const char* scene_path, std::vector<D
 		return 1;
 	}
 	while (true) {
+		
 		int rc = sqlite3_step(pStmt);
 
 		int bytes = 0;

@@ -14,6 +14,9 @@ layout(set = 0, binding = 0) uniform UniformBufferObject {
     mat4 model;
     mat4 view;
     mat4 proj;
+	mat4 inv_model;
+    mat4 inv_view;
+    mat4 inv_proj;
 	vec4 eye;
 } ubo;
 
@@ -21,6 +24,9 @@ layout(set = 1, binding = 1) uniform UniformBufferObject2 {
     mat4 model;
     mat4 view;
     mat4 proj;
+	mat4 inv_model;
+    mat4 inv_view;
+    mat4 inv_proj;
 	vec4 eye;
 } shadowUbo;
 

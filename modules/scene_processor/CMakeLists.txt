@@ -10,7 +10,7 @@ target_include_directories(scene_processor
 		PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/public")
 
 
-#target_link_libraries(scene_processor PUBLIC )
+target_link_libraries(scene_processor PUBLIC cppcoro::cppcoro)
 target_link_libraries(scene_processor PRIVATE Vulkan::Vulkan assimp  glm gli sqlite::sqlite json::json)
 
 set_target_properties(scene_processor PROPERTIES

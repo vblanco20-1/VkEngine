@@ -21,6 +21,9 @@ layout(set = 0, binding = 5) uniform UniformBufferObject {
     mat4 model;
     mat4 view;
     mat4 projection;
+	mat4 inv_model;
+    mat4 inv_view;
+    mat4 inv_proj;
 	vec4 eye;
 } ubo;
 
@@ -28,10 +31,24 @@ layout(set = 0, binding = 5) uniform UniformBufferObject {
 
 //layout (location = 0) out float outFragColor;
 //layout (location = 0) out  outFragColor;
+float getSampleDepth(in vec2 uv){
+	return texture(samplerPositionDepth, uv).w;
+}
 
 float rand2D(in vec2 co){
     return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453);
 }
+const float NEAR_PLANE = 0.1f; //todo: specialization const
+const float FAR_PLANE =  50000.0f; //todo: specialization const 
+float linearDepth(float depth)
+{
+	float z = ((1-depth) * 2.0f - 1.0f); 
+	//float DistPlanes = FAR_PLANE - NEAR_PLANE;
+	//return NEAR_PLANE + DistPlanes * depth;
+	return (2.0f * NEAR_PLANE * FAR_PLANE) / (FAR_PLANE + NEAR_PLANE - z * (FAR_PLANE - NEAR_PLANE));
+}
+
+
 void main() 
 {
 	ivec2 dim = imageSize(resultImage);	
@@ -41,9 +58,16 @@ void main()
 	
 	vec2 inUV = vec2(gl_GlobalInvocationID.xy) / dim;
 	
+	vec2 inUV_warped = ((inUV * 2.f) - vec2(1.f)) * texture(samplerPositionDepth, inUV).w;
 
-	// Get G-Buffer values
-	vec3 fragPos = texture(samplerPositionDepth, inUV).rgb;
+	vec3 fpos = vec3(inUV_warped.x,inUV_warped.y,texture(samplerPositionDepth, inUV).w );
+
+	vec3 gpos = texture(samplerPositionDepth, inUV).rgb;
+
+	vec4 gfrag = (ubo.inv_proj *vec4(gpos,1.f)); 
+	
+	vec3 fragPos = (ubo.inv_proj *vec4(fpos,1.f)).xyz; 
+	
 	vec3 normal = normalize(texture(samplerNormal, inUV).rgb * 2.0 - 1.0);
 
 	// Get a random vector using a noise lookup
@@ -63,9 +87,10 @@ void main()
 	float occlusion = 0.0f;
 	// remove banding
 	const float bias = 5.f;
-
+	float tst;
 	for(int i = 0; i < SSAO_KERNEL_SIZE; i++)
 	{		
+		//int i = 0;
 		vec3 samplePos = TBN*uboSSAOKernel.samples[i].xyz; 
 		samplePos = fragPos + samplePos * SSAO_RADIUS; 
 		
@@ -75,28 +100,34 @@ void main()
 		offset.xyz /= offset.w; 
 		offset.xyz = offset.xyz * 0.5f + 0.5f; 
 		
-		float sampleDepth = -texture(samplerPositionDepth, offset.xy).w; 
-
-#define RANGE_CHECK 1
+		float sampleDepth = getSampleDepth(offset.xy);//-linearDepth(1-getSampleDepth(offset.xy)); 
+		tst = sampleDepth;//samplePos.z;//getSampleDepth(offset.xy);
+#define RANGE_CHECK 0
 #ifdef RANGE_CHECK
 		// Range check
-		float rangeCheck = smoothstep(0.0f, 1.0f, SSAO_RADIUS / abs(fragPos.z - sampleDepth));
+		float rangeCheck = smoothstep(0.0f, 1.0f, SSAO_RADIUS / abs(fpos.z - sampleDepth));
 		occlusion += (sampleDepth >= samplePos.z + bias ? 1.0f : 0.0f) * rangeCheck;           
 #else
 		occlusion += (sampleDepth >= samplePos.z + bias ? 1.0f : 0.0f);  
 #endif
 	}
-	occlusion *= 2;
-	occlusion = clamp( 1.0 - (occlusion / float(SSAO_KERNEL_SIZE)) ,0.f,1.f );
+	//occlusion *= 2;
+	//occlusion = clamp( 1.0 - (occlusion / float(SSAO_KERNEL_SIZE)) ,0.f,1.f );
 
-	if(abs(fragPos.z) > 2000){
-		outFragColor = 1.f;
-	}
-	else{
+	//if(abs(fragPos.z) > 2000){
+	//	outFragColor = 1.f;
+	//}
+	//else{
 		outFragColor =  occlusion;
-	}	
+	//}	
 
-	//outFragColor = 1.f;
+	 vec3 gf = (gfrag / gfrag.w).xyz;
+	outFragColor = sin(linearDepth(texture(samplerPositionDepth, inUV).w)) - sin((gf.z*FAR_PLANE));
+	//outFragColor = sin((gf.z*FAR_PLANE));
+	//outFragColor = sin((tst - fragPos.z)*100 );
+	//outFragColor = sin(gf.z*FAR_PLANE);
+	//outFragColor = sin(tst );
+	//outFragColor = (sin((gpos.z*FAR_PLANE)));
 	imageStore(resultImage, ivec2(gl_GlobalInvocationID.xy), vec4(outFragColor));
 	}
 }

@@ -10,6 +10,10 @@ target_include_directories(shader_processor
 		PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/public")
 
 
-target_link_libraries(shader_processor PUBLIC Vulkan::Vulkan)
+set_target_properties(shader_processor PROPERTIES
+            CXX_STANDARD 17
+            ) 
+
+target_link_libraries(shader_processor PUBLIC cppcoro::cppcoro Vulkan::Vulkan)
 target_link_libraries(shader_processor PRIVATE glslang SPIRV spirv-cross-core spirv-cross-reflect spirv-cross-cpp)
 

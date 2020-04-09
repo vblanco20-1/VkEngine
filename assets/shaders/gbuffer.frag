@@ -26,7 +26,12 @@ void main()
 {	
 	
 	posDepth.xyz = fragPos;
-	posDepth.w = linearDepth(1-gl_FragCoord.z);
+	posDepth.w = linearDepth(gl_FragCoord.z);//gl_FragCoord.z;
+	
+	
+	
+	//linearDepth(1-gl_FragCoord.z);
+	//posDepth.x = linearDepth(1-gl_FragCoord.z);
 
 	normal =vec4(normalize(fragNormal) * 0.5 + 0.5, 1.0);	
 }

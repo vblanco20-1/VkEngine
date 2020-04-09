@@ -35,7 +35,12 @@ const std::vector<const char*> validationLayers = {
 
 const std::vector<const char*> deviceExtensions = {
 	VK_KHR_SWAPCHAIN_EXTENSION_NAME ,
-	VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME//,
+	VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME,
+	//rays
+	VK_KHR_RAY_TRACING_EXTENSION_NAME,
+	VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME,
+	VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
+
 	//VK_NV_GLSL_SHADER_EXTENSION_NAME
 };
 
@@ -96,7 +101,7 @@ public:
 	
 	AllocatedBuffer indexBuffer;
 	//vk::DeviceMemory indexBufferMemory;
-
+	AllocatedBuffer RaySceneBuffer;
 	std::vector < AllocatedBuffer> shadowDataBuffers;
 	std::vector < AllocatedBuffer> cameraDataBuffers;
 	std::vector < AllocatedBuffer> object_buffers;
@@ -171,7 +176,19 @@ public:
 		static constexpr vk::Format posdepth_format = vk::Format::eR32G32B32A32Sfloat;
 		static constexpr vk::Format normal_format = vk::Format::eR16G16B16A16Sfloat;
 	} gbuffPass;
+	struct AccelerationStructure
+	{
+		VmaAllocation allocation;
 
+		//VkDeviceMemory            memory;
+		VkAccelerationStructureNV acceleration_structure;
+		uint64_t                  handle;
+	};
+
+	AccelerationStructure bottom_level_acceleration_structure;
+	AccelerationStructure top_level_acceleration_structure;
+
+	std::vector<AccelerationStructure> bottomAccelStructures;
 
 	std::vector<const char*> get_extensions();
 	void cleanup_swap_chain();
@@ -193,6 +210,11 @@ public:
 	void create_gfx_pipeline();
 	void create_shadow_pipeline();
 	void create_ssao_pipelines();
+
+	void build_ray_structures();
+	void build_mesh_accel_structure(MeshResource& mesh);
+
+	vk::DeviceAddress get_buffer_adress(const AllocatedBuffer& buffer);
 
 	ShaderEffect* build_shader_effect(std::vector<const char*> shader_paths, const char* effect_name);
 

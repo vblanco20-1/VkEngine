@@ -47,11 +47,13 @@ namespace vke {
 	};
 
 	
-	struct DescriptorAllocatorPoolImpl :public DescriptorAllocatorPool {
+	class DescriptorAllocatorPoolImpl :public DescriptorAllocatorPool {
+	public:
+		 virtual ~DescriptorAllocatorPoolImpl();
 
-		virtual void Flip() override;
-		virtual void SetPoolSizeMultiplier(VkDescriptorType type, float multiplier) override;		
-		virtual DescriptorAllocatorHandle GetAllocator(DescriptorAllocatorLifetime lifetime) override;
+		 void Flip() override final;
+		 void SetPoolSizeMultiplier(VkDescriptorType type, float multiplier) override final;
+		 DescriptorAllocatorHandle GetAllocator() override final;
 
 		void ReturnAllocator(DescriptorAllocatorHandle& handle, bool bIsFull);
 		VkDescriptorPool createPool(int count, VkDescriptorPoolCreateFlags flags);
@@ -78,7 +80,7 @@ namespace vke {
 		impl->_device = device;
 		impl->_frameIndex = 0;
 		impl->_maxFrames = nFrames;
-		for (int i = 0; i < nFrames + 1; i++) {
+		for (int i = 0; i < nFrames; i++) {
 			impl->_descriptorPools.push_back(std::make_unique<PoolStorage>());
 		}
 		return impl;
@@ -91,7 +93,6 @@ namespace vke {
 			
 			implPool->ReturnAllocator(*this, false);
 		}
-
 	}
 
 	DescriptorAllocatorHandle::DescriptorAllocatorHandle(DescriptorAllocatorHandle&& other)
@@ -157,7 +158,7 @@ namespace vke {
 			
 				implPool->ReturnAllocator(*this, true);
 
-				DescriptorAllocatorHandle newHandle = implPool->GetAllocator(poolIdx == 0 ? DescriptorAllocatorLifetime::Static : DescriptorAllocatorLifetime::PerFrame);
+				DescriptorAllocatorHandle newHandle = implPool->GetAllocator();
 				
 				vkPool = newHandle.vkPool;
 				poolIdx = newHandle.poolIdx;
@@ -197,26 +198,41 @@ namespace vke {
 		return descriptorPool;
 	}
 
+	DescriptorAllocatorPoolImpl::~DescriptorAllocatorPoolImpl()
+	{
+		for (DescriptorAllocator allocator : _clearAllocators) {
+			vkDestroyDescriptorPool(_device, allocator.pool, nullptr);
+		}
+		for (auto&& storage : _descriptorPools) {
+			for (DescriptorAllocator allocator : storage->_fullAllocators) {
+				vkDestroyDescriptorPool(_device, allocator.pool, nullptr);
+			}
+			for (DescriptorAllocator allocator : storage->_usableAllocators) {
+				vkDestroyDescriptorPool(_device, allocator.pool, nullptr);
+			}
+		}
+	}
+
 	void DescriptorAllocatorPoolImpl::Flip()
 	{
 		 _frameIndex = (_frameIndex+1) % _maxFrames;
 		
-		 for (auto al :  _descriptorPools[_frameIndex + 1]->_fullAllocators ) {
+		 for (auto al :  _descriptorPools[_frameIndex]->_fullAllocators ) {
 
 			 vkResetDescriptorPool(_device, al.pool, VkDescriptorPoolResetFlags{ 0 });
 
 			 _clearAllocators.push_back(al);
 		 }
 
-		 for (auto al : _descriptorPools[_frameIndex + 1]->_usableAllocators) {
+		 for (auto al : _descriptorPools[_frameIndex]->_usableAllocators) {
 
 			 vkResetDescriptorPool(_device, al.pool, VkDescriptorPoolResetFlags{ 0 });
 
 			 _clearAllocators.push_back(al);
 		 }
 
-		 _descriptorPools[_frameIndex + 1]->_fullAllocators.clear();
-		 _descriptorPools[_frameIndex + 1]->_usableAllocators.clear();
+		 _descriptorPools[_frameIndex]->_fullAllocators.clear();
+		 _descriptorPools[_frameIndex]->_usableAllocators.clear();
 	}
 
 	void DescriptorAllocatorPoolImpl::SetPoolSizeMultiplier(VkDescriptorType type, float multiplier)
@@ -248,15 +264,15 @@ namespace vke {
 		}
 	}
 
-	vke::DescriptorAllocatorHandle DescriptorAllocatorPoolImpl::GetAllocator(DescriptorAllocatorLifetime lifetime)
+	vke::DescriptorAllocatorHandle DescriptorAllocatorPoolImpl::GetAllocator()
 	{
 		std::lock_guard<std::mutex> lk(_poolMutex);
 
-		int poolIndex = 0;
+		
 		bool foundAllocator = false;
-		if (lifetime == DescriptorAllocatorLifetime::PerFrame) {
-			poolIndex = _frameIndex + 1;
-		}
+		
+		int poolIndex = _frameIndex ;
+
 
 		DescriptorAllocator allocator;
 		//try reuse an allocated pool

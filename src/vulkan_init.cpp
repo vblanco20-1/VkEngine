@@ -165,18 +165,34 @@ void VulkanEngine::create_device()
 	//--- DEVICE FEATURES
 	vk::PhysicalDeviceFeatures deviceFeatures;
 	deviceFeatures.samplerAnisotropy = true;
-	
+	//deviceFeatures.
 
-	vk::PhysicalDeviceTimelineSemaphoreFeaturesKHR timelineFeatures;
-	timelineFeatures.timelineSemaphore = true;
+	//vk::PhysicalDeviceTimelineSemaphoreFeaturesKHR timelineFeatures;
+	//timelineFeatures.timelineSemaphore = true;
+
+	vk::PhysicalDeviceRayTracingFeaturesKHR rayFeatures;
+	rayFeatures.rayTracing = true;
+	//rayFeatures.rayTracingShaderGroupHandleCaptureReplay;
+	//rayFeatures.rayTracingShaderGroupHandleCaptureReplayMixed;
+	//rayFeatures.rayTracingAccelerationStructureCaptureReplay;
+	//rayFeatures.rayTracingIndirectTraceRays = true;
+	//rayFeatures.rayTracingIndirectAccelerationStructureBuild = true;
+	//rayFeatures.rayTracingHostAccelerationStructureCommands = true;
+	rayFeatures.rayQuery = true;
+	//rayFeatures.rayTracingPrimitiveCulling = true;
 
 	
-	//vk::PhysicalDeviceVulkan12Features vk12features;
-	//vk12features.timelineSemaphore = true;
+	vk::PhysicalDeviceVulkan12Features vk12features;
+	vk12features.timelineSemaphore = true;
+	vk12features.bufferDeviceAddress =true;
+	vk12features.descriptorIndexing = true;
+	vk12features.imagelessFramebuffer = true;
+	vk12features.pNext = &rayFeatures;
+
 
 	vk::PhysicalDeviceFeatures2 features2;
 	features2.features = deviceFeatures;
-	features2.pNext = &timelineFeatures;// &vk12features;
+	features2.pNext =  &vk12features;
 
 
 	//deviceFeatures.
@@ -213,7 +229,7 @@ void VulkanEngine::create_device()
 	presentQueue = device.getQueue(presentFamilyIndex, 0);
 
 	// This dispatch class will fetch function pointers for the passed device if possible, else for the passed instance
-	extensionDispatcher = vk::DispatchLoaderDynamic(instance, device);
+	extensionDispatcher.init(instance, device);// = vk::DispatchLoaderDynamic{ instance, device };
 }
 
 struct SwapChainSupportDetails {

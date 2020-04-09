@@ -89,7 +89,7 @@ void VulkanEngine::create_engine_graph()
 		}, PassType::Compute, false);
 
 
-#if 0
+#if 1
 	auto blurx_pass = graph.add_pass("SSAO-blurx", [&](vk::CommandBuffer cmd, RenderPass* pass) {
 		
 	
@@ -223,7 +223,7 @@ void VulkanEngine::init_vulkan()
 {
 	ZoneScopedNC("Engine init", tracy::Color::Blue);
 	
-	vk::ApplicationInfo appInfo{ "VkEngine",VK_MAKE_VERSION(0,0,0),"VkEngine:Demo",VK_MAKE_VERSION(0,0,0),VK_API_VERSION_1_1 };
+	vk::ApplicationInfo appInfo{ "VkEngine",VK_MAKE_VERSION(0,0,0),"VkEngine:Demo",VK_MAKE_VERSION(0,0,0),VK_API_VERSION_1_2 };
 
 	vk::InstanceCreateInfo createInfo;
 
@@ -266,7 +266,7 @@ void VulkanEngine::init_vulkan()
 		createInfo.enabledLayerCount = 0;
 	}
 	
-
+	
 	instance = vk::createInstance(createInfo);
 	if (enableValidationLayers)
 	{
@@ -293,7 +293,8 @@ void VulkanEngine::init_vulkan()
 	VmaAllocatorCreateInfo allocatorInfo = {};
 	allocatorInfo.physicalDevice = physicalDevice;
 	allocatorInfo.device = device;
-	
+	allocatorInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
+	allocatorInfo.instance = instance;
 	vmaCreateAllocator(&allocatorInfo, &allocator);
 
 	createSwapChain();
@@ -475,6 +476,8 @@ void VulkanEngine::init_vulkan()
 	//	loadConfig);
 
 	load_scene("bistro_ext.db",MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Exterior.fbx"), glm::rotate(glm::scale(glm::vec3(100.f)), glm::radians(90.f), glm::vec3(1, 0, 0)));
+
+	build_ray_structures();
 
 	//load_scene("sun_temple.db",
 	//	MAKE_ASSET_PATH("models/SunTemple.fbx"),
@@ -886,6 +889,10 @@ void VulkanEngine::create_ssao_pipelines()
 	ShaderEffect* ssaoBlur_Comp = build_shader_effect(
 		{ MAKE_ASSET_PATH("shaders/blur.comp") },
 		"ssao-comp-blur");
+
+	ShaderEffect* rayEffect = build_shader_effect(
+		{ MAKE_ASSET_PATH("shaders/rayshadows.comp") },
+		"rayshadow-gen");
 	
 	FrameGraph::GraphAttachment* ssaoAttachment = render_graph.get_attachment("ssao_pre");// &graph.attachments["ssao_pre"];
 
@@ -908,7 +915,8 @@ void VulkanEngine::create_ssao_pipelines()
 	auto ssaoCompBuilder = new ComputePipelineBuilder();
 	vk::Pipeline ssaoPipeline_comp = ssaoCompBuilder->build_pipeline(device,ssaoEffect_Comp);
 
-	
+	vk::Pipeline rayPipeline_comp = ssaoCompBuilder->build_pipeline(device, rayEffect);
+
 	vk::Pipeline ssaoBlurPipeline_comp = ssaoCompBuilder->build_pipeline(device, ssaoBlur_Comp);
 
 	RenderPass* pass = render_graph.get_pass("SSAO-pre");
@@ -925,16 +933,23 @@ void VulkanEngine::create_ssao_pipelines()
 	PipelineResource pipeline_Comp;
 	pipeline_Comp.pipeline = ssaoPipeline_comp;
 	pipeline_Comp.effect = ssaoEffect_Comp;
-	pipeline_Comp.pipelineBuilder = (GraphicsPipelineBuilder*)ssaoCompBuilder;
+	pipeline_Comp.computePipelineBuilder = ssaoCompBuilder;
 	pipeline_Comp.renderPassName = "SSAO-pre";
 	auto pipeline_id_comp = createResource("pipeline_ssao_comp", pipeline_Comp);
 
 	PipelineResource pipelineBlur_Comp;
 	pipelineBlur_Comp.pipeline = ssaoBlurPipeline_comp;
 	pipelineBlur_Comp.effect = ssaoBlur_Comp;
-	pipelineBlur_Comp.pipelineBuilder = (GraphicsPipelineBuilder*)ssaoCompBuilder;
+	pipelineBlur_Comp.computePipelineBuilder = ssaoCompBuilder;
 	pipelineBlur_Comp.renderPassName = "SSAO-blur-comp";
 	auto pipelineblur_id_comp = createResource("pipeline_ssao_blur_comp", pipelineBlur_Comp);
+
+	PipelineResource pipelineRay_Comp;
+	pipelineRay_Comp.pipeline = rayPipeline_comp;
+	pipelineRay_Comp.effect = rayEffect;
+	pipelineRay_Comp.computePipelineBuilder = ssaoCompBuilder;
+	pipelineRay_Comp.renderPassName = "SSAO-pre";
+	auto raypip_id_comp = createResource("ray_shadow", pipelineRay_Comp);
 
 
 	//cam buffer
@@ -1000,23 +1015,297 @@ void VulkanEngine::create_ssao_pipelines()
 		vk::DynamicState::eScissor
 	};
 
-	//vk::Pipeline blurx = blurPipelineBuilder->build_pipeline(device, render_graph.get_pass("SSAO-blurx")->built_pass, 0, ssaoBlur);
-	//vk::Pipeline blury = blurPipelineBuilder->build_pipeline(device, render_graph.get_pass("SSAO-blury")->built_pass, 0, ssaoBlur);
-	//
-	////PipelineResource pipeline;
-	//pipeline.pipeline = blurx;
-	//pipeline.effect = ssaoBlur;
-	//pipeline.pipelineBuilder = blurPipelineBuilder;
-	//pipeline.renderPassName = "SSAO-blurx";
-	///*auto */pipeline_id = createResource("pipeline_ssao_blurx", pipeline);
-	//
-	//pipeline.pipeline = blury;
-	//pipeline.effect = ssaoBlur;
-	//pipeline.pipelineBuilder = blurPipelineBuilder;
-	//pipeline.renderPassName = "SSAO-blury";
-	//pipeline_id = createResource("pipeline_ssao_blury", pipeline);
+	vk::Pipeline blurx = blurPipelineBuilder->build_pipeline(device, render_graph.get_pass("SSAO-blurx")->built_pass, 0, ssaoBlur);
+	vk::Pipeline blury = blurPipelineBuilder->build_pipeline(device, render_graph.get_pass("SSAO-blury")->built_pass, 0, ssaoBlur);
+
+	//PipelineResource pipeline;
+	pipeline.pipeline = blurx;
+	pipeline.effect = ssaoBlur;
+	pipeline.pipelineBuilder = blurPipelineBuilder;
+	pipeline.renderPassName = "SSAO-blurx";
+	/*auto */pipeline_id = createResource("pipeline_ssao_blurx", pipeline);
+
+	pipeline.pipeline = blury;
+	pipeline.effect = ssaoBlur;
+	pipeline.pipelineBuilder = blurPipelineBuilder;
+	pipeline.renderPassName = "SSAO-blury";
+	pipeline_id = createResource("pipeline_ssao_blury", pipeline);
 }
 
+
+void VulkanEngine::build_ray_structures()
+{
+	//std::vector<accelerationstructure
+	render_registry.view<MeshResource>().each([&](auto eid, MeshResource& resource) {
+		build_mesh_accel_structure(resource);
+	});
+
+	
+	
+	std::vector<vk::AccelerationStructureCreateGeometryTypeInfoKHR> geoInfos;
+
+	//for (int i = 0; i < render_registry.view<RenderMeshComponent>().size(); i++) {
+	{
+		vk::AccelerationStructureCreateGeometryTypeInfoKHR geoInfo;
+		geoInfo.geometryType = vk::GeometryTypeKHR::eInstances;
+		geoInfo.maxPrimitiveCount = render_registry.view<RenderMeshComponent>().size(); // 1;
+		geoInfo.allowsTransforms = true;
+		geoInfos.push_back(geoInfo);
+	}
+
+	vk::AccelerationStructureCreateInfoKHR accelCreateInfo;
+	accelCreateInfo.type = vk::AccelerationStructureTypeKHR::eTopLevel;
+	accelCreateInfo.flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace;
+	accelCreateInfo.deviceAddress = 0;
+	accelCreateInfo.compactedSize = 0;
+	accelCreateInfo.maxGeometryCount = 1;//render_registry.view<RenderMeshComponent>().size();
+	accelCreateInfo.pGeometryInfos = geoInfos.data();
+
+	vk::AccelerationStructureKHR accelStructure = device.createAccelerationStructureKHR(accelCreateInfo,nullptr,extensionDispatcher);
+
+	vk::AccelerationStructureMemoryRequirementsInfoKHR memoryRequirements;
+	memoryRequirements.type = vk::AccelerationStructureMemoryRequirementsTypeKHR::eObject;
+	memoryRequirements.buildType = vk::AccelerationStructureBuildTypeKHR::eHostOrDevice;
+	memoryRequirements.accelerationStructure = accelStructure;
+
+	vk::AccelerationStructureMemoryRequirementsInfoKHR memoryRequirements_scratch;
+	memoryRequirements_scratch.type = vk::AccelerationStructureMemoryRequirementsTypeKHR::eBuildScratch;
+	memoryRequirements_scratch.buildType = vk::AccelerationStructureBuildTypeKHR::eHostOrDevice;
+	memoryRequirements_scratch.accelerationStructure = accelStructure;
+
+	vk::MemoryRequirements2 buildRequirements = device.getAccelerationStructureMemoryRequirementsKHR(memoryRequirements, extensionDispatcher);
+	vk::MemoryRequirements2 buildRequirements_scratch = device.getAccelerationStructureMemoryRequirementsKHR(memoryRequirements_scratch, extensionDispatcher);
+
+	vk::MemoryAllocateInfo allocInfo;
+	allocInfo.allocationSize = buildRequirements.memoryRequirements.size;
+	allocInfo.memoryTypeIndex = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+
+	VmaAllocationCreateInfo alloccreateinfo;
+	alloccreateinfo.memoryTypeBits = 0;
+	alloccreateinfo.pool = VK_NULL_HANDLE;
+	alloccreateinfo.flags = 0;
+	alloccreateinfo.requiredFlags = (VkMemoryPropertyFlagBits)vk::MemoryPropertyFlagBits::eDeviceLocal;
+	alloccreateinfo.preferredFlags = 0;
+	alloccreateinfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+	alloccreateinfo.pUserData = nullptr;
+	VmaAllocation top_alloc;
+	VmaAllocationInfo top_alloc_info;
+
+	vmaAllocateMemory(allocator, (VkMemoryRequirements*)&buildRequirements.memoryRequirements, &alloccreateinfo, &top_alloc, &top_alloc_info);
+	//top_level_acceleration_structure.memory= device.allocateMemory(allocInfo);
+	top_level_acceleration_structure.allocation = top_alloc;
+
+	AllocatedBuffer scratchBuffer;
+	createBuffer(buildRequirements_scratch.memoryRequirements.size, vk::BufferUsageFlagBits::eRayTracingKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress,vk::MemoryPropertyFlagBits::eDeviceLocal, VMA_MEMORY_USAGE_GPU_ONLY, scratchBuffer);
+
+	vk::BindAccelerationStructureMemoryInfoKHR memoryBinding;
+	memoryBinding.accelerationStructure = accelStructure;
+	
+	memoryBinding.memory = top_alloc_info.deviceMemory;//top_level_acceleration_structure.allocation->GetMemory();
+	memoryBinding.memoryOffset = top_alloc_info.offset;//top_level_acceleration_structure.allocation->GetOffset();	
+
+	device.bindAccelerationStructureMemoryKHR(1, &memoryBinding, extensionDispatcher);
+
+	top_level_acceleration_structure.acceleration_structure = accelStructure;
+
+
+	//device.getAccelerationStructureHandleNV(accelStructure, sizeof(uint64_t), &top_level_acceleration_structure.handle, extensionDispatcher);
+
+	
+
+	std::vector<vk::AccelerationStructureInstanceKHR > blas_instances;
+
+	render_registry.group<RenderMeshComponent, TransformComponent, ObjectBounds>().each([&](RenderMeshComponent& renderable, TransformComponent& tf, ObjectBounds& bounds) {
+		MeshResource& mesh = render_registry.get<MeshResource>(renderable.mesh_resource_entity);
+
+		vk::AccelerationStructureInstanceKHR new_instance;
+		new_instance.accelerationStructureReference = mesh.accelStructure.handle;
+		new_instance.flags = (VkGeometryInstanceFlagsKHR)vk::GeometryInstanceFlagBitsKHR::eTriangleCullDisable;
+		new_instance.instanceCustomIndex = renderable.object_idx;
+		new_instance.instanceShaderBindingTableRecordOffset = 0;
+		new_instance.mask = 1;
+
+		glm::mat3x4 transform_matrix = tf.model;
+
+		memcpy(&new_instance.transform.matrix, &transform_matrix, sizeof(glm::mat3x4));
+
+		blas_instances.push_back(new_instance);
+		});
+
+	size_t bfsize = blas_instances.size() * sizeof(vk::AccelerationStructureInstanceKHR);
+	AllocatedBuffer instances_Buffer;
+	createBuffer(bfsize,vk::BufferUsageFlagBits::eRayTracingKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress ,vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent , VMA_MEMORY_USAGE_UNKNOWN, instances_Buffer);
+
+
+	void* data;
+	vmaMapMemory(allocator, instances_Buffer.allocation, &data);
+
+	memcpy(data, blas_instances.data(), bfsize);
+
+	vmaUnmapMemory(allocator, instances_Buffer.allocation);
+
+
+	std::vector<vk::AccelerationStructureGeometryKHR> geometries;
+
+	//for (int i = 0; i < blas_instances.size(); i++) {
+	{
+		vk::AccelerationStructureGeometryKHR geo;
+		geo.geometryType = vk::GeometryTypeKHR::eInstances;
+		geo.geometry.instances.data.deviceAddress = get_buffer_adress(instances_Buffer);
+		//geo.geometry.instances.data.hostAddress = &blas_instances[i];
+		geo.geometry.instances.arrayOfPointers = false;
+		geometries.push_back(geo);
+	}
+
+	auto dataptr = geometries.data();
+	vk::AccelerationStructureGeometryKHR* const* ptr = &dataptr;
+	vk::AccelerationStructureBuildGeometryInfoKHR buildinfo;
+	buildinfo.type = vk::AccelerationStructureTypeKHR::eTopLevel;
+	buildinfo.geometryCount = 1;//geometries.size();
+
+	buildinfo.ppGeometries = ptr;
+	buildinfo.geometryArrayOfPointers = false;
+	buildinfo.flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace;
+	buildinfo.dstAccelerationStructure = accelStructure;
+	buildinfo.scratchData.deviceAddress = get_buffer_adress(scratchBuffer);//device.getBufferAddressKHR(scratchadressinfo, extensionDispatcher);
+
+
+	vk::CommandBuffer commandBuffer = beginSingleTimeCommands();
+	
+
+	vk::AccelerationStructureBuildOffsetInfoKHR offset;
+	offset.primitiveCount = blas_instances.size();
+	auto poffset = &offset;
+
+	commandBuffer.buildAccelerationStructureKHR(1, &buildinfo, &poffset, extensionDispatcher);
+
+	endSingleTimeCommands(commandBuffer);
+}
+
+void VulkanEngine::build_mesh_accel_structure(MeshResource& mesh)
+{
+	ZoneScoped;
+	
+	std::cout << "building accel structure for: " << mesh.name << std::endl;
+
+	vk::AccelerationStructureCreateGeometryTypeInfoKHR geoInfo;
+	geoInfo.geometryType = vk::GeometryTypeKHR::eTriangles;
+	geoInfo.indexType = vk::IndexType::eUint32;
+	geoInfo.vertexFormat = vk::Format::eR32G32B32Sfloat;
+	geoInfo.allowsTransforms = false;
+	geoInfo.maxPrimitiveCount = mesh.indices.size() / 3;
+	geoInfo.maxVertexCount = mesh.vertices.size();	
+
+	vk::AccelerationStructureCreateInfoKHR accelCreateInfo;
+	accelCreateInfo.type = vk::AccelerationStructureTypeKHR::eBottomLevel;
+	accelCreateInfo.flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace;
+	accelCreateInfo.deviceAddress = 0;
+	accelCreateInfo.compactedSize = 0;
+	accelCreateInfo.maxGeometryCount = 1;
+	accelCreateInfo.pGeometryInfos = &geoInfo;
+
+	vk::AccelerationStructureKHR accelStructure = device.createAccelerationStructureKHR(accelCreateInfo, nullptr, extensionDispatcher);
+
+	vk::AccelerationStructureMemoryRequirementsInfoKHR memoryRequirements;
+	memoryRequirements.type = vk::AccelerationStructureMemoryRequirementsTypeKHR::eObject;
+	memoryRequirements.buildType = vk::AccelerationStructureBuildTypeKHR::eHostOrDevice;
+	memoryRequirements.accelerationStructure = accelStructure;
+
+	vk::AccelerationStructureMemoryRequirementsInfoKHR memoryRequirements_scratch;
+	memoryRequirements_scratch.type = vk::AccelerationStructureMemoryRequirementsTypeKHR::eBuildScratch;
+	memoryRequirements_scratch.buildType = vk::AccelerationStructureBuildTypeKHR::eHostOrDevice;
+	memoryRequirements_scratch.accelerationStructure = accelStructure;
+
+	vk::MemoryRequirements2 buildRequirements = device.getAccelerationStructureMemoryRequirementsKHR(memoryRequirements, extensionDispatcher);
+	vk::MemoryRequirements2 buildRequirements_scratch = device.getAccelerationStructureMemoryRequirementsKHR(memoryRequirements_scratch, extensionDispatcher);
+
+	vk::MemoryAllocateInfo allocInfo;
+	allocInfo.allocationSize = buildRequirements.memoryRequirements.size;
+	allocInfo.memoryTypeIndex = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+
+	VmaAllocationCreateInfo alloccreateinfo;
+	alloccreateinfo.memoryTypeBits = 0;
+	alloccreateinfo.pool = VK_NULL_HANDLE;
+	alloccreateinfo.flags = 0;
+	alloccreateinfo.requiredFlags = (VkMemoryPropertyFlagBits)vk::MemoryPropertyFlagBits::eDeviceLocal;
+	alloccreateinfo.preferredFlags = 0;
+	alloccreateinfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+	alloccreateinfo.pUserData = nullptr;
+	VmaAllocation top_alloc;
+	VmaAllocationInfo top_alloc_info;
+
+	vmaAllocateMemory(allocator, (VkMemoryRequirements*)&buildRequirements.memoryRequirements, &alloccreateinfo, &top_alloc, &top_alloc_info);
+	//top_level_acceleration_structure.memory= device.allocateMemory(allocInfo);
+	//top_level_acceleration_structure.allocation = top_alloc;
+
+	AllocatedBuffer scratchBuffer;
+	createBuffer(buildRequirements_scratch.memoryRequirements.size, vk::BufferUsageFlagBits::eRayTracingKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress, vk::MemoryPropertyFlagBits::eDeviceLocal, VMA_MEMORY_USAGE_GPU_ONLY, scratchBuffer);
+
+
+	vk::BindAccelerationStructureMemoryInfoKHR memoryBinding;
+	memoryBinding.accelerationStructure = accelStructure;
+
+	memoryBinding.memory = top_alloc_info.deviceMemory;
+	memoryBinding.memoryOffset = top_alloc_info.offset;
+
+	device.bindAccelerationStructureMemoryKHR(1, &memoryBinding, extensionDispatcher);
+
+	mesh.accelStructure.acceleration_structure = accelStructure;
+
+
+	vk::CommandBuffer commandBuffer = beginSingleTimeCommands();
+
+	//vk::BufferDeviceAddressInfo scratchadressinfo;
+	//scratchadressinfo.buffer = scratchBuffer.buffer;
+
+	vk::AccelerationStructureGeometryKHR Geo;
+	Geo.flags = vk::GeometryFlagBitsKHR::eOpaque;
+	Geo.geometryType = vk::GeometryTypeKHR::eTriangles;
+	Geo.geometry.triangles.vertexData = get_buffer_adress(mesh.vertexBuffer);
+	Geo.geometry.triangles.indexData = get_buffer_adress(mesh.indexBuffer);
+	Geo.geometry.triangles.indexType = vk::IndexType::eUint32;
+	Geo.geometry.triangles.vertexFormat = vk::Format::eR32G32B32Sfloat;
+	Geo.geometry.triangles.vertexStride = sizeof(Vertex);
+	Geo.geometry.triangles.transformData = {};
+	vk::AccelerationStructureGeometryKHR* pgeo;
+	pgeo = &Geo;
+
+	vk::AccelerationStructureBuildGeometryInfoKHR buildinfo;
+	buildinfo.type = vk::AccelerationStructureTypeKHR::eBottomLevel;
+	buildinfo.geometryCount = 1;	
+	buildinfo.ppGeometries = &pgeo;	
+	buildinfo.flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace;
+	buildinfo.dstAccelerationStructure = accelStructure;
+	buildinfo.scratchData.deviceAddress = get_buffer_adress(scratchBuffer);
+
+	vk::AccelerationStructureBuildOffsetInfoKHR offset;
+	offset.primitiveCount = geoInfo.maxPrimitiveCount;
+	offset.firstVertex = 0;
+	offset.primitiveOffset = 0;
+	offset.transformOffset = 0;
+	auto poffset = &offset;
+
+	commandBuffer.buildAccelerationStructureKHR(1, &buildinfo, &poffset, extensionDispatcher);
+
+	endSingleTimeCommands(commandBuffer);
+
+	vk::AccelerationStructureDeviceAddressInfoKHR handleinfo;
+	handleinfo.accelerationStructure = mesh.accelStructure.acceleration_structure;
+	
+
+	mesh.accelStructure.handle = device.getAccelerationStructureAddressKHR(handleinfo, extensionDispatcher);
+
+	destroyBuffer(scratchBuffer);	
+}
+
+vk::DeviceAddress VulkanEngine::get_buffer_adress(const AllocatedBuffer& buffer)
+{
+	vk::BufferDeviceAddressInfo bufferinfo;
+	bufferinfo.buffer = buffer.buffer;
+
+
+	return device.getBufferAddressKHR(bufferinfo, extensionDispatcher);
+}
 
 ShaderEffect* VulkanEngine::build_shader_effect(std::vector<const char*> shader_paths, const char* effect_name)
 {
@@ -1254,6 +1543,7 @@ void VulkanEngine::createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage,
 	VmaAllocationCreateInfo vmaallocInfo = {};
 	vmaallocInfo.usage = vmaUsage;
 	vmaallocInfo.requiredFlags = VkMemoryPropertyFlags(properties);
+	//vmaallocInfo.flags = vk::MemoryAllocateFlagBits::eDeviceAddress;
 	VkBuffer vkbuffer;
 	VmaAllocation allocation;
 	vk::Result result = vk::Result(vmaCreateBuffer(allocator, &vkbinfo, &vmaallocInfo, &vkbuffer, &allocation, nullptr));
@@ -1410,7 +1700,7 @@ void VulkanEngine::start_frame_renderpass(vk::CommandBuffer buffer, vk::Framebuf
 	vk::RenderPassBeginInfo renderPassInfo;
 	renderPassInfo.renderPass = renderPass;
 	renderPassInfo.framebuffer = framebuffer;//swapChainFramebuffers[i];
-	renderPassInfo.renderArea.offset = { 0, 0 };
+	renderPassInfo.renderArea.offset = vk::Offset2D{ 0, 0 };
 	renderPassInfo.renderArea.extent = swapChainExtent;
 
 	std::array<vk::ClearValue, 1> clearValues = {};
@@ -1818,7 +2108,7 @@ void VulkanEngine::render_ssao_compute(const vk::CommandBuffer& cmd)
 	ZoneScopedNC("SSAO Pass Compute", tracy::Color::BlueViolet);
 
 	TextureResource bluenoise = getResource<TextureResource>(bluenoiseTexture);
-	PipelineResource ssaopip = getResource<PipelineResource>("pipeline_ssao_comp");
+	PipelineResource ssaopip = getResource<PipelineResource>("ray_shadow");//("pipeline_ssao_comp");
 
 	ShaderEffect* effect = ssaopip.effect;
 
@@ -1837,7 +2127,14 @@ void VulkanEngine::render_ssao_compute(const vk::CommandBuffer& cmd)
 	noiseImage.sampler = bluenoise.textureSampler;//bluenoise.textureSampler;
 
 	setBuilder.bind_buffer("ubo", camBufferInfo);
-	setBuilder.bind_buffer("uboSSAOKernel", ssaoSamplesbuffer);
+	//setBuilder.bind_buffer("uboSSAOKernel", ssaoSamplesbuffer);
+
+
+	vk::DescriptorBufferInfo raySceneBufferInfo = make_buffer_info<UniformBufferObject>(RaySceneBuffer);
+	vk::WriteDescriptorSetAccelerationStructureKHR accel;
+	accel.accelerationStructureCount = 1;
+	accel.pAccelerationStructures = (vk::AccelerationStructureKHR*)&top_level_acceleration_structure.acceleration_structure;
+	setBuilder.bind_raystructure(0, 7, accel);
 
 	setBuilder.bind_image(0, 0, render_graph.get_image_descriptor("gbuf_pos"));
 	setBuilder.bind_image(0, 1, render_graph.get_image_descriptor("gbuf_normal"));
@@ -2334,6 +2631,13 @@ void VulkanEngine::update_uniform_buffer(uint32_t currentImage)
 	shadowubo.proj[1][1] *= -1;
 	shadowubo.model = shadowubo.view * shadowubo.proj;//shadowubo.view * shadowubo.proj;
 
+	ubo.inv_model= glm::inverse(ubo.model);
+	ubo.inv_view = glm::inverse(ubo.view);
+	ubo.inv_proj = glm::inverse(ubo.proj);
+
+	shadowubo.inv_model = glm::inverse(shadowubo.model);
+	shadowubo.inv_view = glm::inverse(shadowubo.view);
+	shadowubo.inv_proj = glm::inverse(shadowubo.proj);
 
 
 	void* data = mapBuffer(cameraDataBuffers[currentImage]);
@@ -2564,13 +2868,20 @@ void VulkanEngine::rebuild_pipeline_resource(PipelineResource* resource)
 {	
 	resource->effect->reload_shaders(device);
 
-	if (resource->renderPassName != "") {
+	if (resource->computePipelineBuilder) {
+		resource->pipeline =  resource->computePipelineBuilder->build_pipeline(device, resource->effect);
+	}
+	else {
+		if (resource->renderPassName != "") {
 
-		//RenderPass &pass = graph.pass_definitions[resource->renderPassName];
+			//RenderPass &pass = graph.pass_definitions[resource->renderPassName];
 
-		resource->pipeline = resource->pipelineBuilder->build_pipeline(device, render_graph.get_pass(resource->renderPassName)->built_pass, 
-			0, resource->effect);
-	}	
+			resource->pipeline = resource->pipelineBuilder->build_pipeline(device, render_graph.get_pass(resource->renderPassName)->built_pass,
+				0, resource->effect);
+		}
+	}
+
+
 }
 
 bool VulkanEngine::load_model(const char* model_path, std::vector<Vertex> &vertices, std::vector<uint32_t> &indices)
@@ -2615,7 +2926,7 @@ EntityID VulkanEngine::load_mesh(const char* model_path, std::string modelName)
 
 
 	
-	createBuffer(vertexBufferSize, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer, vk::MemoryPropertyFlagBits::eDeviceLocal, VMA_MEMORY_USAGE_UNKNOWN, newMesh.vertexBuffer);//vertexBuffer, vertexBufferMemory);
+	createBuffer(vertexBufferSize, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress, vk::MemoryPropertyFlagBits::eDeviceLocal, VMA_MEMORY_USAGE_UNKNOWN, newMesh.vertexBuffer);//vertexBuffer, vertexBufferMemory);
 	
 	copyBuffer(vertex_staging_allocation.buffer, newMesh.vertexBuffer.buffer, vertexBufferSize);
 
@@ -2624,7 +2935,7 @@ EntityID VulkanEngine::load_mesh(const char* model_path, std::string modelName)
 	
 
 	//AllocatedBuffer index_buffer;
-	createBuffer(indexBufferSize, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer, vk::MemoryPropertyFlagBits::eDeviceLocal, VMA_MEMORY_USAGE_UNKNOWN, newMesh.indexBuffer);
+	createBuffer(indexBufferSize, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress, vk::MemoryPropertyFlagBits::eDeviceLocal, VMA_MEMORY_USAGE_UNKNOWN, newMesh.indexBuffer);
 
 	copyBuffer(index_staging_allocation.buffer, newMesh.indexBuffer.buffer, indexBufferSize);
 
@@ -2719,13 +3030,13 @@ EntityID VulkanEngine::load_assimp_mesh(aiMesh* mesh)
 
 
 
-	createBuffer(vertexBufferSize, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer, vk::MemoryPropertyFlagBits::eDeviceLocal, VMA_MEMORY_USAGE_UNKNOWN, newMesh.vertexBuffer);//vertexBuffer, vertexBufferMemory);
+	createBuffer(vertexBufferSize, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress, vk::MemoryPropertyFlagBits::eDeviceLocal, VMA_MEMORY_USAGE_UNKNOWN, newMesh.vertexBuffer);//vertexBuffer, vertexBufferMemory);
 
 	copyBuffer(vertex_staging_allocation.buffer, newMesh.vertexBuffer.buffer, vertexBufferSize);
 
 	vmaDestroyBuffer(allocator, vertex_staging_allocation.buffer, vertex_staging_allocation.allocation);
 
-	createBuffer(indexBufferSize, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer, vk::MemoryPropertyFlagBits::eDeviceLocal, VMA_MEMORY_USAGE_UNKNOWN, newMesh.indexBuffer);
+	createBuffer(indexBufferSize, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress, vk::MemoryPropertyFlagBits::eDeviceLocal, VMA_MEMORY_USAGE_UNKNOWN, newMesh.indexBuffer);
 
 	copyBuffer(index_staging_allocation.buffer, newMesh.indexBuffer.buffer, indexBufferSize);
 

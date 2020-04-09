@@ -44,19 +44,20 @@ vk::DescriptorSet DescriptorMegaPool::allocate_descriptor(vk::DescriptorSetLayou
 
 void DescriptorMegaPool::initialize(int numFrames,vk::Device _device)
 {	
-	device = _device;
+	device = _device; 
 
-	allocatorPool = vke::DescriptorAllocatorPool::Create(device, numFrames);
-	dynamicHandle = allocatorPool->GetAllocator(vke::DescriptorAllocatorLifetime::PerFrame);
-	staticHandle = allocatorPool->GetAllocator(vke::DescriptorAllocatorLifetime::Static);	
+	dynamicAllocatorPool = vke::DescriptorAllocatorPool::Create(device, numFrames);
+	staticAllocatorPool = vke::DescriptorAllocatorPool::Create(device, 1);
+	dynamicHandle = dynamicAllocatorPool->GetAllocator();
+	staticHandle = staticAllocatorPool->GetAllocator();	
 }
 
 void DescriptorMegaPool::set_frame(int frameNumber)
 {
 	//dynamicHandle.Return();
 
-	allocatorPool->Flip();
-	dynamicHandle = allocatorPool->GetAllocator(vke::DescriptorAllocatorLifetime::PerFrame);
+	dynamicAllocatorPool->Flip();
+	dynamicHandle = dynamicAllocatorPool->GetAllocator();
 }
 
 DescriptorSetBuilder::DescriptorSetBuilder(ShaderEffect* _effect, DescriptorMegaPool* _parentPool)
@@ -136,6 +137,18 @@ void DescriptorSetBuilder::bind_buffer(const char* name, const vk::DescriptorBuf
 	}	
 }
 
+void DescriptorSetBuilder::bind_raystructure(int set, int binding, const vk::WriteDescriptorSetAccelerationStructureKHR& info)
+{
+
+	BufferWriteDescriptor newWrite;
+	newWrite.dstSet = set;
+	newWrite.dstBinding = binding;
+	newWrite.descriptorType = vk::DescriptorType::eAccelerationStructureKHR;
+	newWrite.accelinfo = info;
+
+	bufferWrites.push_back(newWrite);
+}
+
 void DescriptorSetBuilder::update_descriptor(int set, vk::DescriptorSet& descriptor, const vk::Device& device)
 {
 	std::vector<vk::WriteDescriptorSet> descriptorWrites;
@@ -168,7 +181,13 @@ void DescriptorSetBuilder::update_descriptor(int set, vk::DescriptorSet& descrip
 			newWrite.dstArrayElement = 0;
 			newWrite.descriptorType = bufferWrite.descriptorType;
 			newWrite.descriptorCount = 1;
-			newWrite.pBufferInfo = &bufferWrite.bufferInfo;
+			if (bufferWrite.descriptorType == vk::DescriptorType::eAccelerationStructureKHR) {
+				newWrite.pBufferInfo = nullptr;
+				newWrite.pNext = &bufferWrite.accelinfo;
+			}
+			else {
+				newWrite.pBufferInfo = &bufferWrite.bufferInfo;
+			}
 			newWrite.pImageInfo = nullptr; // Optional
 			newWrite.pTexelBufferView = nullptr; // Optional	
 

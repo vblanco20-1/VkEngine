@@ -59,6 +59,9 @@ struct UniformBufferObject {
 	glm::mat4 model;
 	glm::mat4 view;
 	glm::mat4 proj;
+	glm::mat4 inv_model;
+	glm::mat4 inv_view;
+	glm::mat4 inv_proj;
 	glm::vec4 eye;
 };
 struct GPUSceneParams {
@@ -84,6 +87,13 @@ struct AllocatedImage {
 };
 
 using EntityID = entt::entity;
+
+struct AccelerationStructure
+{
+	VkDeviceMemory            memory;
+	VkAccelerationStructureNV acceleration_structure;
+	uint64_t                  handle;
+};
 
 struct ResourceComponent {
 	uint32_t last_usage;
@@ -111,10 +121,12 @@ struct ObjectBounds {
 struct MeshResource : public ResourceComponent {
 	AllocatedBuffer vertexBuffer;
 	AllocatedBuffer indexBuffer;
-
+	
 	ObjectBounds bounds;
 	std::vector<Vertex> vertices;
 	std::vector<uint32_t> indices;
+
+	AccelerationStructure accelStructure;
 };
 
 struct ShaderEffectHandle :public ResourceComponent {
@@ -124,7 +136,8 @@ struct ShaderEffectHandle :public ResourceComponent {
 struct PipelineResource : public ResourceComponent {
 	vk::Pipeline pipeline;
 	struct ShaderEffect* effect;
-	struct GraphicsPipelineBuilder* pipelineBuilder;
+	struct GraphicsPipelineBuilder* pipelineBuilder{nullptr};
+	struct ComputePipelineBuilder* computePipelineBuilder{ nullptr };
 	std::string renderPassName;
 };
 

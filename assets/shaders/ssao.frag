@@ -18,6 +18,9 @@ layout(set = 0, binding = 4) uniform UniformBufferObject {
     mat4 model;
     mat4 view;
     mat4 projection;
+	mat4 inv_model;
+    mat4 inv_view;
+    mat4 inv_proj;
 	vec4 eye;
 } ubo;
 
@@ -29,10 +32,19 @@ layout (location = 0) out float outFragColor;
 float rand2D(in vec2 co){
     return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453);
 }
+
+float getSampleDepth(in vec2 uv){
+	return texture(samplerPositionDepth, uv).r;
+}
+
 void main() 
 {
+	
+	vec3 fpos = vec3(gl_FragCoord.x,gl_FragCoord.y,getSampleDepth(inUV) );
 	// Get G-Buffer values
-	vec3 fragPos = texture(samplerPositionDepth, inUV).rgb;
+	//vec3 fragPos = texture(samplerPositionDepth, inUV).rgb;
+	vec3 fragPos = (ubo.inv_proj * vec4(fpos,1.f)).xyz; //texture(samplerPositionDepth, inUV).rgb;
+
 	vec3 normal = normalize(texture(samplerNormal, inUV).rgb * 2.0 - 1.0);
 
 	// Get a random vector using a noise lookup
@@ -64,7 +76,7 @@ void main()
 		offset.xyz /= offset.w; 
 		offset.xyz = offset.xyz * 0.5f + 0.5f; 
 		
-		float sampleDepth = -texture(samplerPositionDepth, offset.xy).w; 
+		float sampleDepth = -getSampleDepth(offset.xy); 
 
 #define RANGE_CHECK 1
 #ifdef RANGE_CHECK

@@ -549,7 +549,7 @@ bool FrameGraph::build( VulkanEngine* engine)
 		vk::ImageViewCreateInfo imageViewInfo;
 		imageViewInfo.viewType = vk::ImageViewType::e2D;
 		imageViewInfo.format = (vk::Format)v.info.format;
-		imageViewInfo.subresourceRange = {};
+		imageViewInfo.subresourceRange = vk::ImageSubresourceRange{};
 		imageViewInfo.subresourceRange.aspectMask = is_used_as_depth(&v) ? vk::ImageAspectFlagBits::eDepth : vk::ImageAspectFlagBits::eColor;
 		imageViewInfo.subresourceRange.baseMipLevel = 0;
 		imageViewInfo.subresourceRange.levelCount = 1;
@@ -686,7 +686,7 @@ void FrameGraph::execute(vk::CommandBuffer _cmd)
 				vk::RenderPassBeginInfo renderPassInfo;
 				renderPassInfo.renderPass = pass->built_pass;
 				renderPassInfo.framebuffer = pass->framebuffer;
-				renderPassInfo.renderArea.offset = { 0, 0 };
+				renderPassInfo.renderArea.offset = vk::Offset2D{ 0, 0 };
 				renderPassInfo.renderArea.extent.width = pass->render_width;
 				renderPassInfo.renderArea.extent.height = pass->render_height;
 

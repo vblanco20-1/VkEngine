@@ -579,7 +579,7 @@ void CubemapLoader::create_offscreen_framebuffer(int32_t dim)
 	colorImageView.viewType = vk::ImageViewType::e2D;
 	colorImageView.format = cubemapFormat;
 	colorImageView.flags = vk::ImageViewCreateFlagBits{};
-	colorImageView.subresourceRange = {};
+	colorImageView.subresourceRange = vk::ImageSubresourceRange{};
 	colorImageView.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
 	colorImageView.subresourceRange.baseMipLevel = 0;
 	colorImageView.subresourceRange.levelCount = 1;

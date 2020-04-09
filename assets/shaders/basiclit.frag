@@ -184,7 +184,8 @@ void main() {
 	screenspace.y = gl_FragCoord.y / sceneParams.viewport.w;//900.f;
 	screenspace.x = gl_FragCoord.x / sceneParams.viewport.z;//1700.f;
 
-	float ssao =  clamp( pow(texture(ssaoMap,screenspace).r , 2.f),0.f,1.f);
+	float tx_ssao = texture(ssaoMap,screenspace).r;
+	float ssao = mix(0.0,1,tx_ssao); //clamp( pow(texture(ssaoMap,screenspace).r , 2.f),0.3f,1.f);
 	
 	vec3 light_dir = normalize(vec3(100.0f, 600.0f, 800.0f)) * 1.f;
 
@@ -214,7 +215,7 @@ void main() {
 	// reflectance equation
     vec3 Lo = vec3(0.0);
 
-	float shadow = clamp( filterPCF(inShadowCoord / inShadowCoord.w),0.1f,1.f);
+	float shadow = mix(0.f,1.f , filterPCF(inShadowCoord / inShadowCoord.w));
 
 	vec3 norm = N;
 	//norm.x = N.y;
@@ -228,7 +229,7 @@ void main() {
 	{
 		float distance    = length(light_dir);
 		float attenuation = shadow;// / (distance * distance);
-		vec3 lightradiance     = vec3(1.f,.9f,.9f) * attenuation * 10.f;        
+		vec3 lightradiance     = vec3(1.f,.7f,.7f) * attenuation * 4.f;        
 		
 		// cook-torrance brdf
 		float NDF = DistributionGGX(N, H, roughness);        
@@ -252,7 +253,7 @@ void main() {
 
     vec2 brdf = texture(samplerBRDFLUT, vec2(max(dot(N, V), 0.0), roughness)).rg;
 	vec3 reflection = prefilteredReflection(R, roughness).rgb;	
-	vec3 irradiance = texture(ambientCubemap,convert_cubemap_coords(N)).rgb;
+	vec3 irradiance = texture(ambientCubemap,convert_cubemap_coords(N)).rgb * 2;
 
 	// Diffuse based on irradiance
 	vec3 diffuse = irradiance * albedo;	

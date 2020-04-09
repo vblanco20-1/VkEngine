@@ -593,6 +593,9 @@ bool ShaderEffect::build_effect(VkDevice device)
 
     for (ShaderModule &ShaderMod : privData->modules)
     {
+        try {
+
+        
         //read spirv
         spirv_cross::Compiler comp(ShaderMod.SpirV);
 
@@ -728,6 +731,103 @@ bool ShaderEffect::build_effect(VkDevice device)
 
             privData->pushConstantRanges.push_back(pushConstantRange);
             privData->reflectionData.PushConstants.push_back(newinfo);
+        }
+        }
+        catch (spirv_cross::CompilerError& e) {
+            std::cout << "error when trying to parse shader, raytracng";
+
+            //harcoded for rayshadows
+			{
+				VkDescriptorSetLayoutBinding vkbind = createLayoutBinding(7, ShaderTypeToVulkanFlag(ShaderMod.type));
+
+				vkbind.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+
+				add_binding(&privData->bindingSets[0], vkbind);
+
+				BindInfo newinfo;
+				newinfo.set = 0;
+				newinfo.binding = 7;
+				newinfo.range = 0;
+				newinfo.type = vkbind.descriptorType;
+
+				privData->reflectionData.DataBindings["topLevelAS"] = newinfo;
+			}
+            {
+            VkDescriptorSetLayoutBinding vkbind = createLayoutBinding(0, ShaderTypeToVulkanFlag(ShaderMod.type));
+
+            vkbind.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+
+            add_binding(&privData->bindingSets[0], vkbind);
+
+            BindInfo newinfo;
+            newinfo.set = 0;
+            newinfo.binding = 0;
+            newinfo.range = 0;
+            newinfo.type = vkbind.descriptorType;
+
+            privData->reflectionData.DataBindings["samplerPositionDepth"] = newinfo;
+            }
+			{
+				VkDescriptorSetLayoutBinding vkbind = createLayoutBinding(1, ShaderTypeToVulkanFlag(ShaderMod.type));
+
+				vkbind.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+
+				add_binding(&privData->bindingSets[0], vkbind);
+
+				BindInfo newinfo;
+				newinfo.set = 0;
+				newinfo.binding = 1;
+				newinfo.range = 0;
+				newinfo.type = vkbind.descriptorType;
+
+				privData->reflectionData.DataBindings["samplerNormal"] = newinfo;
+			}
+			{
+				VkDescriptorSetLayoutBinding vkbind = createLayoutBinding(2, ShaderTypeToVulkanFlag(ShaderMod.type));
+
+				vkbind.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+
+				add_binding(&privData->bindingSets[0], vkbind);
+
+				BindInfo newinfo;
+				newinfo.set = 0;
+				newinfo.binding = 2;
+				newinfo.range = 0;
+				newinfo.type = vkbind.descriptorType;
+
+				privData->reflectionData.DataBindings["ssaoNoise"] = newinfo;
+			}
+            {
+				VkDescriptorSetLayoutBinding vkbind = createLayoutBinding(3, ShaderTypeToVulkanFlag(ShaderMod.type));
+				
+				vkbind.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+				
+
+				add_binding(&privData->bindingSets[0], vkbind);
+
+				BindInfo newinfo;
+				newinfo.set = 0;
+				newinfo.binding = 3;
+				newinfo.range = 0;//size;
+				newinfo.type = vkbind.descriptorType;
+
+				privData->reflectionData.DataBindings["resultImage"] = newinfo;
+            }
+			{
+				VkDescriptorSetLayoutBinding vkbind = createLayoutBinding(5, ShaderTypeToVulkanFlag(ShaderMod.type));
+
+				vkbind.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+
+				add_binding(&privData->bindingSets[0], vkbind);
+
+				BindInfo newinfo;
+				newinfo.set = 0;
+				newinfo.binding = 5;
+				newinfo.range = 400;//size;
+				newinfo.type = vkbind.descriptorType;
+
+				privData->reflectionData.DataBindings["ubo"] = newinfo;
+			}
         }
     }
     
