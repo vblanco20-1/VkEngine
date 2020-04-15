@@ -253,7 +253,7 @@ void main() {
 
     vec2 brdf = texture(samplerBRDFLUT, vec2(max(dot(N, V), 0.0), roughness)).rg;
 	vec3 reflection = prefilteredReflection(R, roughness).rgb;	
-	vec3 irradiance = texture(ambientCubemap,convert_cubemap_coords(N)).rgb * 2;
+	vec3 irradiance = texture(ambientCubemap,convert_cubemap_coords(N)).rgb * 4;
 
 	// Diffuse based on irradiance
 	vec3 diffuse = irradiance * albedo;	
@@ -268,7 +268,7 @@ void main() {
 	kD *= 1.0 - metallic;	  
 	vec3 ambient = (kD * diffuse + specular) * pow(ssao,4);
 	
-	vec3 color = ambient + Lo;
+	vec3 color = ambient+ Lo;//vec3(pow(ssao,4));//
 	
 	// Tone mapping
 	color = Uncharted2Tonemap(color * sceneParams.ambient.w);
@@ -279,9 +279,9 @@ void main() {
 	//vec4 tex_test  = vec4(texture(tex3, fragTexCoord));//.rgba;
 	//float tex_test  = texture(tex3, fragTexCoord);
 	//outColor = tex_test;
-	//outColor = vec4(ssao);
+	outColor = vec4(ssao);
 
-	outColor = vec4(color, 1.0);
+	//outColor = vec4(color, 1.0);
 	
 	
 	//outColor=	vec4(prefilteredReflection(N, sceneParams.ambient.w).rgb, 1.0);

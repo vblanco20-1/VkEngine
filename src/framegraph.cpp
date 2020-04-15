@@ -180,12 +180,12 @@ void FrameGraph::build_render_pass(RenderPass* pass, VulkanEngine* eng)
 		int useridx = find_attachment_user(graphAth->uses, pass->name);
 		int numusers = graphAth->uses.users.size();
 		bool bAccessedAsReadAfter = false;
-		if (useridx + 1 < numusers) {
+		//if (useridx + 1 < numusers) {
 
-			if (graphAth->uses.usages[useridx + 1] == RenderGraphImageAccess::Read) {
+			if (graphAth->uses.usages[(useridx +1) % numusers] == RenderGraphImageAccess::Read) {
 				bAccessedAsReadAfter = true;
 			}
-		}
+		//}
 
 		bool first_use = (useridx == 0);
 
@@ -491,9 +491,9 @@ bool FrameGraph::build( VulkanEngine* engine)
 	
 	//one sampler to rule them all
 	vk::SamplerCreateInfo sampler;
-	sampler.magFilter = vk::Filter::eLinear;
-	sampler.minFilter = vk::Filter::eLinear;
-	sampler.mipmapMode = vk::SamplerMipmapMode::eLinear;
+	sampler.magFilter = vk::Filter::eNearest;
+	sampler.minFilter = vk::Filter::eNearest;
+	sampler.mipmapMode = vk::SamplerMipmapMode::eNearest;
 	//sampler.magFilter = vk::Filter::eNearest;
 	//sampler.minFilter = vk::Filter::eNearest;
 	//sampler.mipmapMode = vk::SamplerMipmapMode::eNearest;
@@ -602,7 +602,13 @@ RenderPass* FrameGraph::add_pass(std::string pass_name, std::function<void(vk::C
 
 RenderPass* FrameGraph::get_pass(std::string pass_name)
 {
-	return &pass_definitions[pass_name];
+	auto it = pass_definitions.find(pass_name);
+	if (it != pass_definitions.end()) {
+		return &it->second;
+	}
+	else {
+		return nullptr;
+	}	
 }
 
 VkDescriptorImageInfo FrameGraph::get_image_descriptor(std::string name)

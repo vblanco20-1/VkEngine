@@ -1,0 +1,127 @@
+#version 460
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_ray_tracing : enable
+#extension GL_EXT_ray_query : enable
+
+
+layout (local_size_x = 32, local_size_y = 32) in;
+layout(binding = 7, set = 0) uniform accelerationStructureEXT topLevelAS;
+
+layout (set = 0,binding = 0) uniform sampler2D samplerPositionDepth;
+layout (set = 0,binding = 1) uniform sampler2D samplerNormal;
+layout (set = 0,binding = 2) uniform sampler2D ssaoNoise;
+
+layout (set = 0,binding = 3, r8) uniform writeonly image2D resultImage;
+
+layout(set = 0, binding = 5) uniform UniformBufferObject {
+    mat4 model;
+    mat4 view;
+    mat4 projection;
+	mat4 inv_model;
+    mat4 inv_view;
+    mat4 inv_proj;
+	vec4 eye;
+} ubo;
+
+layout(push_constant) uniform PushConsts{	
+	float engine_time;
+};
+
+#define M1 1597334677U     //1719413*929
+#define M2 3812015801U     //140473*2467*11
+#define M3 3299493293U     //467549*7057
+
+#define F0 (1.0/float(0xffffffffU))
+
+#define hash(n) n*(n^(n>>15))
+
+#define coord1(p) (p*M1)
+#define coord2(p) (p.x*M1^p.y*M2)
+#define coord3(p) (p.x*M1^p.y*M2^p.z*M3)
+
+float hash1(uint n){return float(hash(n))*F0;}
+vec2 hash2(uint n){return vec2(hash(n)*uvec2(0x1U,0x3fffU))*F0;}
+vec3 hash3(uint n){return vec3(hash(n)*uvec3(0x1U,0x1ffU,0x3ffffU))*F0;}
+vec4 hash4(uint n){return vec4(hash(n)*uvec4(0x1U,0x7fU,0x3fffU,0x1fffffU))*F0;}
+vec3 screenBluenoise(int seed)
+{
+	// Get a random vector using a noise lookup
+	ivec2 noiseDim = textureSize(ssaoNoise, 0);
+	const vec2 noiseUV = (vec2(gl_GlobalInvocationID.xy) + gl_LocalInvocationID.xy * seed ) / (noiseDim);  
+
+    vec3 randomVec = texture(ssaoNoise, noiseUV).xyz * 2.0 - 1.0;
+	return randomVec;
+}
+// clang-format on
+vec3 CosineSampleHemisphere(float u1, float u2)
+{
+    const float r = sqrt(u1);
+    const float theta = 2 * 3.1416f * u2;
+ 
+    const float x = r * cos(theta);
+    const float y = r * sin(theta);
+ 
+    return vec3(x, y, sqrt(max(0.0f, 1 - u1)));
+}
+vec3 rng_vector(int seed,vec3 position)
+{
+    //return screenBluenoise(int(engine_time));
+    return normalize(hash3(coord3(uvec3(gl_LocalInvocationIndex, engine_time,seed))) * 2.0 - 1.0);
+}
+void main()
+{
+    ivec2 dim = imageSize(resultImage);	
+	float outFragColor = 0;
+	if(gl_GlobalInvocationID.x < dim.x && gl_GlobalInvocationID.y < dim.y){ 	
+        
+        vec2 inUV = vec2(gl_GlobalInvocationID.xy) / dim;
+	
+        vec2 d = inUV * 2.0 - 1.0;
+
+         // Ray Query for shadow
+         vec3  origin    = texture(samplerPositionDepth, inUV).xyz;
+
+         vec3 normal = normalize(texture(samplerNormal, inUV).rgb * 2.0 - 1.0);
+        int samples = 1;
+        for(int i = 0; i < samples;i++){
+            vec3 rng = rng_vector(i,origin);
+
+            vec3 samplePos = rng;
+            //flip rng if its not on hemisphere
+            if(dot(rng,normal) < 0){
+                samplePos -= samplePos;
+            }
+
+            float rayLen  =100.f;
+            
+            vec3  direction = samplePos;
+            float tMin      = 0.1f;
+            float tMax      = rayLen;
+
+            // Initializes a ray query object but does not start traversal
+            rayQueryEXT rayQuery;
+        
+            rayQueryInitializeEXT(rayQuery, topLevelAS, gl_RayFlagsTerminateOnFirstHitEXT  | gl_RayFlagsSkipClosestHitShaderEXT  , 0xFF, origin.xyz, tMin,
+                                direction.xyz, tMax);
+            
+            // Start traversal: return false if traversal is complete
+            while(rayQueryProceedEXT(rayQuery))
+            {
+                
+            }
+            
+            // Returns type of committed (true) intersection
+            if(rayQueryGetIntersectionTypeEXT(rayQuery, true) != gl_RayQueryCommittedIntersectionNoneEXT)
+            {
+                //outFragColor += rayQueryGetIntersectionTEXT(rayQuery,true)/rayLen;
+            }
+            else{
+                outFragColor += 1;
+            }
+        }
+         
+
+        imageStore(resultImage, ivec2(gl_GlobalInvocationID.xy), vec4(outFragColor/samples));
+    }
+}

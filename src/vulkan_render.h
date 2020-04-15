@@ -95,7 +95,8 @@ public:
 
 	std::vector<vk::Framebuffer> swapChainFramebuffers;
 
-
+	UniformBufferObject LastFrameMatrices;
+	UniformBufferObject MainMatrices;
 	AllocatedBuffer vertexBuffer;
 	//vk::DeviceMemory vertexBufferMemory;
 	
@@ -274,8 +275,11 @@ public:
 	void render_ssao_pass(const vk::CommandBuffer& cmd, int height, int width);
 	void render_ssao_compute(const vk::CommandBuffer& cmd);
 	void render_ssao_blurx(const vk::CommandBuffer& cmd, int height, int width);
+	void render_ssao_taa(const vk::CommandBuffer& cmd, int height, int width);
 	void render_ssao_blury(const vk::CommandBuffer& cmd, int height, int width);
+	void render_ssao_flip(const vk::CommandBuffer& cmd, int height, int width);
 	void render_ssao_blur_compute(const vk::CommandBuffer& cmd, const char* image_source,const char *image_target, glm::vec2 blur_direction);
+
 	vk::DescriptorImageInfo get_image_resource(const char* name);
 	void RenderMainPass(const vk::CommandBuffer& cmd);
 	void RenderGBufferPass(const vk::CommandBuffer& cmd);

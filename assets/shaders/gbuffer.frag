@@ -14,20 +14,29 @@ layout(location = 1) out vec4 normal;
 const float NEAR_PLANE = 0.1f; //todo: specialization const
 const float FAR_PLANE =  50000.0f; //todo: specialization const 
 
+float linearize_depth(float d)
+{
+    return NEAR_PLANE * FAR_PLANE / (FAR_PLANE + d * (NEAR_PLANE - FAR_PLANE));
+}
 float linearDepth(float depth)
 {
+
+	
 	float z = (depth * 2.0f - 1.0f); 
+	
+	return (2.0f * NEAR_PLANE * FAR_PLANE) / (FAR_PLANE + NEAR_PLANE - z * (FAR_PLANE - NEAR_PLANE));
+
 	//float DistPlanes = FAR_PLANE - NEAR_PLANE;
 	//return NEAR_PLANE + DistPlanes * depth;
-	return (2.0f * NEAR_PLANE * FAR_PLANE) / (FAR_PLANE + NEAR_PLANE - z * (FAR_PLANE - NEAR_PLANE));
 }
 
 void main() 
 {	
 	
 	posDepth.xyz = fragPos;
-	posDepth.w = linearDepth(gl_FragCoord.z);//gl_FragCoord.z;
-	
+	//posDepth.w = linearDepth(gl_FragCoord.z);//gl_FragCoord.z;
+	posDepth.w = gl_FragCoord.z;//linearize_depth(1-gl_FragCoord.z);
+	//posDepth.w = gl_FragCoord.z;
 	
 	
 	//linearDepth(1-gl_FragCoord.z);

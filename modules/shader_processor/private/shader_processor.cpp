@@ -521,6 +521,16 @@ VkShaderStageFlagBits ShaderTypeToVulkanFlag(ShaderType type) {
     return VK_SHADER_STAGE_ALL;
 }
 
+VkDescriptorSetLayoutBinding createLayoutBinding(BindInfo bindInfo, VkShaderStageFlags stages) {
+	VkDescriptorSetLayoutBinding binding;
+	binding.binding = bindInfo.binding;
+	binding.descriptorCount = 1;
+	binding.stageFlags = stages;
+	binding.pImmutableSamplers = nullptr;
+    binding.descriptorType = bindInfo.type;
+	return binding;
+}
+
 VkDescriptorSetLayoutBinding createLayoutBinding(int bindNumber, VkShaderStageFlags stages) {
     VkDescriptorSetLayoutBinding binding;
     binding.binding = bindNumber;
@@ -592,10 +602,7 @@ bool ShaderEffect::build_effect(VkDevice device)
     }
 
     for (ShaderModule &ShaderMod : privData->modules)
-    {
-        try {
-
-        
+    {        
         //read spirv
         spirv_cross::Compiler comp(ShaderMod.SpirV);
 
@@ -635,9 +642,7 @@ bool ShaderEffect::build_effect(VkDevice device)
 
 
             VkDescriptorSetLayoutBinding vkbind = createLayoutBinding(binding, ShaderTypeToVulkanFlag(ShaderMod.type));
-            vkbind.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-
-           // privData->bindingSets[set].descriptorBindings.push_back(vkbind);
+            vkbind.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;           
 
             add_binding(&privData->bindingSets[set], vkbind);
 
@@ -651,59 +656,56 @@ bool ShaderEffect::build_effect(VkDevice device)
         }
 
         for (const Resource& resource : res.storage_images) {
-			const SPIRType& type = comp.get_type(resource.base_type_id);
-			//size_t size = comp.get_declared_struct_size(type);
-			unsigned set = comp.get_decoration(resource.id, spv::DecorationDescriptorSet);
-			unsigned binding = comp.get_decoration(resource.id, spv::DecorationBinding);
-
-
-			VkDescriptorSetLayoutBinding vkbind = createLayoutBinding(binding, ShaderTypeToVulkanFlag(ShaderMod.type));
-
-			{
-				vkbind.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-			}
-
-			add_binding(&privData->bindingSets[set], vkbind);
-
 			BindInfo newinfo;
-			newinfo.set = set;
-			newinfo.binding = binding;
-			newinfo.range = 0;//size;
-			newinfo.type = vkbind.descriptorType;
+			newinfo.set = comp.get_decoration(resource.id, spv::DecorationDescriptorSet);
+			newinfo.binding = comp.get_decoration(resource.id, spv::DecorationBinding);
+			newinfo.range = 0;
+			newinfo.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+
+			VkDescriptorSetLayoutBinding vkbind = createLayoutBinding(newinfo, ShaderTypeToVulkanFlag(ShaderMod.type));		
+
+			add_binding(&privData->bindingSets[newinfo.set], vkbind);
 
 			privData->reflectionData.DataBindings[comp.get_name(resource.id)] = newinfo;
         }
         for (const Resource& resource : res.sampled_images)
         {
             const SPIRType& type = comp.get_type(resource.base_type_id);
-            //size_t size = comp.get_declared_struct_size(type);
-            unsigned set = comp.get_decoration(resource.id, spv::DecorationDescriptorSet);
-            unsigned binding = comp.get_decoration(resource.id, spv::DecorationBinding);
 
+			BindInfo newinfo;
+			newinfo.set = comp.get_decoration(resource.id, spv::DecorationDescriptorSet);
+			newinfo.binding = comp.get_decoration(resource.id, spv::DecorationBinding);
+			newinfo.range = 0;
+            newinfo.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+			//if (type.image.dim == spv::Dim::DimCube)
+			//{
+			//    newinfo.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+			//}
+			//else {
+			//    newinfo.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+			//}			
 
-            VkDescriptorSetLayoutBinding vkbind = createLayoutBinding(binding, ShaderTypeToVulkanFlag(ShaderMod.type));
+			VkDescriptorSetLayoutBinding vkbind = createLayoutBinding(newinfo, ShaderTypeToVulkanFlag(ShaderMod.type));
 
-            if(type.image.dim == spv::Dim::DimCube)
-            {
-                vkbind.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;               
-            }
-            else {
-                vkbind.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            }
-            
-            
-            //privData->bindingSets[set].descriptorBindings.push_back(vkbind);
+			add_binding(&privData->bindingSets[newinfo.set], vkbind);
 
-            add_binding(&privData->bindingSets[set], vkbind);
+			privData->reflectionData.DataBindings[comp.get_name(resource.id)] = newinfo;
+        }
 
-            BindInfo newinfo;
-            newinfo.set = set;
-            newinfo.binding = binding;
-            newinfo.range = 0;//size;
-            newinfo.type = vkbind.descriptorType;
+		for (const Resource& resource : res.acceleration_structures)
+		{
+			BindInfo newinfo;
+			newinfo.set = comp.get_decoration(resource.id, spv::DecorationDescriptorSet);
+			newinfo.binding = comp.get_decoration(resource.id, spv::DecorationBinding);
+			newinfo.range = 0;
+			newinfo.type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+
+			VkDescriptorSetLayoutBinding vkbind = createLayoutBinding(newinfo, ShaderTypeToVulkanFlag(ShaderMod.type));
+
+			add_binding(&privData->bindingSets[newinfo.set], vkbind);            		
 
             privData->reflectionData.DataBindings[comp.get_name(resource.id)] = newinfo;
-        }
+		}
 
         VkShaderStageFlags stage_flags{};
 
@@ -731,104 +733,7 @@ bool ShaderEffect::build_effect(VkDevice device)
 
             privData->pushConstantRanges.push_back(pushConstantRange);
             privData->reflectionData.PushConstants.push_back(newinfo);
-        }
-        }
-        catch (spirv_cross::CompilerError& e) {
-            std::cout << "error when trying to parse shader, raytracng";
-
-            //harcoded for rayshadows
-			{
-				VkDescriptorSetLayoutBinding vkbind = createLayoutBinding(7, ShaderTypeToVulkanFlag(ShaderMod.type));
-
-				vkbind.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
-
-				add_binding(&privData->bindingSets[0], vkbind);
-
-				BindInfo newinfo;
-				newinfo.set = 0;
-				newinfo.binding = 7;
-				newinfo.range = 0;
-				newinfo.type = vkbind.descriptorType;
-
-				privData->reflectionData.DataBindings["topLevelAS"] = newinfo;
-			}
-            {
-            VkDescriptorSetLayoutBinding vkbind = createLayoutBinding(0, ShaderTypeToVulkanFlag(ShaderMod.type));
-
-            vkbind.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-
-            add_binding(&privData->bindingSets[0], vkbind);
-
-            BindInfo newinfo;
-            newinfo.set = 0;
-            newinfo.binding = 0;
-            newinfo.range = 0;
-            newinfo.type = vkbind.descriptorType;
-
-            privData->reflectionData.DataBindings["samplerPositionDepth"] = newinfo;
-            }
-			{
-				VkDescriptorSetLayoutBinding vkbind = createLayoutBinding(1, ShaderTypeToVulkanFlag(ShaderMod.type));
-
-				vkbind.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-
-				add_binding(&privData->bindingSets[0], vkbind);
-
-				BindInfo newinfo;
-				newinfo.set = 0;
-				newinfo.binding = 1;
-				newinfo.range = 0;
-				newinfo.type = vkbind.descriptorType;
-
-				privData->reflectionData.DataBindings["samplerNormal"] = newinfo;
-			}
-			{
-				VkDescriptorSetLayoutBinding vkbind = createLayoutBinding(2, ShaderTypeToVulkanFlag(ShaderMod.type));
-
-				vkbind.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-
-				add_binding(&privData->bindingSets[0], vkbind);
-
-				BindInfo newinfo;
-				newinfo.set = 0;
-				newinfo.binding = 2;
-				newinfo.range = 0;
-				newinfo.type = vkbind.descriptorType;
-
-				privData->reflectionData.DataBindings["ssaoNoise"] = newinfo;
-			}
-            {
-				VkDescriptorSetLayoutBinding vkbind = createLayoutBinding(3, ShaderTypeToVulkanFlag(ShaderMod.type));
-				
-				vkbind.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-				
-
-				add_binding(&privData->bindingSets[0], vkbind);
-
-				BindInfo newinfo;
-				newinfo.set = 0;
-				newinfo.binding = 3;
-				newinfo.range = 0;//size;
-				newinfo.type = vkbind.descriptorType;
-
-				privData->reflectionData.DataBindings["resultImage"] = newinfo;
-            }
-			{
-				VkDescriptorSetLayoutBinding vkbind = createLayoutBinding(5, ShaderTypeToVulkanFlag(ShaderMod.type));
-
-				vkbind.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-
-				add_binding(&privData->bindingSets[0], vkbind);
-
-				BindInfo newinfo;
-				newinfo.set = 0;
-				newinfo.binding = 5;
-				newinfo.range = 400;//size;
-				newinfo.type = vkbind.descriptorType;
-
-				privData->reflectionData.DataBindings["ubo"] = newinfo;
-			}
-        }
+        }        
     }
     
     return true;

@@ -58,8 +58,8 @@ void VulkanEngine::create_engine_graph()
 	VkDevice device = (VkDevice)engine->device;
 	VmaAllocator allocator = engine->allocator;
 	VkExtent2D swapChainSize = engine->swapChainExtent;
-	swapChainSize.height *= 2;
-	swapChainSize.width *= 2;
+	swapChainSize.height *= 1;
+	swapChainSize.width *= 1;
 
 	graph.swapchainSize = swapChainSize;
 
@@ -90,17 +90,24 @@ void VulkanEngine::create_engine_graph()
 
 
 #if 1
-	auto blurx_pass = graph.add_pass("SSAO-blurx", [&](vk::CommandBuffer cmd, RenderPass* pass) {
-		
-	
+	auto blurx_pass = graph.add_pass("SSAO-blurx", [&](vk::CommandBuffer cmd, RenderPass* pass) {	
 
 		render_ssao_blurx(cmd, pass->render_height, pass->render_width);
 		}, PassType::Graphics);
 
-	auto blury_pass = graph.add_pass("SSAO-blury", [&](vk::CommandBuffer cmd, RenderPass* pass) {
-	
-		render_ssao_blury(cmd, pass->render_height, pass->render_width);
+	auto ssao_taa_pass = graph.add_pass("SSAO-taa", [&](vk::CommandBuffer cmd, RenderPass* pass) {
+
+		render_ssao_taa(cmd, pass->render_height, pass->render_width);
 		}, PassType::Graphics);
+
+	auto ssao_taa_flip = graph.add_pass("SSAO-flip", [&](vk::CommandBuffer cmd, RenderPass* pass) {
+
+		render_ssao_flip(cmd, pass->render_height, pass->render_width);
+		}, PassType::Graphics);
+	//auto blury_pass = graph.add_pass("SSAO-blury", [&](vk::CommandBuffer cmd, RenderPass* pass) {
+	//
+	//	render_ssao_blury(cmd, pass->render_height, pass->render_width);
+	//	}, PassType::Graphics);
 #else
 	auto blurx_pass = graph.add_pass("SSAO-blurx", [&](vk::CommandBuffer cmd, RenderPass* pass) {
 		glm::vec2 blur_dir;
@@ -150,6 +157,10 @@ void VulkanEngine::create_engine_graph()
 	gbuffer_position.format = VK_FORMAT_R32G32B32A32_SFLOAT;
 	gbuffer_position.set_clear_color({ 0.0f, 0.0f, 0.0f, 1.0f });
 
+	RenderAttachmentInfo ssao_accumulate;
+	ssao_accumulate.format = VK_FORMAT_R32G32B32A32_SFLOAT;
+	ssao_accumulate.set_clear_color({ 0.0f, 0.0f, 0.0f, 1.0f });
+
 	RenderAttachmentInfo gbuffer_normal;
 	gbuffer_normal.format = VK_FORMAT_R16G16B16A16_SFLOAT;
 	gbuffer_position.set_clear_color({ 0.0f, 0.0f, 0.0f, 1.0f });
@@ -176,9 +187,7 @@ void VulkanEngine::create_engine_graph()
 
 	RenderAttachmentInfo ssao_post = ssao_midblur;
 
-
 	RenderAttachmentInfo main_image = gbuffer_position;
-
 
 	RenderAttachmentInfo output_image = main_image;
 
@@ -198,11 +207,28 @@ void VulkanEngine::create_engine_graph()
 	//ssao1_pass->add_image_dependency("gbuf_normal");
 	ssao1_pass->add_color_attachment("ssao_pre", ssao_pre);
 
-	blurx_pass->add_image_dependency("ssao_pre");
-	blurx_pass->add_color_attachment("ssao_mid", ssao_midblur);
+	//blurx_pass->add_image_dependency("ssao_pre");
+	//blurx_pass->add_color_attachment("ssao_mid", ssao_midblur);
+	//
+	//blury_pass->add_image_dependency("ssao_mid");
+	//blury_pass->add_color_attachment("ssao_post", ssao_post);
 
-	blury_pass->add_image_dependency("ssao_mid");
-	blury_pass->add_color_attachment("ssao_post", ssao_post);
+	blurx_pass->add_image_dependency("ssao_pre");
+	blurx_pass->add_image_dependency("gbuf_normal");
+	blurx_pass->add_color_attachment("ssao_mid", ssao_post);
+
+	ssao_taa_pass->add_image_dependency("ssao_mid");
+	ssao_taa_pass->add_image_dependency("gbuf_pos");
+	ssao_taa_pass->add_image_dependency("ssao_accumulate");
+	ssao_taa_pass->add_color_attachment("ssao_post", ssao_post);
+
+	ssao_taa_flip->add_image_dependency("ssao_post");
+	ssao_taa_flip->add_image_dependency("gbuf_pos");
+	ssao_taa_flip->add_color_attachment("ssao_accumulate", ssao_accumulate);
+
+
+	//blury_pass->add_image_dependency("ssao_mid");
+	//blury_pass->add_color_attachment("ssao_post", ssao_post);
 
 	forward_pass->add_image_dependency("gbuf_pos");
 	forward_pass->add_image_dependency("gbuf_normal");
@@ -886,6 +912,18 @@ void VulkanEngine::create_ssao_pipelines()
 		},
 		"ssao-blur");
 
+	ShaderEffect* ssaoTaa = build_shader_effect(
+		{ MAKE_ASSET_PATH("shaders/fullscreen.vert"),
+		  MAKE_ASSET_PATH("shaders/ssao_taa.frag")
+		},
+		"ssao-taa");
+
+	ShaderEffect* ssaoFlip = build_shader_effect(
+		{ MAKE_ASSET_PATH("shaders/fullscreen.vert"),
+		  MAKE_ASSET_PATH("shaders/ssao_flip.frag")
+		},
+		"ssao-flip");
+
 	ShaderEffect* ssaoBlur_Comp = build_shader_effect(
 		{ MAKE_ASSET_PATH("shaders/blur.comp") },
 		"ssao-comp-blur");
@@ -1015,21 +1053,44 @@ void VulkanEngine::create_ssao_pipelines()
 		vk::DynamicState::eScissor
 	};
 
-	vk::Pipeline blurx = blurPipelineBuilder->build_pipeline(device, render_graph.get_pass("SSAO-blurx")->built_pass, 0, ssaoBlur);
-	vk::Pipeline blury = blurPipelineBuilder->build_pipeline(device, render_graph.get_pass("SSAO-blury")->built_pass, 0, ssaoBlur);
+	if (render_graph.get_pass("SSAO-blurx"))
+	{
+		vk::Pipeline blurx = blurPipelineBuilder->build_pipeline(device, render_graph.get_pass("SSAO-blurx")->built_pass, 0, ssaoBlur);
 
-	//PipelineResource pipeline;
-	pipeline.pipeline = blurx;
-	pipeline.effect = ssaoBlur;
-	pipeline.pipelineBuilder = blurPipelineBuilder;
-	pipeline.renderPassName = "SSAO-blurx";
-	/*auto */pipeline_id = createResource("pipeline_ssao_blurx", pipeline);
-
-	pipeline.pipeline = blury;
-	pipeline.effect = ssaoBlur;
-	pipeline.pipelineBuilder = blurPipelineBuilder;
-	pipeline.renderPassName = "SSAO-blury";
-	pipeline_id = createResource("pipeline_ssao_blury", pipeline);
+		pipeline.pipeline = blurx;
+		pipeline.effect = ssaoBlur;
+		pipeline.pipelineBuilder = blurPipelineBuilder;
+		pipeline.renderPassName = "SSAO-blurx";
+		pipeline_id = createResource("pipeline_ssao_blurx", pipeline);
+	}
+	if (render_graph.get_pass("SSAO-blury"))
+	{
+		vk::Pipeline blury = blurPipelineBuilder->build_pipeline(device, render_graph.get_pass("SSAO-blury")->built_pass, 0, ssaoBlur);
+		pipeline.pipeline = blury;
+		pipeline.effect = ssaoBlur;
+		pipeline.pipelineBuilder = blurPipelineBuilder;
+		pipeline.renderPassName = "SSAO-blury";
+		pipeline_id = createResource("pipeline_ssao_blury", pipeline);
+	}
+	if (render_graph.get_pass("SSAO-taa"))
+	{
+		vk::Pipeline newpip = blurPipelineBuilder->build_pipeline(device, render_graph.get_pass("SSAO-taa")->built_pass, 0, ssaoTaa);
+		pipeline.pipeline = newpip;
+		pipeline.effect = ssaoTaa;
+		pipeline.pipelineBuilder = blurPipelineBuilder;
+		pipeline.renderPassName = "SSAO-taa";
+		pipeline_id = createResource("pipeline_ssao_taa", pipeline);
+	}
+	if (render_graph.get_pass("SSAO-flip"))
+	{
+		vk::Pipeline newpip = blurPipelineBuilder->build_pipeline(device, render_graph.get_pass("SSAO-flip")->built_pass, 0, ssaoFlip);
+		pipeline.pipeline = newpip;
+		pipeline.effect = ssaoFlip;
+		pipeline.pipelineBuilder = blurPipelineBuilder;
+		pipeline.renderPassName = "SSAO-flip";
+		pipeline_id = createResource("pipeline_ssao_flip", pipeline);
+	}
+		
 }
 
 
@@ -2151,6 +2212,9 @@ void VulkanEngine::render_ssao_compute(const vk::CommandBuffer& cmd)
 	int width = render_graph.graph_attachments["ssao_pre"].real_width;
 	int height = render_graph.graph_attachments["ssao_pre"].real_height;
 
+	float eng_time = rand();
+	cmd.pushConstants(layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(float), &eng_time);
+
 	cmd.dispatch(width / 32 +1, height / 32 + 1, 1);
 	//cmd.draw(3, 1, 0, 0);
 }
@@ -2179,7 +2243,7 @@ void VulkanEngine::render_ssao_blurx(const vk::CommandBuffer& cmd, int height, i
 
 	setBuilder.bind_image(0, 0, render_graph.get_image_descriptor("ssao_pre"));
 	setBuilder.bind_image(0, 1, render_graph.get_image_descriptor("gbuf_pos"));
-
+	setBuilder.bind_image(0, 2, render_graph.get_image_descriptor("gbuf_normal"));
 
 	std::array<vk::DescriptorSet, 2> descriptors;
 	descriptors[0] = setBuilder.build_descriptor(0, DescriptorLifetime::PerFrame);
@@ -2189,11 +2253,52 @@ void VulkanEngine::render_ssao_blurx(const vk::CommandBuffer& cmd, int height, i
 	//render_graph.get_image_descriptor("gbuf_pos")
 
 	glm::vec4 blur_dir;
-	blur_dir.x = (1.f /(float)width/*swapChainExtent.width*/) * 2.f;
-	blur_dir.y = 0;
+	blur_dir.x = (1.f / (float)width/*swapChainExtent.width*/); //* 2.f;
+	blur_dir.y = (1.f / (float)height/*swapChainExtent.height*/);// * 2.f; //0;
 	blur_dir.z = sceneParameters.ssao_roughness;
 	blur_dir.w = sceneParameters.kernel_width;
 	cmd.pushConstants(layout, vk::ShaderStageFlagBits::eFragment, 0, sizeof(glm::vec4), &blur_dir);
+
+	cmd.draw(3, 1, 0, 0);
+}
+
+
+void VulkanEngine::render_ssao_taa(const vk::CommandBuffer& cmd, int height, int width)
+{
+	tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(cmd);
+	TracyVkZoneC(profilercontext, VkCommandBuffer(cmd), "SSAO taa", tracy::Color::Red);
+
+	ZoneScopedNC("SSAO Blur X", tracy::Color::BlueViolet);
+
+	PipelineResource ssaopip = getResource<PipelineResource>("pipeline_ssao_taa");
+
+	ShaderEffect* effect = ssaopip.effect;
+
+	VkPipelineLayout layout = effect->build_pipeline_layout((VkDevice)device);
+
+	cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, ssaopip.pipeline);
+
+
+
+	set_pipeline_state_depth(width, height, cmd, false, false);
+
+	DescriptorSetBuilder setBuilder{ effect,&descriptorMegapool };
+
+	setBuilder.bind_image(0, 0, render_graph.get_image_descriptor("ssao_mid"));
+	setBuilder.bind_image(0, 1, render_graph.get_image_descriptor("gbuf_pos"));
+	setBuilder.bind_image(0, 2, render_graph.get_image_descriptor("ssao_accumulate"));
+
+	std::array<vk::DescriptorSet, 2> descriptors;
+	descriptors[0] = setBuilder.build_descriptor(0, DescriptorLifetime::PerFrame);
+
+	cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, layout, 0, 1, &descriptors[0], 0, nullptr);
+
+	std::array<glm::mat4, 4> push_matrices;
+	push_matrices[0] = LastFrameMatrices.proj * LastFrameMatrices.view;
+	push_matrices[1] = glm::inverse( MainMatrices.proj * MainMatrices.view);
+	push_matrices[2] = glm::inverse(LastFrameMatrices.proj * LastFrameMatrices.view);
+	push_matrices[3] = MainMatrices.inv_view;
+	cmd.pushConstants(layout, vk::ShaderStageFlagBits::eFragment, 0, sizeof(glm::mat4)*4, &push_matrices[0]);
 
 	cmd.draw(3, 1, 0, 0);
 }
@@ -2239,6 +2344,33 @@ void VulkanEngine::render_ssao_blury(const vk::CommandBuffer& cmd, int height, i
 	cmd.draw(3, 1, 0, 0);
 }
 
+
+void VulkanEngine::render_ssao_flip(const vk::CommandBuffer& cmd, int height, int width)
+{
+	ZoneScopedNC("SSAO Blit", tracy::Color::Grey);
+
+	PipelineResource ssaopip = getResource<PipelineResource>("pipeline_ssao_flip");
+
+	ShaderEffect* effect = ssaopip.effect;
+
+	cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, ssaopip.pipeline);
+
+
+	set_pipeline_state_depth(width, height, cmd, false, false);
+
+	DescriptorSetBuilder setBuilder{ effect,&descriptorMegapool };
+
+	setBuilder.bind_image(0, 0, render_graph.get_image_descriptor("ssao_post"));
+	setBuilder.bind_image(0, 1, render_graph.get_image_descriptor("gbuf_pos"));
+
+
+	std::array<vk::DescriptorSet, 2> descriptors;
+	descriptors[0] = setBuilder.build_descriptor(0, DescriptorLifetime::PerFrame);
+
+	cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, effect->build_pipeline_layout(device), 0, 1, &descriptors[0], 0, nullptr);
+
+	cmd.draw(3, 1, 0, 0);
+}
 
 void VulkanEngine::render_ssao_blur_compute(const vk::CommandBuffer& cmd, const char* image_source, const char* image_target, glm::vec2 blur_direction)
 {	
@@ -2646,7 +2778,9 @@ void VulkanEngine::update_uniform_buffer(uint32_t currentImage)
 	
 	
 	memcpy(dt, &ubo, sizeof(UniformBufferObject) );
-	
+	//keep matrices
+	memcpy(&LastFrameMatrices, &MainMatrices, sizeof(UniformBufferObject));
+	memcpy(&MainMatrices, &ubo, sizeof(UniformBufferObject));
 
 	unmapBuffer(cameraDataBuffers[currentImage]);
 
