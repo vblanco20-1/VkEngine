@@ -25,11 +25,14 @@
 #include <gli/gli.hpp>
 #include <vk_format.h>
 using namespace sp;
+
+
+
 class RealSceneLoader : public  sp::SceneLoader {
 
 public:
 
-
+	void load_mesh_infos();
 	
 	void add_request_from_assimp(DbMaterial& mat, const aiScene* scene, aiMaterial* material, aiTextureType textype, const std::string& scenepath);
 
@@ -124,6 +127,17 @@ static const char* query_insert_material = R"(
 INSERT INTO Materials(id, name,metadata) VALUES (?, ? , ?);
 )";
 
+
+//0 = id, 1 = name, 2 = metadata
+static const char* query_find_scenenodes = R"(
+SELECT SceneNodes.Id,SceneNodes.name, SceneNodes.metadata from SceneNodes, json_each(SceneNodes.metadata)  
+WHERE  json_each.value = "STATIC_NODE"
+)";
+
+static const char* query_find_scenemeshes = R"(
+SELECT SceneNodes.Id,SceneNodes.name, SceneNodes.metadata from SceneNodes, json_each(SceneNodes.metadata)  
+WHERE  json_each.value = "STATIC_MESH"
+)";
 
 
 int clear_db(sqlite3* db, const SceneProcessConfig & config)

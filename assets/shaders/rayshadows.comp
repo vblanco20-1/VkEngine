@@ -8,9 +8,9 @@
 layout (local_size_x = 32, local_size_y = 32) in;
 layout(binding = 7, set = 0) uniform accelerationStructureEXT topLevelAS;
 
-layout (set = 0,binding = 0) uniform sampler2D samplerPositionDepth;
-layout (set = 0,binding = 1) uniform sampler2D samplerNormal;
-layout (set = 0,binding = 2) uniform sampler2D ssaoNoise;
+layout (set = 0,binding = 0) uniform sampler2D _RG_gbuf_pos;
+layout (set = 0,binding = 1) uniform sampler2D _RG_gbuf_normal;
+layout (set = 0,binding = 2) uniform sampler2D _txBluenoise;
 
 layout (set = 0,binding = 3, r8) uniform writeonly image2D resultImage;
 
@@ -40,6 +40,47 @@ layout(push_constant) uniform PushConsts{
 #define coord2(p) (p.x*M1^p.y*M2)
 #define coord3(p) (p.x*M1^p.y*M2^p.z*M3)
 
+
+#define LEVEL 15U
+#define WIDTH ( (1U << LEVEL) )
+#define AREA ( WIDTH * WIDTH )
+
+uint part1by1 (uint x) {
+    x = (x & 0x0000ffffu);
+    x = ((x ^ (x << 8u)) & 0x00ff00ffu);
+    x = ((x ^ (x << 4u)) & 0x0f0f0f0fu);
+    x = ((x ^ (x << 2u)) & 0x33333333u);
+    x = ((x ^ (x << 1u)) & 0x55555555u);
+    return x;
+}
+    
+uint pack_morton2x16(uvec2 v) {
+	return part1by1(v.x) | (part1by1(v.y) << 1);
+}
+
+// from https://www.shadertoy.com/view/XtGBDW
+uint HilbertIndex( uvec2 Position )
+{   
+    uvec2 Regions;
+    uint Index = 0U;
+    for( uint CurLevel = WIDTH/2U; CurLevel > 0U; CurLevel /= 2U )
+    {
+        uvec2 Region = uvec2(greaterThan((Position & uvec2(CurLevel)), uvec2(0U)));
+        Index += CurLevel * CurLevel * ( (3U * Region.x) ^ Region.y);
+        if( Region.y == 0U )
+        {
+            if( Region.x == 1U )
+            {
+                Position = uvec2(WIDTH - 1U) - Position;
+            }
+            Position.xy = Position.yx;
+        }
+    }
+    
+    return Index;
+}
+
+
 float hash1(uint n){return float(hash(n))*F0;}
 vec2 hash2(uint n){return vec2(hash(n)*uvec2(0x1U,0x3fffU))*F0;}
 vec3 hash3(uint n){return vec3(hash(n)*uvec3(0x1U,0x1ffU,0x3ffffU))*F0;}
@@ -47,10 +88,10 @@ vec4 hash4(uint n){return vec4(hash(n)*uvec4(0x1U,0x7fU,0x3fffU,0x1fffffU))*F0;}
 vec3 screenBluenoise(int seed)
 {
 	// Get a random vector using a noise lookup
-	ivec2 noiseDim = textureSize(ssaoNoise, 0);
+	ivec2 noiseDim = textureSize(_txBluenoise, 0);
 	const vec2 noiseUV = (vec2(gl_GlobalInvocationID.xy) + gl_LocalInvocationID.xy * seed ) / (noiseDim);  
 
-    vec3 randomVec = texture(ssaoNoise, noiseUV).xyz * 2.0 - 1.0;
+    vec3 randomVec = texture(_txBluenoise, noiseUV).xyz * 2.0 - 1.0;
 	return randomVec;
 }
 // clang-format on
@@ -64,10 +105,34 @@ vec3 CosineSampleHemisphere(float u1, float u2)
  
     return vec3(x, y, sqrt(max(0.0f, 1 - u1)));
 }
+float blunoisefloat(int seed,vec2 pos){
+    uint x = HilbertIndex( uvec2(pos) ) % (1u << 17u);
+    float phi = 2.0/(sqrt(5.0)+1.0);
+	float c = fract(0.5+phi*float(x));
+    return c;
+}
+
+vec3 rng_hemisphere(vec3 n, vec2 rng){
+float M_PI = 3.1416;
+ float a = 1 - 2*rng.x;
+ float b = sqrt(1 - a*a);
+ float phi = 2*M_PI*rng.y;
+ float x = n.x + b*cos(phi);
+ float y = n.y + b*sin(phi);
+ float z = n.z + a;
+ float pdf = a / M_PI;
+ return normalize(vec3(x,y,z));
+}
+vec3 rng_vector_hemi(vec3 n, int seed){
+return rng_hemisphere(n,hash2(coord3(uvec3(gl_LocalInvocationIndex, engine_time,seed))));
+}
 vec3 rng_vector(int seed,vec3 position)
 {
-    //return screenBluenoise(int(engine_time));
-    return normalize(hash3(coord3(uvec3(gl_LocalInvocationIndex, engine_time,seed))) * 2.0 - 1.0);
+    
+
+
+    return screenBluenoise(int(engine_time));
+    //return normalize(hash3(coord3(uvec3(gl_LocalInvocationIndex, engine_time,seed))) * 2.0 - 1.0);
 }
 void main()
 {
@@ -80,19 +145,22 @@ void main()
         vec2 d = inUV * 2.0 - 1.0;
 
          // Ray Query for shadow
-         vec3  origin    = texture(samplerPositionDepth, inUV).xyz;
+         vec3  origin    = texture(_RG_gbuf_pos, inUV).xyz;
 
-         vec3 normal = normalize(texture(samplerNormal, inUV).rgb * 2.0 - 1.0);
-        int samples = 1;
+         vec3 normal = normalize(texture(_RG_gbuf_normal, inUV).rgb * 2.0 - 1.0);
+        int samples = 4;
         for(int i = 0; i < samples;i++){
+            vec3 rng = rng_vector_hemi(normal,i);
+             vec3 samplePos = rng;
+            #if 0
             vec3 rng = rng_vector(i,origin);
 
-            vec3 samplePos = rng;
+           
             //flip rng if its not on hemisphere
             if(dot(rng,normal) < 0){
                 samplePos -= samplePos;
             }
-
+#endif
             float rayLen  =100.f;
             
             vec3  direction = samplePos;

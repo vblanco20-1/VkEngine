@@ -27,7 +27,7 @@
 #include "../../scene_processor/public/scene_processor.h"
 #include <future>
 
-
+#include <autobind.h>
 
 
 static glm::mat4 mat_identity = glm::mat4( 1.0f,0.0f,0.0f,0.0f,
@@ -194,8 +194,10 @@ void VulkanEngine::create_engine_graph()
 
 	shadow_pass->set_depth_attachment("shadow_buffer_1", shadowbuffer);
 
+	
 	gbuffer_pass->add_color_attachment("gbuf_pos", gbuffer_position);
 	gbuffer_pass->add_color_attachment("gbuf_normal", gbuffer_normal);
+	gbuffer_pass->add_color_attachment("motion_vectors", gbuffer_position);
 	gbuffer_pass->set_depth_attachment("depth_prepass", gbuffer_depth);
 
 	//ssao0_pass->add_image_dependency("gbuf_pos");
@@ -220,6 +222,7 @@ void VulkanEngine::create_engine_graph()
 	ssao_taa_pass->add_image_dependency("ssao_mid");
 	ssao_taa_pass->add_image_dependency("gbuf_pos");
 	ssao_taa_pass->add_image_dependency("ssao_accumulate");
+	ssao_taa_pass->add_image_dependency("motion_vectors");
 	ssao_taa_pass->add_color_attachment("ssao_post", ssao_post);
 
 	ssao_taa_flip->add_image_dependency("ssao_post");
@@ -272,6 +275,9 @@ void VulkanEngine::init_vulkan()
 	eng_stats.frametime = 0.1;
 
 	//-- EXTENSIONS
+
+	autobinder = new AutobindState();
+	autobinder->Engine = this;
 
 	
 	std::vector<const char*> extensionNames = get_extensions();
@@ -420,9 +426,9 @@ void VulkanEngine::init_vulkan()
 
 	create_command_buffers();
 
-	create_texture_image();
-	create_texture_image_view();
-	create_texture_sampler();
+	//create_texture_image();
+	//create_texture_image_view();
+	//create_texture_sampler();
 
 
 	//create_vertex_buffer();
@@ -448,6 +454,17 @@ void VulkanEngine::init_vulkan()
 	testCubemap = load_texture(MAKE_ASSET_PATH("sprites/pisa_cube.ktx"), "cubemap", true);
 	//testCubemap = load_texture(MAKE_ASSET_PATH("sprites/pisa_cube.ktx"), "cubemap", true);
 	load_texture(MAKE_ASSET_PATH("sprites/ibl_brdf_lut.png"), "brdf", false);
+
+
+
+
+
+
+	autobinder->image_infos["_txBluenoise"] = get_resource_image_info("blunoise");
+
+	autobinder->image_infos["_txWhite"] = get_resource_image_info("blank");
+
+	autobinder->image_infos["_txBlack"] = get_resource_image_info("black");
 
 	CubemapLoader cubeLoad;
 	cubeLoad.initialize(this);
@@ -600,6 +617,18 @@ void VulkanEngine::init_vulkan()
 
 
 
+
+vk::DescriptorImageInfo VulkanEngine::get_resource_image_info(const char* resource_name)
+{
+	TextureResource res = getResource<TextureResource>(resource_name);
+
+	vk::DescriptorImageInfo image = {};
+	image.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+	image.imageView = res.imageView;
+	image.sampler = res.textureSampler;
+
+	return image;
+}
 
 void VulkanEngine::createImageViews()
 {
@@ -1420,7 +1449,6 @@ void VulkanEngine::create_gbuffer_pipeline()
 
 	gbufferPipelineBuilder = new GraphicsPipelineBuilder();
 
-
 	gbufferPipelineBuilder->data.vertexInputInfo = Vertex::getPipelineCreateInfo();
 	gbufferPipelineBuilder->data.inputAssembly = VkPipelineInitializers::build_input_assembly(vk::PrimitiveTopology::eTriangleList);
 	gbufferPipelineBuilder->data.viewport = VkPipelineInitializers::build_viewport(swapChainExtent.width, swapChainExtent.height);
@@ -1430,6 +1458,8 @@ void VulkanEngine::create_gbuffer_pipeline()
 	gbufferPipelineBuilder->data.multisampling = VkPipelineInitializers::build_multisampling();
 	//2 oclor attachments
 	gbufferPipelineBuilder->data.colorAttachmentStates.push_back(VkPipelineInitializers::build_color_blend_attachment_state());
+	gbufferPipelineBuilder->data.colorAttachmentStates.push_back(VkPipelineInitializers::build_color_blend_attachment_state());
+
 	gbufferPipelineBuilder->data.colorAttachmentStates.push_back(VkPipelineInitializers::build_color_blend_attachment_state());
 
 	gbufferPipelineBuilder->data.dynamicStates = {
@@ -2168,7 +2198,6 @@ void VulkanEngine::render_ssao_compute(const vk::CommandBuffer& cmd)
 
 	ZoneScopedNC("SSAO Pass Compute", tracy::Color::BlueViolet);
 
-	TextureResource bluenoise = getResource<TextureResource>(bluenoiseTexture);
 	PipelineResource ssaopip = getResource<PipelineResource>("ray_shadow");//("pipeline_ssao_comp");
 
 	ShaderEffect* effect = ssaopip.effect;
@@ -2182,31 +2211,28 @@ void VulkanEngine::render_ssao_compute(const vk::CommandBuffer& cmd)
 	vk::DescriptorBufferInfo camBufferInfo = make_buffer_info<UniformBufferObject>(cameraDataBuffers[currentFrameIndex]);
 	vk::DescriptorBufferInfo ssaoSamplesbuffer = make_buffer_info(ssaoSamples.buffer, sizeof(glm::vec4) * SSAO_KERNEL_SIZE);
 
-	vk::DescriptorImageInfo noiseImage = {};
-	noiseImage.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-	noiseImage.imageView = bluenoise.imageView;
-	noiseImage.sampler = bluenoise.textureSampler;//bluenoise.textureSampler;
+
 
 	setBuilder.bind_buffer("ubo", camBufferInfo);
 	//setBuilder.bind_buffer("uboSSAOKernel", ssaoSamplesbuffer);
 
 
-	vk::DescriptorBufferInfo raySceneBufferInfo = make_buffer_info<UniformBufferObject>(RaySceneBuffer);
+	autobinder->fill_descriptor(&setBuilder);
+
+	//vk::DescriptorBufferInfo raySceneBufferInfo = make_buffer_info<UniformBufferObject>(RaySceneBuffer);
 	vk::WriteDescriptorSetAccelerationStructureKHR accel;
 	accel.accelerationStructureCount = 1;
 	accel.pAccelerationStructures = (vk::AccelerationStructureKHR*)&top_level_acceleration_structure.acceleration_structure;
 	setBuilder.bind_raystructure(0, 7, accel);
 
-	setBuilder.bind_image(0, 0, render_graph.get_image_descriptor("gbuf_pos"));
-	setBuilder.bind_image(0, 1, render_graph.get_image_descriptor("gbuf_normal"));
-	setBuilder.bind_image(0, 2, noiseImage);
-
 	setBuilder.bind_image(0, 3, render_graph.get_image_descriptor("ssao_pre"),true);
 
-	std::array<vk::DescriptorSet, 2> descriptors;
-	descriptors[0] = setBuilder.build_descriptor(0, DescriptorLifetime::PerFrame);
+	build_and_bind_descriptors(setBuilder, 0, cmd);
 
-	cmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, layout, 0, 1, &descriptors[0], 0, nullptr);
+	//std::array<vk::DescriptorSet, 2> descriptors;
+	//descriptors[0] = setBuilder.build_descriptor(0, DescriptorLifetime::PerFrame);
+	//
+	//cmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, layout, 0, 1, &descriptors[0], 0, nullptr);
 
 
 	int width = render_graph.graph_attachments["ssao_pre"].real_width;
@@ -2278,20 +2304,14 @@ void VulkanEngine::render_ssao_taa(const vk::CommandBuffer& cmd, int height, int
 
 	cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, ssaopip.pipeline);
 
-
-
 	set_pipeline_state_depth(width, height, cmd, false, false);
 
 	DescriptorSetBuilder setBuilder{ effect,&descriptorMegapool };
 
-	setBuilder.bind_image(0, 0, render_graph.get_image_descriptor("ssao_mid"));
-	setBuilder.bind_image(0, 1, render_graph.get_image_descriptor("gbuf_pos"));
-	setBuilder.bind_image(0, 2, render_graph.get_image_descriptor("ssao_accumulate"));
+	//fill_descriptor
+	autobinder->fill_descriptor(&setBuilder);	
 
-	std::array<vk::DescriptorSet, 2> descriptors;
-	descriptors[0] = setBuilder.build_descriptor(0, DescriptorLifetime::PerFrame);
-
-	cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, layout, 0, 1, &descriptors[0], 0, nullptr);
+	build_and_bind_descriptors(setBuilder, 0, cmd);
 
 	std::array<glm::mat4, 4> push_matrices;
 	push_matrices[0] = LastFrameMatrices.proj * LastFrameMatrices.view;
@@ -2301,6 +2321,17 @@ void VulkanEngine::render_ssao_taa(const vk::CommandBuffer& cmd, int height, int
 	cmd.pushConstants(layout, vk::ShaderStageFlagBits::eFragment, 0, sizeof(glm::mat4)*4, &push_matrices[0]);
 
 	cmd.draw(3, 1, 0, 0);
+}
+
+void VulkanEngine::build_and_bind_descriptors(DescriptorSetBuilder& setBuilder,int set ,const vk::CommandBuffer& cmd)
+{
+	VkPipelineLayout layout = setBuilder.effect->build_pipeline_layout(device);
+	
+	vk::DescriptorSet descriptor = setBuilder.build_descriptor(set, DescriptorLifetime::PerFrame);
+
+	vk::PipelineBindPoint bindPoint = (vk::PipelineBindPoint)setBuilder.effect->get_bind_point();
+
+	cmd.bindDescriptorSets(bindPoint, layout, set, 1, &descriptor, 0, nullptr);
 }
 
 constexpr int MULTIDRAW = 1;
@@ -2329,10 +2360,9 @@ void VulkanEngine::render_ssao_blury(const vk::CommandBuffer& cmd, int height, i
 	setBuilder.bind_image(0, 0, render_graph.get_image_descriptor("ssao_mid"));
 	setBuilder.bind_image(0, 1, render_graph.get_image_descriptor("gbuf_pos"));
 
-	std::array<vk::DescriptorSet, 2> descriptors;
-	descriptors[0] = setBuilder.build_descriptor(0, DescriptorLifetime::PerFrame);
 
-	cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, layout, 0, 1, &descriptors[0], 0, nullptr);
+	build_and_bind_descriptors(setBuilder, 0, cmd);
+	
 
 	glm::vec4 blur_dir;
 	blur_dir.y = (1.f / (float)height/*swapChainExtent.height*/)*2.f;
@@ -2364,10 +2394,7 @@ void VulkanEngine::render_ssao_flip(const vk::CommandBuffer& cmd, int height, in
 	setBuilder.bind_image(0, 1, render_graph.get_image_descriptor("gbuf_pos"));
 
 
-	std::array<vk::DescriptorSet, 2> descriptors;
-	descriptors[0] = setBuilder.build_descriptor(0, DescriptorLifetime::PerFrame);
-
-	cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, effect->build_pipeline_layout(device), 0, 1, &descriptors[0], 0, nullptr);
+	build_and_bind_descriptors(setBuilder, 0, cmd);
 
 	cmd.draw(3, 1, 0, 0);
 }
@@ -2396,10 +2423,7 @@ void VulkanEngine::render_ssao_blur_compute(const vk::CommandBuffer& cmd, const 
 	setBuilder.bind_image(0, 1, render_graph.get_image_descriptor("gbuf_pos"));
 	setBuilder.bind_image(0, 3, render_graph.get_image_descriptor(image_target),true);
 
-	std::array<vk::DescriptorSet, 2> descriptors;
-	descriptors[0] = setBuilder.build_descriptor(0, DescriptorLifetime::PerFrame);
-
-	cmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, layout, 0, 1, &descriptors[0], 0, nullptr);
+	build_and_bind_descriptors(setBuilder, 0, cmd);
 
 	glm::vec4 blur_dir;
 	blur_dir.y = (1.f / height) * blur_direction.y;
@@ -2656,10 +2680,7 @@ void VulkanEngine::RenderGBufferPass(const vk::CommandBuffer& cmd)
 			setBuilder.bind_buffer("ubo", camBufferInfo);			
 			setBuilder.bind_buffer("MainObjectBuffer", transformBufferInfo);
 
-			std::array<vk::DescriptorSet, 2> descriptors;
-			descriptors[0] = setBuilder.build_descriptor(0, DescriptorLifetime::PerFrame);
-
-			cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, piplayout, 0, 1, &descriptors[0], 0, nullptr);
+			build_and_bind_descriptors(setBuilder, 0, cmd);
 		}
 
 		if (last_vertex_buffer != unit.vertexBuffer) {
@@ -2738,6 +2759,19 @@ void VulkanEngine::update_uniform_buffer(uint32_t currentImage)
 		mainCam.eyeDir = glm::normalize(eye - glm::vec3(0.0f, 400.0f, 0.0f));
 	}
 	else {
+
+		//float rx = static_cast <float> (rand()) / static_cast <float> (RAND_MAX);
+		//float ry = static_cast <float> (rand()) / static_cast <float> (RAND_MAX);
+		//
+		//(&ubo.proj[0][0])[8] = rx*2 / render_width;
+		//(&ubo.proj[0][0])[9] = rx * 2 / render_height;
+
+		
+
+		glm::vec3 side = glm::cross(playerCam.camera_location, playerCam.camera_up);
+
+		glm::vec3 offset = glm::vec3(0); //playerCam.camera_up * ry + side * rx;
+
 		ubo.view = glm::lookAt(playerCam.camera_location, playerCam.camera_location+ playerCam.camera_forward, playerCam.camera_up);
 		ubo.eye = glm::vec4(playerCam.camera_location, 0.0f);
 
@@ -2763,7 +2797,8 @@ void VulkanEngine::update_uniform_buffer(uint32_t currentImage)
 	shadowubo.proj[1][1] *= -1;
 	shadowubo.model = shadowubo.view * shadowubo.proj;//shadowubo.view * shadowubo.proj;
 
-	ubo.inv_model= glm::inverse(ubo.model);
+	//big hack, this is last frame
+	ubo.inv_model = MainMatrices.proj * MainMatrices.view;  ///glm::inverse(ubo.model);
 	ubo.inv_view = glm::inverse(ubo.view);
 	ubo.inv_proj = glm::inverse(ubo.proj);
 

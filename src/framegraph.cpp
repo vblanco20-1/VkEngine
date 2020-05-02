@@ -491,13 +491,13 @@ bool FrameGraph::build( VulkanEngine* engine)
 	
 	//one sampler to rule them all
 	vk::SamplerCreateInfo sampler;
-	sampler.magFilter = vk::Filter::eNearest;
-	sampler.minFilter = vk::Filter::eNearest;
-	sampler.mipmapMode = vk::SamplerMipmapMode::eNearest;
+	sampler.magFilter = vk::Filter::eLinear;
+	sampler.minFilter = vk::Filter::eLinear;
+	sampler.mipmapMode = vk::SamplerMipmapMode::eLinear;
 	//sampler.magFilter = vk::Filter::eNearest;
 	//sampler.minFilter = vk::Filter::eNearest;
 	//sampler.mipmapMode = vk::SamplerMipmapMode::eNearest;
-	sampler.addressModeU = vk::SamplerAddressMode::eClampToEdge;
+	sampler.addressModeU = vk::SamplerAddressMode::eMirroredRepeat;
 	sampler.addressModeV = sampler.addressModeU;
 	sampler.addressModeW = sampler.addressModeU;
 	sampler.mipLodBias = 0.0f;

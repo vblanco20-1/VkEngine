@@ -14,7 +14,7 @@
 #endif
 #define MAKE_ASSET_PATH(path) ASSET_PATH ## path
 
-constexpr int MAX_FRAMES_IN_FLIGHT =1;
+constexpr int MAX_FRAMES_IN_FLIGHT =2;
 constexpr int MAX_UNIFORM_BUFFER = 5000;
 constexpr int SHADOWMAP_DIM = 2048;
 
@@ -197,6 +197,9 @@ public:
 	bool check_layer_support();
 	void create_engine_graph();
 	void init_vulkan();
+
+	
+	vk::DescriptorImageInfo get_resource_image_info(const char* resource_name);
 	void init_vulkan_debug();
 	void create_device();
 	void createSwapChain();
@@ -276,6 +279,9 @@ public:
 	void render_ssao_compute(const vk::CommandBuffer& cmd);
 	void render_ssao_blurx(const vk::CommandBuffer& cmd, int height, int width);
 	void render_ssao_taa(const vk::CommandBuffer& cmd, int height, int width);
+
+	void build_and_bind_descriptors(DescriptorSetBuilder& setBuilder, int set, const vk::CommandBuffer& cmd);	
+
 	void render_ssao_blury(const vk::CommandBuffer& cmd, int height, int width);
 	void render_ssao_flip(const vk::CommandBuffer& cmd, int height, int width);
 	void render_ssao_blur_compute(const vk::CommandBuffer& cmd, const char* image_source,const char *image_target, glm::vec2 blur_direction);
@@ -350,6 +356,8 @@ public:
 	std::string DisplayImage;
 	//vk::Pipeline getBlitPipeline(vk::RenderPass pass);
 	PipelineResource* GetBlitPipeline();
+
+	struct AutobindState* autobinder;
 
 	struct GraphicsPipelineBuilder* GetOutputBlitPipeline();
 

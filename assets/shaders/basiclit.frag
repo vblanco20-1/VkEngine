@@ -266,7 +266,7 @@ void main() {
 	// Ambient part
 	vec3 kD = 1.0 - F;
 	kD *= 1.0 - metallic;	  
-	vec3 ambient = (kD * diffuse + specular) * pow(ssao,4);
+	vec3 ambient = (kD * diffuse + specular) * pow(ssao,2);
 	
 	vec3 color = ambient+ Lo;//vec3(pow(ssao,4));//
 	
@@ -279,9 +279,9 @@ void main() {
 	//vec4 tex_test  = vec4(texture(tex3, fragTexCoord));//.rgba;
 	//float tex_test  = texture(tex3, fragTexCoord);
 	//outColor = tex_test;
-	outColor = vec4(ssao);
+	//outColor = vec4(ssao);
 
-	//outColor = vec4(color, 1.0);
+	outColor = vec4(color, 1.0);
 	
 	
 	//outColor=	vec4(prefilteredReflection(N, sceneParams.ambient.w).rgb, 1.0);

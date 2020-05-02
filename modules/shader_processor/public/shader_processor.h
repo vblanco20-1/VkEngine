@@ -62,6 +62,8 @@ struct ShaderEffect {
 
 	bool reload_shaders(VkDevice device);
 
+	VkPipelineBindPoint get_bind_point();
+
 	//returns a vkPipelineLayout
 	VkPipelineLayout build_pipeline_layout(VkDevice device);
 

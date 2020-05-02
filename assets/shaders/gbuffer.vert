@@ -40,6 +40,8 @@ layout(location = 0) out vec3 fragColor;
 layout(location = 1) out vec2 fragTexCoord;
 layout(location = 2) out vec3 fragNormal;
 layout(location = 3) out vec3 fragPos;
+layout(location = 4) out vec4 clipPos;
+layout(location = 5) out vec4 lastclipPos;
 
 void main() {
 
@@ -47,6 +49,10 @@ void main() {
 	vec4 pointPos  = ubo.proj * ubo.view * objectMatrix * vec4(inPosition, 1.0);
 
 	gl_Position =pointPos;
+
+	clipPos = pointPos;
+	lastclipPos = ubo.inv_model * objectMatrix * vec4(inPosition, 1.0);
+
     fragColor = inColor;
     fragTexCoord = inTexCoord;
 #if 1 // WORLD SPACE

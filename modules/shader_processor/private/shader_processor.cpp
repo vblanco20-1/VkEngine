@@ -506,6 +506,16 @@ failure:
     return false;
 }
 
+VkPipelineBindPoint ShaderEffect::get_bind_point()
+{
+    if (privData->modules.size() == 1) {
+        return VK_PIPELINE_BIND_POINT_COMPUTE;
+    }
+    else{
+        return VK_PIPELINE_BIND_POINT_GRAPHICS;
+    }
+}
+
 VkShaderStageFlagBits ShaderTypeToVulkanFlag(ShaderType type) {
     switch (type) {
 
