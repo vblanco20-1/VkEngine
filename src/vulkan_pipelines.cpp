@@ -128,8 +128,6 @@ vk::PipelineVertexInputStateCreateInfo VkPipelineInitializers::build_empty_verte
 }
 
 
-
-
 vk::Pipeline GraphicsPipelineBuilder::build_pipeline(vk::Device device, vk::RenderPass renderPass, uint32_t subpass, ShaderEffect* shaderEffect)
 {
 	//build shader data from effect

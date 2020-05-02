@@ -29,6 +29,7 @@
 
 #include <autobind.h>
 
+#include <murmurhash.h>
 
 static glm::mat4 mat_identity = glm::mat4( 1.0f,0.0f,0.0f,0.0f,
 0.0f,1.0f,0.0f,0.0f,
@@ -426,20 +427,8 @@ void VulkanEngine::init_vulkan()
 
 	create_command_buffers();
 
-	//create_texture_image();
-	//create_texture_image_view();
-	//create_texture_sampler();
-
-
-	//create_vertex_buffer();
-	//
-	//create_index_buffer();
-	//
 	create_uniform_buffers();
-	//
-	//
-	//
-	//
+
 	create_descriptor_sets();
 	
 	
@@ -1565,50 +1554,6 @@ void VulkanEngine::unmapBuffer(AllocatedBuffer buffer) {
 	vmaUnmapMemory(allocator, buffer.allocation);
 };
 
-void VulkanEngine::create_texture_image()
-{
-	int texWidth, texHeight, texChannels;
-	stbi_uc* pixels = stbi_load(MAKE_ASSET_PATH("models/playerrobot_diffusion.png"), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
-	vk::DeviceSize imageSize = texWidth * texHeight * 4;
-
-	if (!pixels) {
-		throw std::runtime_error("failed to load texture image!");
-	}
-
-	//vk::Buffer stagingBuffer;
-	//vk::DeviceMemory stagingBufferMemory;
-	AllocatedBuffer stagingBuffer;
-	createBuffer(imageSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_UNKNOWN, stagingBuffer);
-
-		
-	void* data;
-	vmaMapMemory(allocator, stagingBuffer.allocation, &data);//device.mapMemory(stagingBufferMemory, 0, bufferSize);
-
-	memcpy(data, pixels, static_cast<size_t>(imageSize));
-
-	vmaUnmapMemory(allocator, stagingBuffer.allocation);
-
-	stbi_image_free(pixels);
-
-	
-	//AllocatedImage textureImage;
-	createImage(texWidth, texHeight, vk::Format::eR8G8B8A8Unorm,
-		vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled, 
-		vk::MemoryPropertyFlagBits::eDeviceLocal, test_textureImage);
-
-	transitionImageLayout(test_textureImage.image, vk::Format::eR8G8B8A8Unorm, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal);
-	
-	copyBufferToImage(stagingBuffer.buffer, test_textureImage.image, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));
-
-	transitionImageLayout(test_textureImage.image, vk::Format::eR8G8B8A8Unorm, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
-
-	vmaDestroyBuffer(allocator, stagingBuffer.buffer, stagingBuffer.allocation);
-
-	
-}
-
-
-
 uint32_t VulkanEngine::findMemoryType(uint32_t typeFilter,const vk::MemoryPropertyFlags& properties) {
 
 	vk::PhysicalDeviceMemoryProperties memProperties = physicalDevice.getMemoryProperties();
@@ -1689,55 +1634,6 @@ void VulkanEngine::endSingleTimeCommands(vk::CommandBuffer commandBuffer) {
 	device.freeCommandBuffers(commandPool, { commandBuffer });
 }
 
-
-void  VulkanEngine::create_vertex_buffer()
-{
-	vk::DeviceSize bufferSize = sizeof(test_vertices[0]) * test_vertices.size();
-
-	//vk::DeviceMemory stagingBufferMemory;
-	AllocatedBuffer staging_allocation;
-	createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_UNKNOWN, staging_allocation);
-
-
-	void* data;
-	vmaMapMemory(allocator, staging_allocation.allocation, &data);//device.mapMemory(stagingBufferMemory, 0, bufferSize);
-
-	memcpy(data, test_vertices.data(), (size_t)bufferSize);
-
-	vmaUnmapMemory(allocator, staging_allocation.allocation);
-	
-	//AllocatedBuffer vertex_buffer;
-	createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer, vk::MemoryPropertyFlagBits::eDeviceLocal, VMA_MEMORY_USAGE_UNKNOWN, vertexBuffer);//vertexBuffer, vertexBufferMemory);
-	//vertexBuffer = vertex_buffer.buffer;
-	copyBuffer(staging_allocation.buffer, vertexBuffer.buffer, bufferSize);
-
-	vmaDestroyBuffer(allocator, staging_allocation.buffer,staging_allocation.allocation);
-}
-
-void VulkanEngine::create_index_buffer()
-{
-	vk::DeviceSize bufferSize = sizeof(test_indices[0]) * test_indices.size();
-
-	AllocatedBuffer staging_allocation;
-	createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_UNKNOWN, staging_allocation);
-
-
-	void* data;
-	vmaMapMemory(allocator, staging_allocation.allocation, &data);//device.mapMemory(stagingBufferMemory, 0, bufferSize);
-
-	memcpy(data, test_indices.data(), (size_t)bufferSize);
-
-	vmaUnmapMemory(allocator, staging_allocation.allocation);
-
-
-	createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer, vk::MemoryPropertyFlagBits::eDeviceLocal, VMA_MEMORY_USAGE_UNKNOWN, indexBuffer);
-
-	copyBuffer(staging_allocation.buffer, indexBuffer.buffer, bufferSize);
-
-
-	vmaDestroyBuffer(allocator, staging_allocation.buffer, staging_allocation.allocation);
-}
-
 void VulkanEngine::create_uniform_buffers()
 {
 	vk::DeviceSize UBOSize = (sizeof(UniformBufferObject));
@@ -1746,6 +1642,7 @@ void VulkanEngine::create_uniform_buffers()
 	cameraDataBuffers.resize(swapChainImages.size());
 	sceneParamBuffers.resize(swapChainImages.size());
 	object_buffers.resize(swapChainImages.size());
+	shadow_instance_buffers.resize(swapChainImages.size());
 	//uniformBuffersMemory.resize(swapChainImages.size());
 
 	for (size_t i = 0; i < swapChainImages.size(); i++) {
@@ -1761,6 +1658,10 @@ void VulkanEngine::create_uniform_buffers()
 
 		//mesh transform buffer
 		createBuffer(sizeof(GpuObjectData) * 10000, vk::BufferUsageFlagBits::eStorageBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_CPU_TO_GPU, object_buffers[i]);
+	
+		//shadow instance id buffer
+		createBuffer(sizeof(int32_t) * 10000, vk::BufferUsageFlagBits::eStorageBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_CPU_TO_GPU, shadow_instance_buffers[i]);
+
 	}
 
 }
@@ -2101,20 +2002,141 @@ vk::DescriptorImageInfo VulkanEngine::get_image_resource(const char* name) {
 
 void VulkanEngine::render_shadow_pass(const vk::CommandBuffer& cmd, int height, int width)
 {
+	struct ShadowDrawUnit {
+		//vk::Pipeline pipeline;
+		const AllocatedBuffer* indexBuffer;
+		uint32_t object_idx;
+		uint32_t index_count;
+	};
+
+	struct InstancedDraw {
+		uint32_t first_index;
+		uint32_t instance_count;
+		uint32_t index_count;
+		vk::Buffer index_buffer;
+	};
+	eng_stats.shadow_drawcalls = 0;
+	static std::vector<ShadowDrawUnit> drawUnits;
+	drawUnits.clear();
+	static std::vector<InstancedDraw> instancedDraws;
+	instancedDraws.clear();
+
 	tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(cmd);
 	TracyVkZoneC(profilercontext, VkCommandBuffer(cmd), "Shadow pass", tracy::Color::Blue);
 
-	
+	ShaderEffect* effect = getResource<ShaderEffectHandle>("shadowpipeline").handle;
+	vk::Pipeline last_pipeline = shadowPipeline;
+	vk::PipelineLayout piplayout;
+
+	cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, shadowPipeline);
+
+	set_pipeline_state_depth(width, height, cmd);
+
+	piplayout = (vk::PipelineLayout)effect->build_pipeline_layout(device);
+	last_pipeline = shadowPipeline;
+
+	DescriptorSetBuilder setBuilder{ effect,&descriptorMegapool };
+
+	vk::DescriptorBufferInfo shadowBufferInfo = make_buffer_info<UniformBufferObject>(shadowDataBuffers[currentFrameIndex]);
+
+	vk::DescriptorBufferInfo transformBufferInfo = make_buffer_info(object_buffers[currentFrameIndex].buffer, sizeof(GpuObjectData) * 10000);
+	vk::DescriptorBufferInfo instanceBufferInfo = make_buffer_info(shadow_instance_buffers[currentFrameIndex].buffer, sizeof(uint32_t) * 10000);
+
+	setBuilder.bind_buffer("ubo", shadowBufferInfo);
+	setBuilder.bind_buffer("MainObjectBuffer", transformBufferInfo);
+	setBuilder.bind_buffer("InstanceIDBuffer", instanceBufferInfo);
+
+	std::array<vk::DescriptorSet, 2> descriptors;
+	descriptors[0] = setBuilder.build_descriptor(0, DescriptorLifetime::PerFrame);
+
+	cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, piplayout, 0, 1, &descriptors[0], 0, nullptr);
+
 
 
 	ZoneScopedNC("Shadow Pass", tracy::Color::BlueViolet);
-	EntityID LastMesh = entt::null;
+	vk::Buffer LastIndex{};
 
-	vk::Pipeline last_pipeline = shadowPipeline;
-	vk::PipelineLayout piplayout;
-	bool first_render = true;
-	ShaderEffect* effect = getResource<ShaderEffectHandle>("shadowpipeline").handle;
 
+	render_registry.view<RenderMeshComponent>().each([&](RenderMeshComponent& renderable) {
+
+		const MeshResource& mesh = render_registry.get<MeshResource>(renderable.mesh_resource_entity);
+
+		ShadowDrawUnit unit;
+		unit.object_idx = renderable.object_idx;
+		unit.indexBuffer = &mesh.indexBuffer;
+		unit.index_count = mesh.indices.size();
+
+		drawUnits.push_back(unit);
+		});
+
+	std::sort(drawUnits.begin(), drawUnits.end(), [](const ShadowDrawUnit& a, const ShadowDrawUnit& b) {
+
+		return a.indexBuffer->buffer < b.indexBuffer->buffer;
+		});
+
+
+	static std::vector<int32_t> instances;
+	instances.clear();
+	for (auto& unit : drawUnits) {
+		instances.push_back(unit.object_idx);
+	}
+
+	InstancedDraw pendingDraw;
+	for (int i = 0; i < drawUnits.size(); i++)
+	{
+		auto& unit = drawUnits[i];
+		if (LastIndex != unit.indexBuffer->buffer) {
+			if (i != 0) {
+				instancedDraws.push_back(pendingDraw);
+			}
+
+			pendingDraw.first_index = i;
+			pendingDraw.index_buffer = unit.indexBuffer->buffer;
+			pendingDraw.index_count = unit.index_count;
+			pendingDraw.instance_count = 1;
+			LastIndex = unit.indexBuffer->buffer;
+		}
+		else {
+			pendingDraw.instance_count++;
+		}
+	}
+	instancedDraws.push_back(pendingDraw);
+
+	void* matdata = mapBuffer(shadow_instance_buffers[currentFrameIndex]);
+	memcpy(matdata, instances.data(), instances.size() * sizeof(int32_t));
+
+	unmapBuffer(shadow_instance_buffers[currentFrameIndex]);
+
+	int binds = 0;
+	int draw_idx = 0;
+#if 1
+	for (auto& draw : instancedDraws) {
+		cmd.bindIndexBuffer(draw.index_buffer, 0, vk::IndexType::eUint32);
+		cmd.drawIndexed(draw.index_count, draw.instance_count,0 , 0, draw.first_index);
+		eng_stats.drawcalls++;
+		eng_stats.shadow_drawcalls++;
+	}
+#else 
+	for (auto& unit : drawUnits)
+	{
+		if (LastIndex != unit.indexBuffer->buffer) {
+
+			vk::DeviceSize offsets[] = { 0 };
+
+			cmd.bindIndexBuffer(unit.indexBuffer->buffer, 0, vk::IndexType::eUint32);
+
+			LastIndex = unit.indexBuffer->buffer;
+			binds++;
+		}
+
+		cmd.drawIndexed(unit.index_count, 1, 0, 0, draw_idx);//unit.object_idx);
+		eng_stats.drawcalls++;
+		eng_stats.shadow_drawcalls++;
+		draw_idx++;
+	}
+#endif
+	return;
+#if 0
 	render_registry.view<RenderMeshComponent>().each([&](RenderMeshComponent& renderable) {
 
 		const MeshResource& mesh = render_registry.get<MeshResource>(renderable.mesh_resource_entity);
@@ -2160,6 +2182,36 @@ void VulkanEngine::render_shadow_pass(const vk::CommandBuffer& cmd, int height, 
 		first_render = false;
 	});
 
+#endif
+
+#if 0
+	int copyidx = 0;
+	std::vector<GpuObjectData> object_matrices;
+
+	object_matrices.resize(render_registry.capacity<RenderMeshComponent>());
+
+	render_registry.group<RenderMeshComponent, TransformComponent, ObjectBounds>().each([&](EntityID id, RenderMeshComponent& renderable, const TransformComponent& transform, ObjectBounds& bounds) {
+
+		object_matrices[copyidx].model_matrix = transform.model;
+
+
+		const MeshResource& mesh = render_registry.get<MeshResource>(renderable.mesh_resource_entity);
+		object_matrices[copyidx].vertex_buffer_adress = mesh.vertexBuffer.address;//get_buffer_adress(mesh.vertexBuffer);
+
+
+		renderable.object_idx = copyidx;
+		copyidx++;
+		});
+
+	if (copyidx > 0) {
+		ZoneScopedN("Uniform copy");
+
+		void* matdata = mapBuffer(object_buffers[currentImage]);
+		memcpy(matdata, object_matrices.data(), object_matrices.size() * sizeof(GpuObjectData));
+
+		unmapBuffer(object_buffers[currentImage]);
+	}
+#endif
 }
 
 void VulkanEngine::render_ssao_pass(const vk::CommandBuffer& cmd, int height, int width)
@@ -2653,7 +2705,7 @@ void VulkanEngine::RenderGBufferPass(const vk::CommandBuffer& cmd)
 		});
 
 	
-
+	eng_stats.gbuffer_drawcalls = 0;
 	for (const DrawUnit& unit : drawables) {
 
 		const bool bShouldBindPipeline = unit.pipeline != last_pipeline;
@@ -2704,7 +2756,7 @@ void VulkanEngine::RenderGBufferPass(const vk::CommandBuffer& cmd)
 
 		cmd.drawIndexed(static_cast<uint32_t>(unit.index_count), 1, 0, 0, unit.object_idx);
 		eng_stats.drawcalls++;
-
+		eng_stats.gbuffer_drawcalls++;
 		first_render = false;
 	}
 }
@@ -2910,31 +2962,6 @@ void VulkanEngine::destroyBuffer(AllocatedBuffer buffer) {
 	vmaDestroyBuffer(allocator, buffer.buffer, buffer.allocation);
 }
 
-void VulkanEngine::create_texture_sampler()
-{
-	vk::SamplerCreateInfo samplerInfo;
-	samplerInfo.magFilter = vk::Filter::eLinear;
-	samplerInfo.minFilter = vk::Filter::eLinear;
-	samplerInfo.addressModeU = vk::SamplerAddressMode::eRepeat;
-	samplerInfo.addressModeV = vk::SamplerAddressMode::eRepeat;
-	samplerInfo.addressModeW = vk::SamplerAddressMode::eRepeat;
-
-	samplerInfo.anisotropyEnable = VK_TRUE;
-	samplerInfo.maxAnisotropy = 16;
-
-	samplerInfo.borderColor = vk::BorderColor::eIntOpaqueBlack;
-	samplerInfo.unnormalizedCoordinates = VK_FALSE;
-
-	samplerInfo.compareEnable = VK_FALSE;
-	samplerInfo.compareOp = vk::CompareOp::eAlways;
-
-	samplerInfo.mipmapMode = vk::SamplerMipmapMode::eLinear;
-	samplerInfo.mipLodBias = 0.0f;
-	samplerInfo.minLod = 0.0f;
-	samplerInfo.maxLod = 0.0f;
-
-	test_textureSampler = device.createSampler(samplerInfo);
-}
 
 void VulkanEngine::clear_vulkan()
 {	
@@ -3119,17 +3146,19 @@ EntityID VulkanEngine::load_mesh(const char* model_path, std::string modelName)
 
 	return id;
 }
-
+uint32_t hash_index_buffer(std::vector<uint32_t>& indices) {
+	return murmurhash((const char*)indices.data(), indices.size() * sizeof(uint32_t), 0);
+}
 EntityID VulkanEngine::load_assimp_mesh(aiMesh* mesh)
 {
-	MeshResource newMesh;	
+	MeshResource newMesh;
 
 	glm::vec3 bmin = { mesh->mAABB.mMin.x,mesh->mAABB.mMin.y,mesh->mAABB.mMin.z };
 	glm::vec3 bmax = { mesh->mAABB.mMax.x,mesh->mAABB.mMax.y,mesh->mAABB.mMax.z };
 
 	ObjectBounds bounds;
 
-	bounds.center_rad = glm::vec4((bmax + bmin) / 2.f,1.f);
+	bounds.center_rad = glm::vec4((bmax + bmin) / 2.f, 1.f);
 
 	bounds.extent = glm::abs(glm::vec4((bmax - bmin) / 2.f, 0.f));
 	bounds.center_rad.w = glm::length(bounds.extent);
@@ -3138,13 +3167,13 @@ EntityID VulkanEngine::load_assimp_mesh(aiMesh* mesh)
 
 	newMesh.vertices.clear();
 	newMesh.indices.clear();
-	
+
 	newMesh.vertices.reserve(mesh->mNumVertices);
-	newMesh.indices.reserve(mesh->mNumFaces*3);
-	
+	newMesh.indices.reserve(mesh->mNumFaces * 3);
+
 	for (int vtx = 0; vtx < mesh->mNumVertices; vtx++) {
-		Vertex vertex = {};			
-	
+		Vertex vertex = {};
+
 		vertex.pos = {
 			mesh->mVertices[vtx].x,
 			mesh->mVertices[vtx].y,
@@ -3165,7 +3194,7 @@ EntityID VulkanEngine::load_assimp_mesh(aiMesh* mesh)
 				0.5f,0.5f,0.5f,0.5f
 			};
 		}
-		
+
 		vertex.normal = {
 			mesh->mNormals[vtx].x,
 			mesh->mNormals[vtx].y,
@@ -3174,52 +3203,82 @@ EntityID VulkanEngine::load_assimp_mesh(aiMesh* mesh)
 		};
 		newMesh.vertices.push_back(vertex);
 	}
-	
-	for (int face = 0; face < mesh->mNumFaces; face++){
+
+	for (int face = 0; face < mesh->mNumFaces; face++) {
 		newMesh.indices.push_back(mesh->mFaces[face].mIndices[0]);
 		newMesh.indices.push_back(mesh->mFaces[face].mIndices[1]);
 		newMesh.indices.push_back(mesh->mFaces[face].mIndices[2]);
 	}
 
+	//hash the indices to find duplicates already loaded
+	uint32_t hash;
+	{
+		ZoneScopedNC("Hash index buffer", tracy::Color::Blue);
+		hash = hash_index_buffer(newMesh.indices);
 
-	vk::DeviceSize vertexBufferSize = sizeof(newMesh.vertices[0]) * newMesh.vertices.size();
-	vk::DeviceSize indexBufferSize = sizeof(newMesh.indices[0]) * newMesh.indices.size();
+	}
 
-	AllocatedBuffer vertex_staging_allocation;
-	createBuffer(vertexBufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_UNKNOWN, vertex_staging_allocation);
+	bool bUploadIndices = false;
 
-	AllocatedBuffer index_staging_allocation;
-	createBuffer(indexBufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_UNKNOWN, index_staging_allocation);
+	//search in cache
+	auto cached = indexCache.IndexBuffers.find(hash);
+	if (cached == indexCache.IndexBuffers.end()) {
+		bUploadIndices = true;
+	}
+	else {
+		//std::cout << "index cache hit" << std::endl;
 
-	//copy vertex data
-	void* data;
-	vmaMapMemory(allocator, vertex_staging_allocation.allocation, &data);
-
-	memcpy(data, newMesh.vertices.data(), (size_t)vertexBufferSize);
-
-	vmaUnmapMemory(allocator, vertex_staging_allocation.allocation);
-
-	//copy index data
-	vmaMapMemory(allocator, index_staging_allocation.allocation, &data);
-
-	memcpy(data, newMesh.indices.data(), (size_t)indexBufferSize);
-
-	vmaUnmapMemory(allocator, index_staging_allocation.allocation);
+		newMesh.indexBuffer = indexCache.IndexBuffers[hash];
+	}
 
 
+	{
+		vk::DeviceSize vertexBufferSize = sizeof(newMesh.vertices[0]) * newMesh.vertices.size();
 
-	createBuffer(vertexBufferSize, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress, vk::MemoryPropertyFlagBits::eDeviceLocal, VMA_MEMORY_USAGE_UNKNOWN, newMesh.vertexBuffer);//vertexBuffer, vertexBufferMemory);
 
-	copyBuffer(vertex_staging_allocation.buffer, newMesh.vertexBuffer.buffer, vertexBufferSize);
+		AllocatedBuffer vertex_staging_allocation;
+		createBuffer(vertexBufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_UNKNOWN, vertex_staging_allocation);
 
-	vmaDestroyBuffer(allocator, vertex_staging_allocation.buffer, vertex_staging_allocation.allocation);
 
-	createBuffer(indexBufferSize, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress, vk::MemoryPropertyFlagBits::eDeviceLocal, VMA_MEMORY_USAGE_UNKNOWN, newMesh.indexBuffer);
+		//copy vertex data
+		void* data;
+		vmaMapMemory(allocator, vertex_staging_allocation.allocation, &data);
 
-	copyBuffer(index_staging_allocation.buffer, newMesh.indexBuffer.buffer, indexBufferSize);
+		memcpy(data, newMesh.vertices.data(), (size_t)vertexBufferSize);
 
-	vmaDestroyBuffer(allocator, index_staging_allocation.buffer, index_staging_allocation.allocation);
+		vmaUnmapMemory(allocator, vertex_staging_allocation.allocation);
 
+		createBuffer(vertexBufferSize, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress, vk::MemoryPropertyFlagBits::eDeviceLocal, VMA_MEMORY_USAGE_UNKNOWN, newMesh.vertexBuffer);//vertexBuffer, vertexBufferMemory);
+
+		copyBuffer(vertex_staging_allocation.buffer, newMesh.vertexBuffer.buffer, vertexBufferSize);
+
+		vmaDestroyBuffer(allocator, vertex_staging_allocation.buffer, vertex_staging_allocation.allocation);
+	}
+
+	if(bUploadIndices)
+	{
+		vk::DeviceSize indexBufferSize = sizeof(newMesh.indices[0]) * newMesh.indices.size();
+		AllocatedBuffer index_staging_allocation;
+		createBuffer(indexBufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_UNKNOWN, index_staging_allocation);
+
+		//copy index data
+		void* data;
+		vmaMapMemory(allocator, index_staging_allocation.allocation, &data);
+
+		memcpy(data, newMesh.indices.data(), (size_t)indexBufferSize);
+
+		vmaUnmapMemory(allocator, index_staging_allocation.allocation);
+		
+
+		createBuffer(indexBufferSize, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress, vk::MemoryPropertyFlagBits::eDeviceLocal, VMA_MEMORY_USAGE_GPU_ONLY, newMesh.indexBuffer);
+
+		copyBuffer(index_staging_allocation.buffer, newMesh.indexBuffer.buffer, indexBufferSize);
+
+		vmaDestroyBuffer(allocator, index_staging_allocation.buffer, index_staging_allocation.allocation);
+
+		//upload to cache
+		indexCache.IndexBuffers[hash] = newMesh.indexBuffer;
+	}
 	
 	EntityID id = createResource(mesh->mName.C_Str(), newMesh);
 

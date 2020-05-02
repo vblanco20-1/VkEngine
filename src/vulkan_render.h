@@ -66,6 +66,11 @@ struct GpuObjectData {
 	VkDeviceAddress vertex_buffer_adress_pad1;
 };
 
+struct IndexBufferCache {
+	//hash is the hash for the indices themselves
+	std::unordered_map<uint32_t, AllocatedBuffer> IndexBuffers;
+};
+
 class TextureLoader;
 class VulkanEngine {
 public:
@@ -98,6 +103,9 @@ public:
 
 	DescriptorMegaPool descriptorMegapool;
 
+
+	IndexBufferCache indexCache;
+
 	vk::PipelineLayout pipelineLayout;
 	vk::Pipeline gbufferPipeline;
 	vk::Pipeline graphicsPipeline;
@@ -117,6 +125,9 @@ public:
 	std::vector < AllocatedBuffer> shadowDataBuffers;
 	std::vector < AllocatedBuffer> cameraDataBuffers;
 	std::vector < AllocatedBuffer> object_buffers;
+
+	std::vector < AllocatedBuffer>  shadow_instance_buffers;
+
 	std::vector < AllocatedBuffer> sceneParamBuffers;
 	//std::vector<vk::DeviceMemory> uniformBuffersMemory;
 
@@ -239,12 +250,6 @@ public:
 	void create_framebuffers();
 	void create_command_pool();
 
-	void create_texture_image();
-	void create_texture_image_view();
-	void create_texture_sampler();
-
-	void create_vertex_buffer();
-	void create_index_buffer();
 	void create_uniform_buffers();
 	void create_command_buffers();
 	void create_semaphores();

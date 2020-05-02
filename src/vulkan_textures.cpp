@@ -323,12 +323,6 @@ void VulkanEngine::load_textures_bulk(TextureLoadRequest* requests, size_t count
 }
 
 
-void VulkanEngine::create_texture_image_view()
-{
-	tset_textureImageView = createImageView(test_textureImage.image, vk::Format::eR8G8B8A8Unorm, vk::ImageAspectFlagBits::eColor);//device.createImageView(viewInfo);
-
-}
-
 void VulkanEngine::createImage(uint32_t width, uint32_t height, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage,
 	vk::MemoryPropertyFlags properties, AllocatedImage& image, bool bIsCubemap)
 {

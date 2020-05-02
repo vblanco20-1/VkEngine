@@ -208,4 +208,6 @@ struct ConfigParams {
 struct EngineStats {
 	float frametime;
 	int drawcalls;
+	int gbuffer_drawcalls;
+	int shadow_drawcalls;
 };

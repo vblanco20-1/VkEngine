@@ -30,6 +30,9 @@ void UI::DrawEngineUI(VulkanEngine* engine)
 	ImGui::Text("frametime = %f", engine->eng_stats.frametime);
 	ImGui::Text("drawcalls = %d", engine->eng_stats.drawcalls);
 
+	ImGui::Text("shadow dc = %d", engine->eng_stats.shadow_drawcalls);
+	ImGui::Text("gbuffer dc = %d", engine->eng_stats.gbuffer_drawcalls);
+
 	ImGui::InputFloat3("Camera Up", &engine->config_parameters.CamUp[0]);
 	ImGui::InputFloat("Camera FOV", &engine->config_parameters.fov);
 

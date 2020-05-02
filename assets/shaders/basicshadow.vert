@@ -17,11 +17,18 @@ layout(set = 0, binding = 0) uniform UniformBufferObject {
 	vec4 eye;
 } ubo;
 
+layout(std430,set = 0, binding = 3) readonly buffer Instances 
+{
+   int indices[ ];
+} InstanceIDBuffer;
+
 void main() {
 
-    vec4 inPosition = get_position(gl_InstanceIndex,gl_VertexIndex);
+    int object_idx = (InstanceIDBuffer.indices[gl_InstanceIndex]);
 
-	mat4 objectMatrix = MainObjectBuffer.objects[gl_InstanceIndex].model;
+    vec4 inPosition = get_position(object_idx,gl_VertexIndex);
+
+	mat4 objectMatrix = MainObjectBuffer.objects[object_idx].model;
 
 	gl_Position = ubo.proj * ubo.view * objectMatrix * inPosition;
 }
