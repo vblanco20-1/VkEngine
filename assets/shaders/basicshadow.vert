@@ -17,24 +17,11 @@ layout(set = 0, binding = 0) uniform UniformBufferObject {
 	vec4 eye;
 } ubo;
 
-
-
-layout(push_constant) uniform PushConsts {
-	int object_id;
-};
-
-#if 0
-layout(location = 0) in vec3 inPosition;
-layout(location = 1) in vec3 inColor;
-layout(location = 2) in vec2 inTexCoord;
-layout(location = 3) in vec3 inNormal;
-#endif
 void main() {
 
-    vec4 inPosition = get_position(object_id,gl_VertexIndex);
+    vec4 inPosition = get_position(gl_InstanceIndex,gl_VertexIndex);
 
-	mat4 objectMatrix = MainObjectBuffer.objects[object_id].model;
+	mat4 objectMatrix = MainObjectBuffer.objects[gl_InstanceIndex].model;
 
-	gl_Position = ubo.proj * ubo.view * objectMatrix * inPosition;  
-
+	gl_Position = ubo.proj * ubo.view * objectMatrix * inPosition;
 }

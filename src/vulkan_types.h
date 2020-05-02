@@ -80,6 +80,7 @@ struct GPUPointLight {
 struct AllocatedBuffer {
 	vk::Buffer buffer;
 	VmaAllocation allocation;
+	VkDeviceAddress address;
 };
 struct AllocatedImage {
 	vk::Image image;

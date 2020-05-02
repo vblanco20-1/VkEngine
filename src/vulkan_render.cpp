@@ -1243,7 +1243,7 @@ void VulkanEngine::build_ray_structures()
 	{
 		vk::AccelerationStructureGeometryKHR geo;
 		geo.geometryType = vk::GeometryTypeKHR::eInstances;
-		geo.geometry.instances.data.deviceAddress = get_buffer_adress(instances_Buffer);
+		geo.geometry.instances.data.deviceAddress = instances_Buffer.address;//get_buffer_adress(instances_Buffer);
 		//geo.geometry.instances.data.hostAddress = &blas_instances[i];
 		geo.geometry.instances.arrayOfPointers = false;
 		geometries.push_back(geo);
@@ -1259,7 +1259,7 @@ void VulkanEngine::build_ray_structures()
 	buildinfo.geometryArrayOfPointers = false;
 	buildinfo.flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace;
 	buildinfo.dstAccelerationStructure = accelStructure;
-	buildinfo.scratchData.deviceAddress = get_buffer_adress(scratchBuffer);//device.getBufferAddressKHR(scratchadressinfo, extensionDispatcher);
+	buildinfo.scratchData.deviceAddress = scratchBuffer.address;//get_buffer_adress(scratchBuffer);//device.getBufferAddressKHR(scratchadressinfo, extensionDispatcher);
 
 
 	vk::CommandBuffer commandBuffer = beginSingleTimeCommands();
@@ -1394,7 +1394,6 @@ vk::DeviceAddress VulkanEngine::get_buffer_adress(const AllocatedBuffer& buffer)
 {
 	vk::BufferDeviceAddressInfo bufferinfo;
 	bufferinfo.buffer = buffer.buffer;
-
 
 	return device.getBufferAddressKHR(bufferinfo, extensionDispatcher);
 }
@@ -1644,6 +1643,11 @@ void VulkanEngine::createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage,
 	assert(result == vk::Result::eSuccess);
 	allocatedbuffer.buffer = vkbuffer;
 	allocatedbuffer.allocation = allocation;
+
+	//want this with adress
+	if (vk::BufferUsageFlagBits::eShaderDeviceAddress & usage) {
+		allocatedbuffer.address = get_buffer_adress(allocatedbuffer);
+	}
 }
 
 void VulkanEngine::copyBuffer(vk::Buffer srcBuffer, vk::Buffer dstBuffer, vk::DeviceSize size)
@@ -2148,12 +2152,9 @@ void VulkanEngine::render_shadow_pass(const vk::CommandBuffer& cmd, int height, 
 			cmd.bindIndexBuffer(mesh.indexBuffer.buffer, 0, vk::IndexType::eUint32);
 
 			LastMesh = renderable.mesh_resource_entity;
-		}
-
-		cmd.pushConstants(piplayout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(int), &renderable.object_idx);
-
+		}		
 		
-		cmd.drawIndexed(static_cast<uint32_t>(mesh.indices.size()), 1, 0, 0, 0);
+		cmd.drawIndexed(static_cast<uint32_t>(mesh.indices.size()), 1, 0, 0, renderable.object_idx);
 		eng_stats.drawcalls++;
 		
 		first_render = false;
@@ -2574,16 +2575,7 @@ void VulkanEngine::RenderMainPass(const vk::CommandBuffer& cmd)
 
 			cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, piplayout, 0, 2, &descriptors[0], 0, nullptr);
 		}
-
-		//if (last_vertex_buffer != unit.vertexBuffer) {
-		//	vk::Buffer meshbuffers[] = { unit.vertexBuffer };
-		//	vk::DeviceSize offsets[] = { 0 };
-		//
-		//	cmd.bindVertexBuffers(0, 1, meshbuffers, offsets);		
-		//
-		//	last_vertex_buffer = unit.vertexBuffer;
-		//}
-
+		
 		if (last_index_buffer != unit.indexBuffer) {
 			
 			cmd.bindIndexBuffer(unit.indexBuffer, 0, vk::IndexType::eUint32);
@@ -2593,9 +2585,9 @@ void VulkanEngine::RenderMainPass(const vk::CommandBuffer& cmd)
 
 		cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, piplayout, 2, 1, &unit.material_set, 0, nullptr);
 
-		cmd.pushConstants(piplayout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(int), &unit.object_idx);
+		
 
-		cmd.drawIndexed(static_cast<uint32_t>(unit.index_count), 1, 0, 0, 0);
+		cmd.drawIndexed(static_cast<uint32_t>(unit.index_count), 1, 0, 0, unit.object_idx);
 		eng_stats.drawcalls++;
 
 		first_render = false;
@@ -2703,27 +2695,14 @@ void VulkanEngine::RenderGBufferPass(const vk::CommandBuffer& cmd)
 			build_and_bind_descriptors(setBuilder, 0, cmd);
 		}
 
-		//if (last_vertex_buffer != unit.vertexBuffer) {
-		//	vk::Buffer meshbuffers[] = { unit.vertexBuffer };
-		//	vk::DeviceSize offsets[] = { 0 };
-		//
-		//	cmd.bindVertexBuffers(0, 1, meshbuffers, offsets);
-		//
-		//	last_vertex_buffer = unit.vertexBuffer;
-		//}
-
 		if (last_index_buffer != unit.indexBuffer) {
 
 			cmd.bindIndexBuffer(unit.indexBuffer, 0, vk::IndexType::eUint32);
 
 			last_index_buffer = unit.indexBuffer;
-		}
+		}		
 
-		//cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, piplayout, 2, 1, &unit.material_set, 0, nullptr);
-
-		cmd.pushConstants(piplayout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(int), &unit.object_idx);
-
-		cmd.drawIndexed(static_cast<uint32_t>(unit.index_count), 1, 0, 0, 0);
+		cmd.drawIndexed(static_cast<uint32_t>(unit.index_count), 1, 0, 0, unit.object_idx);
 		eng_stats.drawcalls++;
 
 		first_render = false;
@@ -2869,7 +2848,7 @@ void VulkanEngine::update_uniform_buffer(uint32_t currentImage)
 
 			
 			const MeshResource& mesh = render_registry.get<MeshResource>(renderable.mesh_resource_entity);
-			object_matrices[copyidx].vertex_buffer_adress = get_buffer_adress(mesh.vertexBuffer);
+			object_matrices[copyidx].vertex_buffer_adress = mesh.vertexBuffer.address;//get_buffer_adress(mesh.vertexBuffer);
 			
 
 			renderable.object_idx = copyidx;

@@ -38,17 +38,6 @@ layout(std140,set = 1, binding = 3) readonly buffer Lights
    PointLight lights[ ];
 } MainLights;
 
-
-layout(push_constant) uniform PushConsts {
-	int object_id;
-};
-
-#if 0
-layout(location = 0) in vec3 inPosition;
-layout(location = 1) in vec3 inColor;
-layout(location = 2) in vec2 inTexCoord;
-layout(location = 3) in vec3 inNormal;
-#endif
 layout(location = 0) out vec3 fragColor;
 layout(location = 1) out vec2 fragTexCoord;
 layout(location = 2) out vec3 fragNormal;
@@ -65,14 +54,14 @@ const mat4 biasMat = mat4(
 
 void main() {
 
-	vec4 inPosition = get_position(object_id,gl_VertexIndex);
-	vec4 inColor =  get_color(object_id,gl_VertexIndex);
-	vec2 inTexCoord= get_uv0(object_id,gl_VertexIndex);
-	vec3 inNormal= get_normal(object_id,gl_VertexIndex);
+	vec4 inPosition = get_position(gl_InstanceIndex,gl_VertexIndex);
+	vec4 inColor =  get_color(gl_InstanceIndex,gl_VertexIndex);
+	vec2 inTexCoord= get_uv0(gl_InstanceIndex,gl_VertexIndex);
+	vec3 inNormal= get_normal(gl_InstanceIndex,gl_VertexIndex);
 	
 	eyePos = (ubo.eye).xyz;
 
-	mat4 objectMatrix = MainObjectBuffer.objects[object_id].model;
+	mat4 objectMatrix = MainObjectBuffer.objects[gl_InstanceIndex].model;
 
 	gl_Position = ubo.proj * ubo.view * objectMatrix * inPosition;
     fragColor = vec3(inColor);

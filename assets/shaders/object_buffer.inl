@@ -8,12 +8,9 @@ struct Vertex{
 	vec4 normal;
 };
 
-        // complete reference type definition
-//layout(buffer_reference, std430, buffer_reference_align = 16) buffer VertexBuffer {
 layout(buffer_reference, std430) readonly buffer VertexBuffer {
            Vertex vertices[];
 };
-
 
 struct PerObject{
 	mat4 model;

@@ -3,13 +3,10 @@
  #extension GL_GOOGLE_include_directive : enable
 
 
-layout(location = 0) in vec3 fragColor;
-layout(location = 1) in vec2 fragTexCoord;
-layout(location = 2) in vec3 fragNormal;
-layout(location = 3) in vec3 fragPos;
-layout(location = 4) in vec4 clipPos;
-layout(location = 5) in vec4 lastclipPos;
-
+layout(location = 0) in vec3 fragNormal;
+layout(location = 1) in vec3 fragPos;
+layout(location = 2) in vec4 clipPos;
+layout(location = 3) in vec4 lastclipPos;
 
 layout(location = 0) out vec4 posDepth;
 layout(location = 1) out vec4 normal;
