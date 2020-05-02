@@ -3,10 +3,10 @@
 #include <pcheader.h>
 #include "rawbuffer.h"
 struct Vertex {
-	glm::vec3 pos;
-	glm::vec3 color;
-	glm::vec2 texCoord;
-	glm::vec3 normal;
+	glm::vec4 pos;
+	glm::vec4 color;
+	glm::vec4 texCoord;
+	glm::vec4 normal;
 
 	static vk::VertexInputBindingDescription getBindingDescription() {
 		vk::VertexInputBindingDescription bindingDescription;

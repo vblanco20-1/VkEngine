@@ -14,7 +14,10 @@
 #endif
 #define MAKE_ASSET_PATH(path) ASSET_PATH ## path
 
-constexpr int MAX_FRAMES_IN_FLIGHT =2;
+
+//#define RTX_ON
+
+constexpr int MAX_FRAMES_IN_FLIGHT =1;
 constexpr int MAX_UNIFORM_BUFFER = 5000;
 constexpr int SHADOWMAP_DIM = 2048;
 
@@ -37,9 +40,12 @@ const std::vector<const char*> deviceExtensions = {
 	VK_KHR_SWAPCHAIN_EXTENSION_NAME ,
 	VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME,
 	//rays
+	#ifdef RTX_ON
 	VK_KHR_RAY_TRACING_EXTENSION_NAME,
+
 	VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME,
 	VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
+	#endif
 
 	//VK_NV_GLSL_SHADER_EXTENSION_NAME
 };
@@ -54,6 +60,11 @@ struct ExtensionFeatures {
 	bool bDebugNames = 0;
 };
 
+struct GpuObjectData {
+	glm::mat4 model_matrix;
+	VkDeviceAddress vertex_buffer_adress;
+	VkDeviceAddress vertex_buffer_adress_pad1;
+};
 
 class TextureLoader;
 class VulkanEngine {

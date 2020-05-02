@@ -1,9 +1,11 @@
 #version 450
 #extension GL_ARB_separate_shader_objects : enable
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_buffer_reference : enable
 
-struct PerObject{
-	mat4 model;
-};
+
+#include "object_buffer.inl"
+
 
 layout(set = 0, binding = 0) uniform UniformBufferObject {
     mat4 model;
@@ -15,27 +17,24 @@ layout(set = 0, binding = 0) uniform UniformBufferObject {
 	vec4 eye;
 } ubo;
 
-layout(std140,set = 0, binding = 2) readonly buffer Pos 
-{
-   PerObject objects[ ];
-} MainObjectBuffer;
 
 
 layout(push_constant) uniform PushConsts {
 	int object_id;
 };
 
-
+#if 0
 layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec3 inColor;
 layout(location = 2) in vec2 inTexCoord;
 layout(location = 3) in vec3 inNormal;
-
+#endif
 void main() {
 
+    vec4 inPosition = get_position(object_id,gl_VertexIndex);
 
 	mat4 objectMatrix = MainObjectBuffer.objects[object_id].model;
 
-	gl_Position = ubo.proj * ubo.view * objectMatrix * vec4(inPosition, 1.0);  
+	gl_Position = ubo.proj * ubo.view * objectMatrix * inPosition;  
 
 }

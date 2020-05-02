@@ -1,9 +1,11 @@
 #version 450
 #extension GL_ARB_separate_shader_objects : enable
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_buffer_reference : enable
 
-struct PerObject{
-	mat4 model;
-};
+#include "object_buffer.inl"
+
+
 
 struct PointLight{
 	vec4 pos_r; //xyz pos, w radius
@@ -30,12 +32,6 @@ layout(set = 1, binding = 1) uniform UniformBufferObject2 {
 	vec4 eye;
 } shadowUbo;
 
-layout(std140,set = 0, binding = 2) readonly buffer Pos 
-{
-   PerObject objects[ ];
-} MainObjectBuffer;
-
-
 
 layout(std140,set = 1, binding = 3) readonly buffer Lights 
 {
@@ -47,12 +43,12 @@ layout(push_constant) uniform PushConsts {
 	int object_id;
 };
 
-
+#if 0
 layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec3 inColor;
 layout(location = 2) in vec2 inTexCoord;
 layout(location = 3) in vec3 inNormal;
-
+#endif
 layout(location = 0) out vec3 fragColor;
 layout(location = 1) out vec2 fragTexCoord;
 layout(location = 2) out vec3 fragNormal;
@@ -65,21 +61,26 @@ const mat4 biasMat = mat4(
 	0.0, 0.5, 0.0, 0.0,
 	0.0, 0.0, 1.0, 0.0,
 	0.5, 0.5, 0.0, 1.0 );
+
+
 void main() {
 
+	vec4 inPosition = get_position(object_id,gl_VertexIndex);
+	vec4 inColor =  get_color(object_id,gl_VertexIndex);
+	vec2 inTexCoord= get_uv0(object_id,gl_VertexIndex);
+	vec3 inNormal= get_normal(object_id,gl_VertexIndex);
 	
 	eyePos = (ubo.eye).xyz;
 
 	mat4 objectMatrix = MainObjectBuffer.objects[object_id].model;
 
-	gl_Position = ubo.proj * ubo.view * objectMatrix * vec4(inPosition, 1.0);
-    fragColor = inColor;
+	gl_Position = ubo.proj * ubo.view * objectMatrix * inPosition;
+    fragColor = vec3(inColor);
 	vec2 texcoord = inTexCoord;
 	texcoord.y = 1-texcoord.y;
     fragTexCoord = texcoord;
 	fragNormal = normalize(objectMatrix * vec4(inNormal, 0.0)).xyz;
-	fragPos = (objectMatrix * vec4(inPosition, 1.0)).xyz;
+	fragPos = (objectMatrix * inPosition).xyz;
 
-	ShadowCoord = biasMat *shadowUbo.proj * shadowUbo.view * objectMatrix * vec4(inPosition, 1.0);
-
+	ShadowCoord = biasMat *shadowUbo.proj * shadowUbo.view * objectMatrix * inPosition;
 }

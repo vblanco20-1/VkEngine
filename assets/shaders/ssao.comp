@@ -1,9 +1,9 @@
 #version 450
 layout (local_size_x = 32, local_size_y = 32) in;
 
-layout (set = 0,binding = 0) uniform sampler2D samplerPositionDepth;
-layout (set = 0,binding = 1) uniform sampler2D samplerNormal;
-layout (set = 0,binding = 2) uniform sampler2D ssaoNoise;
+layout (set = 0,binding = 0) uniform sampler2D _RG_gbuf_pos;
+layout (set = 0,binding = 1) uniform sampler2D _RG_gbuf_normal;
+layout (set = 0,binding = 2) uniform sampler2D _txBluenoise;
 
 layout (set = 0,binding = 3, r8) uniform writeonly image2D resultImage;
 
@@ -31,9 +31,7 @@ layout(set = 0, binding = 5) uniform UniformBufferObject {
 
 //layout (location = 0) out float outFragColor;
 //layout (location = 0) out  outFragColor;
-float getSampleDepth(in vec2 uv){
-	return texture(samplerPositionDepth, uv).w;
-}
+
 
 float rand2D(in vec2 co){
     return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453);
@@ -47,8 +45,14 @@ float linearDepth(float depth)
 	//return NEAR_PLANE + DistPlanes * depth;
 	return (2.0f * NEAR_PLANE * FAR_PLANE) / (FAR_PLANE + NEAR_PLANE - z * (FAR_PLANE - NEAR_PLANE));
 }
+float linearize_depth(float d)
+{
+    return NEAR_PLANE * FAR_PLANE / (FAR_PLANE + d * (NEAR_PLANE - FAR_PLANE));
+}
 
-
+float getSampleDepth(in vec2 uv){
+	return linearize_depth(1-texture(_RG_gbuf_pos, uv).w);
+}
 void main() 
 {
 	ivec2 dim = imageSize(resultImage);	
@@ -58,24 +62,24 @@ void main()
 	
 	vec2 inUV = vec2(gl_GlobalInvocationID.xy) / dim;
 	
-	vec2 inUV_warped = ((inUV * 2.f) - vec2(1.f)) * texture(samplerPositionDepth, inUV).w;
+	vec2 inUV_warped = ((inUV * 2.f) - vec2(1.f)) * texture(_RG_gbuf_pos, inUV).w;
 
-	vec3 fpos = vec3(inUV_warped.x,inUV_warped.y,texture(samplerPositionDepth, inUV).w );
+	vec3 fpos = vec3(inUV_warped.x,inUV_warped.y,texture(_RG_gbuf_pos, inUV).w );
 
-	vec3 gpos = texture(samplerPositionDepth, inUV).rgb;
+	vec3 gpos = texture(_RG_gbuf_pos, inUV).rgb;
 
 	vec4 gfrag = (ubo.inv_proj *vec4(gpos,1.f)); 
 	
 	vec3 fragPos = (ubo.inv_proj *vec4(fpos,1.f)).xyz; 
 	
-	vec3 normal = normalize(texture(samplerNormal, inUV).rgb * 2.0 - 1.0);
+	vec3 normal = normalize(texture(_RG_gbuf_normal, inUV).rgb * 2.0 - 1.0);
 
 	// Get a random vector using a noise lookup
-	ivec2 texDim = textureSize(samplerPositionDepth, 0); 
-	ivec2 noiseDim = textureSize(ssaoNoise, 0);
+	ivec2 texDim = textureSize(_RG_gbuf_pos, 0); 
+	ivec2 noiseDim = textureSize(_txBluenoise, 0);
 	const vec2 noiseUV = vec2(float(texDim.x)/float(noiseDim.x), float(texDim.y)/(noiseDim.y)) * inUV;
 
-    vec3 randomVec = texture(ssaoNoise, noiseUV).xyz * 2.0 - 1.0;
+    vec3 randomVec = texture(_txBluenoise, noiseUV).xyz * 2.0 - 1.0;
 	
 	// Create TBN matrix
 	vec3 tangent = normalize(randomVec - normal * dot(randomVec, normal));
@@ -122,13 +126,13 @@ void main()
 	//}	
 
 	 vec3 gf = (gfrag / gfrag.w).xyz;
-	outFragColor = sin(linearDepth(texture(samplerPositionDepth, inUV).w)) - sin((gf.z*FAR_PLANE));
+	outFragColor = sin(linearDepth(texture(_RG_gbuf_pos, inUV).w)) - sin((gf.z*FAR_PLANE));
 	//outFragColor = sin((gf.z*FAR_PLANE));
 	//outFragColor = sin((tst - fragPos.z)*100 );
 	//outFragColor = sin(gf.z*FAR_PLANE);
 	//outFragColor = sin(tst );
 	//outFragColor = (sin((gpos.z*FAR_PLANE)));
-	imageStore(resultImage, ivec2(gl_GlobalInvocationID.xy), vec4(outFragColor));
+	imageStore(resultImage, ivec2(gl_GlobalInvocationID.xy), vec4(1.f));
 	}
 }
 

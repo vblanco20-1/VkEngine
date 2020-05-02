@@ -117,6 +117,19 @@ vk::PipelineColorBlendStateCreateInfo VkPipelineInitializers::build_color_blend(
 	return colorBlending;
 }
 
+vk::PipelineVertexInputStateCreateInfo VkPipelineInitializers::build_empty_vertex_input()
+{
+	vk::PipelineVertexInputStateCreateInfo vertexInputInfo;
+	vertexInputInfo.vertexBindingDescriptionCount = 0;
+	vertexInputInfo.vertexAttributeDescriptionCount = 0;
+	vertexInputInfo.pVertexBindingDescriptions = nullptr;
+	vertexInputInfo.pVertexAttributeDescriptions = nullptr;
+	return vertexInputInfo;
+}
+
+
+
+
 vk::Pipeline GraphicsPipelineBuilder::build_pipeline(vk::Device device, vk::RenderPass renderPass, uint32_t subpass, ShaderEffect* shaderEffect)
 {
 	//build shader data from effect

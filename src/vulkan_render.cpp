@@ -520,8 +520,9 @@ void VulkanEngine::init_vulkan()
 
 	load_scene("bistro_ext.db",MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Exterior.fbx"), glm::rotate(glm::scale(glm::vec3(100.f)), glm::radians(90.f), glm::vec3(1, 0, 0)));
 
+#ifdef RTX_ON
 	build_ray_structures();
-
+#endif
 	//load_scene("sun_temple.db",
 	//	MAKE_ASSET_PATH("models/SunTemple.fbx"),
 	//	glm::rotate(glm::scale(glm::vec3(100.f)), glm::radians(90.f), glm::vec3(1, 0, 0)));
@@ -855,7 +856,7 @@ void VulkanEngine::create_gfx_pipeline()
 	gfxPipelineBuilder = new GraphicsPipelineBuilder();
 
 
-	gfxPipelineBuilder->data.vertexInputInfo = Vertex::getPipelineCreateInfo();
+	gfxPipelineBuilder->data.vertexInputInfo = VkPipelineInitializers::build_empty_vertex_input();//Vertex::getPipelineCreateInfo();
 	gfxPipelineBuilder->data.inputAssembly = VkPipelineInitializers::build_input_assembly(vk::PrimitiveTopology::eTriangleList);
 	gfxPipelineBuilder->data.viewport = VkPipelineInitializers::build_viewport(swapChainExtent.width, swapChainExtent.height);
 	gfxPipelineBuilder->data.scissor = VkPipelineInitializers::build_rect2d(0, 0, swapChainExtent.width, swapChainExtent.height);
@@ -898,7 +899,7 @@ void VulkanEngine::create_shadow_pipeline()
 	}
 
 	GraphicsPipelineBuilder shadowPipelineBuilder;
-	shadowPipelineBuilder.data.vertexInputInfo = Vertex::getPipelineCreateInfo();
+	shadowPipelineBuilder.data.vertexInputInfo = VkPipelineInitializers::build_empty_vertex_input();//Vertex::getPipelineCreateInfo();
 	shadowPipelineBuilder.data.inputAssembly = VkPipelineInitializers::build_input_assembly(vk::PrimitiveTopology::eTriangleList);
 	shadowPipelineBuilder.data.viewport = VkPipelineInitializers::build_viewport(2048, 2048);
 	shadowPipelineBuilder.data.scissor = VkPipelineInitializers::build_rect2d(0, 0, 2048, 2048);
@@ -982,8 +983,9 @@ void VulkanEngine::create_ssao_pipelines()
 	auto ssaoCompBuilder = new ComputePipelineBuilder();
 	vk::Pipeline ssaoPipeline_comp = ssaoCompBuilder->build_pipeline(device,ssaoEffect_Comp);
 
+#ifdef RTX_ON
 	vk::Pipeline rayPipeline_comp = ssaoCompBuilder->build_pipeline(device, rayEffect);
-
+#endif
 	vk::Pipeline ssaoBlurPipeline_comp = ssaoCompBuilder->build_pipeline(device, ssaoBlur_Comp);
 
 	RenderPass* pass = render_graph.get_pass("SSAO-pre");
@@ -1010,14 +1012,14 @@ void VulkanEngine::create_ssao_pipelines()
 	pipelineBlur_Comp.computePipelineBuilder = ssaoCompBuilder;
 	pipelineBlur_Comp.renderPassName = "SSAO-blur-comp";
 	auto pipelineblur_id_comp = createResource("pipeline_ssao_blur_comp", pipelineBlur_Comp);
-
+#ifdef RTX_ON
 	PipelineResource pipelineRay_Comp;
 	pipelineRay_Comp.pipeline = rayPipeline_comp;
 	pipelineRay_Comp.effect = rayEffect;
 	pipelineRay_Comp.computePipelineBuilder = ssaoCompBuilder;
 	pipelineRay_Comp.renderPassName = "SSAO-pre";
 	auto raypip_id_comp = createResource("ray_shadow", pipelineRay_Comp);
-
+#endif
 
 	//cam buffer
 	createBuffer(sizeof(glm::vec4) * SSAO_KERNEL_SIZE, vk::BufferUsageFlagBits::eUniformBuffer,
@@ -1449,7 +1451,7 @@ void VulkanEngine::create_gbuffer_pipeline()
 
 	gbufferPipelineBuilder = new GraphicsPipelineBuilder();
 
-	gbufferPipelineBuilder->data.vertexInputInfo = Vertex::getPipelineCreateInfo();
+	gbufferPipelineBuilder->data.vertexInputInfo = VkPipelineInitializers::build_empty_vertex_input();//Vertex::getPipelineCreateInfo();
 	gbufferPipelineBuilder->data.inputAssembly = VkPipelineInitializers::build_input_assembly(vk::PrimitiveTopology::eTriangleList);
 	gbufferPipelineBuilder->data.viewport = VkPipelineInitializers::build_viewport(swapChainExtent.width, swapChainExtent.height);
 	gbufferPipelineBuilder->data.scissor = VkPipelineInitializers::build_rect2d(0, 0, swapChainExtent.width, swapChainExtent.height);
@@ -1754,7 +1756,7 @@ void VulkanEngine::create_uniform_buffers()
 		createBuffer(sizeof(GPUSceneParams), vk::BufferUsageFlagBits::eUniformBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_CPU_TO_GPU, sceneParamBuffers[i]);
 
 		//mesh transform buffer
-		createBuffer(sizeof(glm::mat4) * 10000, vk::BufferUsageFlagBits::eStorageBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_CPU_TO_GPU, object_buffers[i]);
+		createBuffer(sizeof(GpuObjectData) * 10000, vk::BufferUsageFlagBits::eStorageBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_CPU_TO_GPU, object_buffers[i]);
 	}
 
 }
@@ -1855,7 +1857,16 @@ void VulkanEngine::draw_frame()
 		waitInfo.pValues = &waitValue;
 		//std::cout << "cpu pre pass: " << globalFrameNumber << " - " << device.getSemaphoreCounterValueKHR(frameTimelineSemaphore, extensionDispatcher) << std::endl;
 
-		device.waitSemaphoresKHR(waitInfo, 300000000, extensionDispatcher);
+		//try
+		{
+			device.waitSemaphoresKHR(waitInfo, 300000000, extensionDispatcher);
+		}
+		//catch (vk::SystemError &e)
+		//{
+		//	std::cout << e.what() << std::endl;
+		//}
+		
+		
 		//std::cout << "cpu frame pass: " << globalFrameNumber << " - " << device.getSemaphoreCounterValueKHR(frameTimelineSemaphore, extensionDispatcher) << std::endl;
 
 		//vkWaitSemaphoresKHR(device, (VkSemaphoreWaitInfoKHR*)&waitInfo, UINT64_MAX);
@@ -2118,7 +2129,7 @@ void VulkanEngine::render_shadow_pass(const vk::CommandBuffer& cmd, int height, 
 
 			vk::DescriptorBufferInfo shadowBufferInfo = make_buffer_info<UniformBufferObject>(shadowDataBuffers[currentFrameIndex]);
 
-			vk::DescriptorBufferInfo transformBufferInfo = make_buffer_info(object_buffers[currentFrameIndex].buffer, sizeof(glm::mat4) * 10000);
+			vk::DescriptorBufferInfo transformBufferInfo = make_buffer_info(object_buffers[currentFrameIndex].buffer, sizeof(GpuObjectData) * 10000);
 
 			setBuilder.bind_buffer("ubo", shadowBufferInfo);
 			setBuilder.bind_buffer("MainObjectBuffer", transformBufferInfo);
@@ -2132,7 +2143,7 @@ void VulkanEngine::render_shadow_pass(const vk::CommandBuffer& cmd, int height, 
 		if (LastMesh != renderable.mesh_resource_entity) {
 			vk::Buffer meshbuffers[] = { mesh.vertexBuffer.buffer };
 			vk::DeviceSize offsets[] = { 0 };
-			cmd.bindVertexBuffers(0, 1, meshbuffers, offsets);
+			//cmd.bindVertexBuffers(0, 1, meshbuffers, offsets);
 
 			cmd.bindIndexBuffer(mesh.indexBuffer.buffer, 0, vk::IndexType::eUint32);
 
@@ -2198,8 +2209,13 @@ void VulkanEngine::render_ssao_compute(const vk::CommandBuffer& cmd)
 
 	ZoneScopedNC("SSAO Pass Compute", tracy::Color::BlueViolet);
 
+#ifdef RTX_ON
+
 	PipelineResource ssaopip = getResource<PipelineResource>("ray_shadow");//("pipeline_ssao_comp");
 
+#else
+	PipelineResource ssaopip = getResource<PipelineResource>("pipeline_ssao_comp");
+#endif
 	ShaderEffect* effect = ssaopip.effect;
 
 	VkPipelineLayout layout = effect->build_pipeline_layout((VkDevice)device);
@@ -2214,16 +2230,20 @@ void VulkanEngine::render_ssao_compute(const vk::CommandBuffer& cmd)
 
 
 	setBuilder.bind_buffer("ubo", camBufferInfo);
-	//setBuilder.bind_buffer("uboSSAOKernel", ssaoSamplesbuffer);
+	
 
 
 	autobinder->fill_descriptor(&setBuilder);
 
 	//vk::DescriptorBufferInfo raySceneBufferInfo = make_buffer_info<UniformBufferObject>(RaySceneBuffer);
+#ifdef RTX_ON
 	vk::WriteDescriptorSetAccelerationStructureKHR accel;
 	accel.accelerationStructureCount = 1;
 	accel.pAccelerationStructures = (vk::AccelerationStructureKHR*)&top_level_acceleration_structure.acceleration_structure;
 	setBuilder.bind_raystructure(0, 7, accel);
+#else
+	setBuilder.bind_buffer("uboSSAOKernel", ssaoSamplesbuffer);
+#endif
 
 	setBuilder.bind_image(0, 3, render_graph.get_image_descriptor("ssao_pre"),true);
 
@@ -2237,10 +2257,10 @@ void VulkanEngine::render_ssao_compute(const vk::CommandBuffer& cmd)
 
 	int width = render_graph.graph_attachments["ssao_pre"].real_width;
 	int height = render_graph.graph_attachments["ssao_pre"].real_height;
-
+#ifdef RTX_ON
 	float eng_time = rand();
 	cmd.pushConstants(layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(float), &eng_time);
-
+#endif
 	cmd.dispatch(width / 32 +1, height / 32 + 1, 1);
 	//cmd.draw(3, 1, 0, 0);
 }
@@ -2525,7 +2545,7 @@ void VulkanEngine::RenderMainPass(const vk::CommandBuffer& cmd)
 
 			vk::DescriptorBufferInfo sceneBufferInfo = make_buffer_info<GPUSceneParams>(sceneParamBuffers[currentFrameIndex]);
 
-		    vk::DescriptorBufferInfo transformBufferInfo = make_buffer_info(object_buffers[currentFrameIndex].buffer, sizeof(glm::mat4) * 10000);
+		    vk::DescriptorBufferInfo transformBufferInfo = make_buffer_info(object_buffers[currentFrameIndex].buffer, sizeof(GpuObjectData) * 10000);
 
 			vk::DescriptorImageInfo shadowInfo = {};
 			shadowInfo.imageLayout = vk::ImageLayout::eDepthStencilReadOnlyOptimal;
@@ -2555,14 +2575,14 @@ void VulkanEngine::RenderMainPass(const vk::CommandBuffer& cmd)
 			cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, piplayout, 0, 2, &descriptors[0], 0, nullptr);
 		}
 
-		if (last_vertex_buffer != unit.vertexBuffer) {
-			vk::Buffer meshbuffers[] = { unit.vertexBuffer };
-			vk::DeviceSize offsets[] = { 0 };
-
-			cmd.bindVertexBuffers(0, 1, meshbuffers, offsets);		
-
-			last_vertex_buffer = unit.vertexBuffer;
-		}
+		//if (last_vertex_buffer != unit.vertexBuffer) {
+		//	vk::Buffer meshbuffers[] = { unit.vertexBuffer };
+		//	vk::DeviceSize offsets[] = { 0 };
+		//
+		//	cmd.bindVertexBuffers(0, 1, meshbuffers, offsets);		
+		//
+		//	last_vertex_buffer = unit.vertexBuffer;
+		//}
 
 		if (last_index_buffer != unit.indexBuffer) {
 			
@@ -2675,7 +2695,7 @@ void VulkanEngine::RenderGBufferPass(const vk::CommandBuffer& cmd)
 			vk::DescriptorBufferInfo transformBufferInfo;
 			transformBufferInfo.buffer = object_buffers[currentFrameIndex].buffer;
 			transformBufferInfo.offset = 0;
-			transformBufferInfo.range = sizeof(glm::mat4) * 10000;
+			transformBufferInfo.range = sizeof(GpuObjectData) * 10000;
 						
 			setBuilder.bind_buffer("ubo", camBufferInfo);			
 			setBuilder.bind_buffer("MainObjectBuffer", transformBufferInfo);
@@ -2683,14 +2703,14 @@ void VulkanEngine::RenderGBufferPass(const vk::CommandBuffer& cmd)
 			build_and_bind_descriptors(setBuilder, 0, cmd);
 		}
 
-		if (last_vertex_buffer != unit.vertexBuffer) {
-			vk::Buffer meshbuffers[] = { unit.vertexBuffer };
-			vk::DeviceSize offsets[] = { 0 };
-
-			cmd.bindVertexBuffers(0, 1, meshbuffers, offsets);
-
-			last_vertex_buffer = unit.vertexBuffer;
-		}
+		//if (last_vertex_buffer != unit.vertexBuffer) {
+		//	vk::Buffer meshbuffers[] = { unit.vertexBuffer };
+		//	vk::DeviceSize offsets[] = { 0 };
+		//
+		//	cmd.bindVertexBuffers(0, 1, meshbuffers, offsets);
+		//
+		//	last_vertex_buffer = unit.vertexBuffer;
+		//}
 
 		if (last_index_buffer != unit.indexBuffer) {
 
@@ -2839,13 +2859,19 @@ void VulkanEngine::update_uniform_buffer(uint32_t currentImage)
 
 
 		int copyidx = 0;
-		std::vector<glm::mat4> object_matrices;
+		std::vector<GpuObjectData> object_matrices;
 
 		object_matrices.resize(render_registry.capacity<RenderMeshComponent>());
 		
 		render_registry.group<RenderMeshComponent, TransformComponent, ObjectBounds>().each([&](EntityID id, RenderMeshComponent& renderable, const TransformComponent& transform, ObjectBounds& bounds) {
 
-			object_matrices[copyidx] = transform.model;			
+			object_matrices[copyidx].model_matrix = transform.model;		
+
+			
+			const MeshResource& mesh = render_registry.get<MeshResource>(renderable.mesh_resource_entity);
+			object_matrices[copyidx].vertex_buffer_adress = get_buffer_adress(mesh.vertexBuffer);
+			
+
 			renderable.object_idx = copyidx;
 			copyidx++;
 		});
@@ -2854,7 +2880,7 @@ void VulkanEngine::update_uniform_buffer(uint32_t currentImage)
 		ZoneScopedN("Uniform copy");
 
 		void* matdata = mapBuffer(object_buffers[currentImage]);
-		memcpy(matdata, object_matrices.data(), object_matrices.size() * sizeof(glm::mat4));
+		memcpy(matdata, object_matrices.data(), object_matrices.size() * sizeof(GpuObjectData));
 
 		unmapBuffer(object_buffers[currentImage]);
 	}
@@ -3143,25 +3169,29 @@ EntityID VulkanEngine::load_assimp_mesh(aiMesh* mesh)
 		vertex.pos = {
 			mesh->mVertices[vtx].x,
 			mesh->mVertices[vtx].y,
-			mesh->mVertices[vtx].z
+			mesh->mVertices[vtx].z,
+			0.0f
 		};
 		if (mesh->mTextureCoords[0])
 		{
 			vertex.texCoord = {
 			mesh->mTextureCoords[0][vtx].x,
 			mesh->mTextureCoords[0][vtx].y,
+			mesh->mTextureCoords[0][vtx].x,
+			mesh->mTextureCoords[0][vtx].y,
 			};
 		}
 		else {
 			vertex.texCoord = {
-				0.5f,0.5f		
+				0.5f,0.5f,0.5f,0.5f
 			};
 		}
 		
 		vertex.normal = {
 			mesh->mNormals[vtx].x,
 			mesh->mNormals[vtx].y,
-			mesh->mNormals[vtx].z
+			mesh->mNormals[vtx].z,
+			0.0f
 		};
 		newMesh.vertices.push_back(vertex);
 	}

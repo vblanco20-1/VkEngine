@@ -187,8 +187,11 @@ void VulkanEngine::create_device()
 	vk12features.bufferDeviceAddress =true;
 	vk12features.descriptorIndexing = true;
 	vk12features.imagelessFramebuffer = true;
+#ifdef RTX_ON
 	vk12features.pNext = &rayFeatures;
-
+#else
+	vk12features.pNext = nullptr;
+#endif
 
 	vk::PhysicalDeviceFeatures2 features2;
 	features2.features = deviceFeatures;

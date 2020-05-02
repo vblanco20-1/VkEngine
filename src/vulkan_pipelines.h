@@ -22,9 +22,10 @@ namespace VkPipelineInitializers {
 	vk::PipelineColorBlendAttachmentState build_color_blend_attachment_state();
 
 	vk::PipelineColorBlendStateCreateInfo build_color_blend(vk::PipelineColorBlendAttachmentState* colorAttachments, int attachmentCount);
+
+	vk::PipelineVertexInputStateCreateInfo build_empty_vertex_input();
 }
 struct ShaderEffect;
-
 
 
 struct GraphicsPipelineBuilder {
