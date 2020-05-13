@@ -8,6 +8,13 @@ namespace sp {
 	class SceneLoader;
 }
 
+class TextureBindlessCache {
+public:
+	std::vector< vk::DescriptorImageInfo> all_images;
+	std::vector< EntityID> image_Ids;
+
+	void AddToCache(TextureResource& resource, EntityID id);
+};
 
 class TextureLoader {
 public:

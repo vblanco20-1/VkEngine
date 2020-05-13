@@ -39,6 +39,7 @@ struct BindInfo {
 	int set;
 	int binding;
 	int range;
+	int array_len = -1;
 	VkDescriptorType type;
 };
 

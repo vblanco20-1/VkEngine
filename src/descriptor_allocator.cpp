@@ -136,13 +136,14 @@ namespace vke {
 		ownerPool = nullptr;
 	}
 
-	bool DescriptorAllocatorHandle::Allocate(const VkDescriptorSetLayout& layout, VkDescriptorSet& builtSet)
+	bool DescriptorAllocatorHandle::Allocate(const VkDescriptorSetLayout& layout, VkDescriptorSet& builtSet,void* pNext)
 	{
 		DescriptorAllocatorPoolImpl*implPool = static_cast<DescriptorAllocatorPoolImpl*>(ownerPool);
-	
+
+		
 
 		VkDescriptorSetAllocateInfo allocInfo;
-		allocInfo.pNext = nullptr;
+		allocInfo.pNext = pNext;//nullptr;
 		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 		allocInfo.descriptorPool = vkPool;
 		allocInfo.descriptorSetCount = 1;

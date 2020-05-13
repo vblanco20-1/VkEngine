@@ -165,7 +165,17 @@ void VulkanEngine::create_device()
 	//--- DEVICE FEATURES
 	vk::PhysicalDeviceFeatures deviceFeatures;
 	deviceFeatures.samplerAnisotropy = true;
+	deviceFeatures.shaderSampledImageArrayDynamicIndexing = true;
 	//deviceFeatures.
+
+	VkPhysicalDeviceDescriptorIndexingFeatures descriptor_indexing_features{};
+	descriptor_indexing_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
+
+	// Enable non-uniform indexing
+	descriptor_indexing_features.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
+	descriptor_indexing_features.runtimeDescriptorArray = VK_TRUE;
+	descriptor_indexing_features.descriptorBindingVariableDescriptorCount = VK_TRUE;
+	descriptor_indexing_features.descriptorBindingPartiallyBound = VK_TRUE;
 
 	//vk::PhysicalDeviceTimelineSemaphoreFeaturesKHR timelineFeatures;
 	//timelineFeatures.timelineSemaphore = true;
@@ -186,11 +196,13 @@ void VulkanEngine::create_device()
 	vk12features.timelineSemaphore = true;
 	vk12features.bufferDeviceAddress =true;
 	vk12features.descriptorIndexing = true;
+	vk12features.shaderSampledImageArrayNonUniformIndexing = true;
+	vk12features.runtimeDescriptorArray = true;
 	vk12features.imagelessFramebuffer = true;
 #ifdef RTX_ON
 	vk12features.pNext = &rayFeatures;
 #else
-	vk12features.pNext = nullptr;
+	vk12features.pNext = &descriptor_indexing_features;
 #endif
 
 	vk::PhysicalDeviceFeatures2 features2;
@@ -208,7 +220,7 @@ void VulkanEngine::create_device()
 		std::array<vk::DeviceQueueCreateInfo, 2> queues{ queueCreateInfo,presentQueueCreateInfo };
 		createInfo.pQueueCreateInfos = queues.data();
 		createInfo.queueCreateInfoCount = 1;
-		//createInfo.pEnabledFeatures = &deviceFeatures;
+		createInfo.pEnabledFeatures = nullptr;//&&&deviceFeatures;
 		createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
 		createInfo.ppEnabledExtensionNames = deviceExtensions.data();
 		createInfo.pNext = &features2;

@@ -105,6 +105,7 @@ struct TextureResource : public ResourceComponent {
 	AllocatedImage image;
 	vk::ImageView imageView;
 	vk::Sampler textureSampler;
+	int32_t bindlessHandle = -1;
 };
 
 //cold data for texture
@@ -124,6 +125,8 @@ struct MeshResource : public ResourceComponent {
 	AllocatedBuffer indexBuffer;
 	
 	ObjectBounds bounds;
+	
+
 	std::vector<Vertex> vertices;
 	std::vector<uint32_t> indices;
 
@@ -140,6 +143,7 @@ struct PipelineResource : public ResourceComponent {
 	struct GraphicsPipelineBuilder* pipelineBuilder{nullptr};
 	struct ComputePipelineBuilder* computePipelineBuilder{ nullptr };
 	std::string renderPassName;
+	
 };
 
 enum class MeshPasIndex : uint8_t {
@@ -163,6 +167,7 @@ struct RenderMeshComponent {
 	std::array<EntityID, (size_t)MeshPasIndex::Num> pass_pipelines;
 	std::array<EntityID, (size_t)MeshPasIndex::Num> pass_descriptors;
 
+	std::array<int32_t, 8> texture_handles;
 	//EntityID pipeline_entity;
 	EntityID mesh_resource_entity;
 	//EntityID descriptor_entity;

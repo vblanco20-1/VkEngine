@@ -30,7 +30,7 @@
 #include <autobind.h>
 
 #include <murmurhash.h>
-
+#include <intrin.h>
 static glm::mat4 mat_identity = glm::mat4( 1.0f,0.0f,0.0f,0.0f,
 0.0f,1.0f,0.0f,0.0f,
 0.0f,0.0f,1.0f,0.0f,
@@ -280,6 +280,7 @@ void VulkanEngine::init_vulkan()
 	autobinder = new AutobindState();
 	autobinder->Engine = this;
 
+	texCache = new TextureBindlessCache();
 	
 	std::vector<const char*> extensionNames = get_extensions();
 	createInfo.enabledExtensionCount = (uint32_t) extensionNames.size();
@@ -436,6 +437,8 @@ void VulkanEngine::init_vulkan()
 
 	blankTexture = load_texture(MAKE_ASSET_PATH("sprites/blank.png"), "blank");
 	blackTexture = load_texture(MAKE_ASSET_PATH("sprites/black.png"), "black");
+
+	
 	//testCubemap = load_texture(MAKE_ASSET_PATH("models/SunTemple_Skybox.hdr"), "cubemap", true);
 
 	bluenoiseTexture = load_texture(MAKE_ASSET_PATH("sprites/bluenoise256.png"), "blunoise");
@@ -444,7 +447,9 @@ void VulkanEngine::init_vulkan()
 	//testCubemap = load_texture(MAKE_ASSET_PATH("sprites/pisa_cube.ktx"), "cubemap", true);
 	load_texture(MAKE_ASSET_PATH("sprites/ibl_brdf_lut.png"), "brdf", false);
 
-
+	texCache->AddToCache(render_registry.get<TextureResource>(blankTexture), blankTexture);
+	texCache->AddToCache(render_registry.get<TextureResource>(blackTexture), blankTexture);
+	texCache->AddToCache(render_registry.get<TextureResource>(bluenoiseTexture), bluenoiseTexture);
 
 
 
@@ -491,10 +496,10 @@ void VulkanEngine::init_vulkan()
 	sp::SceneLoader* loader = sp::SceneLoader::Create();
 
 	sp::SceneProcessConfig loadConfig;
-	//loadConfig.bLoadMeshes = true;
-	//loadConfig.bLoadNodes = true;
+	loadConfig.bLoadMeshes = true;
+	loadConfig.bLoadNodes = true;
 	//textures take a huge amount of time
-	//loadConfig.bLoadTextures = true;
+	loadConfig.bLoadTextures = true;
 	
 	//loadConfig.rootMatrix = &glm::rotate(glm::scale(glm::vec3(100.f)), glm::radians(90.f), glm::vec3(1, 0, 0))[0][0];
 	//loader->transform_scene(MAKE_ASSET_PATH("models/sponza/sponza_light.glb"),//glm::mat4(100.f));
@@ -685,6 +690,9 @@ EntityID VulkanEngine::create_basic_descriptor_sets(EntityID pipelineID, std::st
 		if (render_registry.valid(textureID[j]) && render_registry.has<TextureResource>(textureID[j])) {
 			const TextureResource& texture = render_registry.get<TextureResource>(textureID[j]);
 
+
+		
+
 			vk::DescriptorImageInfo imageInfo = {};
 			imageInfo.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
 			imageInfo.imageView = texture.imageView;
@@ -694,6 +702,8 @@ EntityID VulkanEngine::create_basic_descriptor_sets(EntityID pipelineID, std::st
 		}	
 		else {
 			const TextureResource& texture = render_registry.get<TextureResource>(blankTexture);
+			
+			//pipeline.texture_handles[j] = texture.bindlessHandle;
 
 			vk::DescriptorImageInfo imageInfo = {};
 			imageInfo.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
@@ -947,10 +957,11 @@ void VulkanEngine::create_ssao_pipelines()
 		{ MAKE_ASSET_PATH("shaders/blur.comp") },
 		"ssao-comp-blur");
 
+#ifdef RTX_ON
 	ShaderEffect* rayEffect = build_shader_effect(
 		{ MAKE_ASSET_PATH("shaders/rayshadows.comp") },
 		"rayshadow-gen");
-	
+#endif
 	FrameGraph::GraphAttachment* ssaoAttachment = render_graph.get_attachment("ssao_pre");// &graph.attachments["ssao_pre"];
 
 	int sizex = ssaoAttachment->real_width;
@@ -1657,10 +1668,15 @@ void VulkanEngine::create_uniform_buffers()
 		createBuffer(sizeof(GPUSceneParams), vk::BufferUsageFlagBits::eUniformBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_CPU_TO_GPU, sceneParamBuffers[i]);
 
 		//mesh transform buffer
-		createBuffer(sizeof(GpuObjectData) * 10000, vk::BufferUsageFlagBits::eStorageBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_CPU_TO_GPU, object_buffers[i]);
+		//createBuffer(sizeof(GpuObjectData) * 10000, vk::BufferUsageFlagBits::eStorageBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_CPU_TO_GPU, object_buffers[i]);
 	
+		createBuffer(sizeof(GpuObjectData) * 10000, vk::BufferUsageFlagBits::eStorageBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_CPU_ONLY, object_buffers[i]);
+
+
+		createBuffer(sizeof(int32_t) * 10000, vk::BufferUsageFlagBits::eStorageBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_CPU_ONLY, shadow_instance_buffers[i]);
+
 		//shadow instance id buffer
-		createBuffer(sizeof(int32_t) * 10000, vk::BufferUsageFlagBits::eStorageBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_CPU_TO_GPU, shadow_instance_buffers[i]);
+		//createBuffer(sizeof(int32_t) * 10000, vk::BufferUsageFlagBits::eStorageBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_CPU_TO_GPU, shadow_instance_buffers[i]);
 
 	}
 
@@ -2075,11 +2091,17 @@ void VulkanEngine::render_shadow_pass(const vk::CommandBuffer& cmd, int height, 
 		});
 
 
-	static std::vector<int32_t> instances;
-	instances.clear();
-	for (auto& unit : drawUnits) {
-		instances.push_back(unit.object_idx);
+
+	void* matdata = mapBuffer(shadow_instance_buffers[currentFrameIndex]);
+	{
+		ZoneScopedN("Instance Upload")
+		int32_t* data = (int32_t*)matdata;
+	
+		for (int i = 0; i < drawUnits.size(); i++) {
+			data[i] = drawUnits[i].object_idx;
+		}		
 	}
+	unmapBuffer(shadow_instance_buffers[currentFrameIndex]);
 
 	InstancedDraw pendingDraw;
 	for (int i = 0; i < drawUnits.size(); i++)
@@ -2102,10 +2124,7 @@ void VulkanEngine::render_shadow_pass(const vk::CommandBuffer& cmd, int height, 
 	}
 	instancedDraws.push_back(pendingDraw);
 
-	void* matdata = mapBuffer(shadow_instance_buffers[currentFrameIndex]);
-	memcpy(matdata, instances.data(), instances.size() * sizeof(int32_t));
-
-	unmapBuffer(shadow_instance_buffers[currentFrameIndex]);
+	
 
 	int binds = 0;
 	int draw_idx = 0;
@@ -2563,6 +2582,24 @@ void VulkanEngine::RenderMainPass(const vk::CommandBuffer& cmd)
 		return a.vertexBuffer < b.vertexBuffer;
 		});	
 
+
+	//std::vector< vk::DescriptorImageInfo> all_images;
+	//int i = 0;
+	//render_registry.view<TextureResource>().each([&](TextureResource& texture) {
+	//
+	//	if (i <405)
+	//	{
+	//		vk::DescriptorImageInfo noiseImage = {};
+	//		noiseImage.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+	//		noiseImage.imageView = texture.imageView;
+	//		noiseImage.sampler = texture.textureSampler;
+	//
+	//		all_images.push_back(noiseImage);
+	//		i++;
+	//	}
+	//	
+	//	});
+
 	for(const DrawUnit& unit : drawables){		
 		
 		const bool bShouldBindPipeline = unit.pipeline != last_pipeline;
@@ -2610,6 +2647,8 @@ void VulkanEngine::RenderMainPass(const vk::CommandBuffer& cmd)
 			noiseImage.imageView = bluenoise.imageView;
 			noiseImage.sampler = bluenoise.textureSampler;
 
+			setBuilder.bind_image_array(0, 10, texCache->all_images.data(), texCache->all_images.size());//all_images.data(),all_images.size());
+
 			setBuilder.bind_image("ssaoMap", render_graph.get_image_descriptor("ssao_post"));
 			setBuilder.bind_image("samplerBRDFLUT", get_image_resource("brdf"));
 			setBuilder.bind_image("blueNoise", noiseImage);
@@ -2635,7 +2674,7 @@ void VulkanEngine::RenderMainPass(const vk::CommandBuffer& cmd)
 			last_index_buffer = unit.indexBuffer;
 		}
 
-		cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, piplayout, 2, 1, &unit.material_set, 0, nullptr);
+		//cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, piplayout, 2, 1, &unit.material_set, 0, nullptr);
 
 		
 
@@ -2760,7 +2799,7 @@ void VulkanEngine::RenderGBufferPass(const vk::CommandBuffer& cmd)
 		first_render = false;
 	}
 }
-
+#pragma intrinsic(__movsq)
 //std::vector<UniformBufferObject> StagingCPUUBOArray;
 void VulkanEngine::update_uniform_buffer(uint32_t currentImage)
 {
@@ -2857,66 +2896,105 @@ void VulkanEngine::update_uniform_buffer(uint32_t currentImage)
 	shadowubo.inv_view = glm::inverse(shadowubo.view);
 	shadowubo.inv_proj = glm::inverse(shadowubo.proj);
 
-
-	void* data = mapBuffer(cameraDataBuffers[currentImage]);
-	//auto alignUbo = align_dynamic_descriptor(sizeof(ubo));
-	char* dt = (char*)data;// + alignUbo; ;
-	
-	
-	memcpy(dt, &ubo, sizeof(UniformBufferObject) );
-	//keep matrices
-	memcpy(&LastFrameMatrices, &MainMatrices, sizeof(UniformBufferObject));
-	memcpy(&MainMatrices, &ubo, sizeof(UniformBufferObject));
-
-	unmapBuffer(cameraDataBuffers[currentImage]);
-
-	data = mapBuffer(sceneParamBuffers[currentImage]);
-	
-	dt = (char*)data;
-
-	memcpy(dt, &sceneParameters, sizeof(GPUSceneParams));
-
-	unmapBuffer(sceneParamBuffers[currentImage]);
+	{
+		ZoneScopedN("Update Uniforms Globals");
+		void* data = mapBuffer(cameraDataBuffers[currentImage]);
+		//auto alignUbo = align_dynamic_descriptor(sizeof(ubo));
+		char* dt = (char*)data;// + alignUbo; ;
 
 
-	data = mapBuffer(shadowDataBuffers[currentImage]);
+		memcpy(dt, &ubo, sizeof(UniformBufferObject));
+		//keep matrices
+		memcpy(&LastFrameMatrices, &MainMatrices, sizeof(UniformBufferObject));
+		memcpy(&MainMatrices, &ubo, sizeof(UniformBufferObject));
 
-	dt = (char*)data;
+		unmapBuffer(cameraDataBuffers[currentImage]);
 
-	memcpy(dt, &shadowubo, sizeof(UniformBufferObject));
+		data = mapBuffer(sceneParamBuffers[currentImage]);
 
-	unmapBuffer(shadowDataBuffers[currentImage]);
+		dt = (char*)data;
+
+		memcpy(dt, &sceneParameters, sizeof(GPUSceneParams));
+
+		unmapBuffer(sceneParamBuffers[currentImage]);
 
 
+		data = mapBuffer(shadowDataBuffers[currentImage]);
 
-		int copyidx = 0;
-		std::vector<GpuObjectData> object_matrices;
+		dt = (char*)data;
+
+		memcpy(dt, &shadowubo, sizeof(UniformBufferObject));
+
+		unmapBuffer(shadowDataBuffers[currentImage]);
+
+	}
+	int copyidx = 0;
+	std::vector<GpuObjectData> object_matrices;
+	{
+		ZoneScopedN("Object Gather");
+		
+		
 
 		object_matrices.resize(render_registry.capacity<RenderMeshComponent>());
-		
+
 		render_registry.group<RenderMeshComponent, TransformComponent, ObjectBounds>().each([&](EntityID id, RenderMeshComponent& renderable, const TransformComponent& transform, ObjectBounds& bounds) {
 
-			object_matrices[copyidx].model_matrix = transform.model;		
+			object_matrices[copyidx].model_matrix = transform.model;
 
-			
+
 			const MeshResource& mesh = render_registry.get<MeshResource>(renderable.mesh_resource_entity);
 			object_matrices[copyidx].vertex_buffer_adress = mesh.vertexBuffer.address;//get_buffer_adress(mesh.vertexBuffer);
 			
+			memcpy(&object_matrices[copyidx].tex1, &renderable.texture_handles, sizeof(renderable.texture_handles));
 
 			renderable.object_idx = copyidx;
 			copyidx++;
-		});
+			});
+	}
 
 	if (copyidx > 0) {
 		ZoneScopedN("Uniform copy");
 
 		void* matdata = mapBuffer(object_buffers[currentImage]);
-		memcpy(matdata, object_matrices.data(), object_matrices.size() * sizeof(GpuObjectData));
+	
+		{
+			ZoneScopedN("memcopy");
+			GpuObjectData* dataPtr = (GpuObjectData*)matdata;
+#if 0
+			
+
+			for (int i = 0; i < object_matrices.size(); i++) {
+				dataPtr[i] = object_matrices[i];
+			}
+#else
+			size_t copysize = object_matrices.size() * sizeof(GpuObjectData);
+
+			GpuObjectData* source_data = object_matrices.data();
+			{
+				ZoneScopedN("memcopy gpu");
+				//while(copysize-= sizeof(GpuObjectData))
+				//{
+				//	memcpy(dataPtr, source_data, sizeof(GpuObjectData));
+				//	dataPtr++;
+				//	source_data++;
+				//}
+				memcpy(dataPtr, source_data, copysize);
+				//__movsq(
+				//	(PDWORD64)dataPtr,
+				//	(PDWORD64)source_data,
+				//	copysize / sizeof(PDWORD64)
+				//);
+				
+			}
+			
+			
+#endif
+		}
+		
 
 		unmapBuffer(object_buffers[currentImage]);
 	}
 }
-
 
 
 
@@ -3427,7 +3505,7 @@ bool VulkanEngine::load_scene(const char* db_path, const char* scene_path, glm::
 
 	struct SimpleMaterial {
 		std::array<EntityID, 8> textureIDs;
-		
+		std::array<int32_t, 8> textureHandles;
 	};
 	std::vector<SimpleMaterial> materials;
 	sp::SceneLoader* loader = sp::SceneLoader::Create();
@@ -3518,11 +3596,29 @@ bool VulkanEngine::load_scene(const char* db_path, const char* scene_path, glm::
 		pipeline_id = resourceMap["pipeline_basiclit"];
 	}
 	
-
+	for (auto& mat : materials)
+	{
+		for (int i = 0; i < 8; i++) {
+			auto tid = mat.textureIDs[i];
+			int32_t tex_handle = -1;
+			if (render_registry.valid(tid) && render_registry.has<TextureResource>(tid))
+			{
+				TextureResource& res = render_registry.get<TextureResource>(tid);
+				if (res.bindlessHandle == -1) {
+					texCache->AddToCache(res, tid);
+					
+				}
+				tex_handle = res.bindlessHandle;
+			}
+			mat.textureHandles[i] = tex_handle;
+		}
+	}
+	
 	
 	auto blank_descriptor = create_basic_descriptor_sets(pipeline_id,"blank" ,blank_textures);
 	std::vector<EntityID> loaded_meshes;
 	std::vector<EntityID> mesh_descriptors;
+	
 	{
 		ZoneScopedNC("Mesh creation", tracy::Color::Blue);
 
@@ -3551,6 +3647,7 @@ bool VulkanEngine::load_scene(const char* db_path, const char* scene_path, glm::
 		}
 	}
 
+	
 
 	entt::registry& registry = render_registry;
 	int nodemeshes = 0;
@@ -3559,8 +3656,14 @@ bool VulkanEngine::load_scene(const char* db_path, const char* scene_path, glm::
 		aiMatrix4x4 node_mat = parentmat *node->mTransformation;
 
 		for (int msh = 0; msh < node->mNumMeshes; msh++) {
+			
+			auto& mat = materials[scene->mMeshes[ node->mMeshes[msh]]->mMaterialIndex];
 			nodemeshes++;
 			RenderMeshComponent renderable;
+
+			memcpy(&renderable.texture_handles, &mat.textureHandles, sizeof(renderable.texture_handles));
+
+
 			renderable.pass_descriptors[(size_t)MeshPasIndex::MainPass] = mesh_descriptors[node->mMeshes[msh]];			
 
 			renderable.mesh_resource_entity = loaded_meshes[node->mMeshes[msh]];// node->//mesh_id;

@@ -28,16 +28,17 @@ vk::DescriptorPool create_descriptor_pool(vk::Device device, int count) {
 
 	return descriptorPool;
 }
-vk::DescriptorSet DescriptorMegaPool::allocate_descriptor(vk::DescriptorSetLayout layout, DescriptorLifetime lifetime)
+vk::DescriptorSet DescriptorMegaPool::allocate_descriptor(vk::DescriptorSetLayout layout, DescriptorLifetime lifetime, void* pNext )
 {
+	
 	if (lifetime == DescriptorLifetime::Static) {
 		VkDescriptorSet set;
-		bool goodAlloc = staticHandle.Allocate(layout, set);
+		bool goodAlloc = staticHandle.Allocate(layout, set, pNext);
 		return set;
 	}
 	else {
 		VkDescriptorSet set;
-		bool goodAlloc = dynamicHandle.Allocate(layout, set);
+		bool goodAlloc = dynamicHandle.Allocate(layout, set, pNext);
 		return set;
 	}
 }
@@ -64,6 +65,22 @@ DescriptorSetBuilder::DescriptorSetBuilder(ShaderEffect* _effect, DescriptorMega
 {
 	effect = _effect;
 	parentPool = _parentPool;
+}
+
+void DescriptorSetBuilder::bind_image_array(int set, int binding, vk::DescriptorImageInfo* images, int count)
+{
+	ImageWriteDescriptor newWrite;
+	newWrite.dstSet = set;
+	newWrite.dstBinding = binding;
+	newWrite.descriptorType = vk::DescriptorType::eCombinedImageSampler;
+	newWrite.image_array = images;
+	newWrite.image_count = count;
+	//newWrite.imageInfo = imageInfo;
+	//if (bImageWrite) {
+	//	newWrite.imageInfo.imageLayout = vk::ImageLayout::eGeneral;
+	//}
+
+	imageWrites.push_back(newWrite);
 }
 
 void DescriptorSetBuilder::bind_image(int set, int binding, const vk::DescriptorImageInfo& imageInfo, bool bImageWrite)
@@ -162,9 +179,21 @@ void DescriptorSetBuilder::update_descriptor(int set, vk::DescriptorSet& descrip
 			newWrite.dstBinding = imageWrite.dstBinding;
 			newWrite.dstArrayElement = 0;
 			newWrite.descriptorType = imageWrite.descriptorType;
-			newWrite.descriptorCount = 1;
+
+			
 			newWrite.pBufferInfo = nullptr;
-			newWrite.pImageInfo = &imageWrite.imageInfo; // Optional
+
+			if (imageWrite.image_array == nullptr)
+			{
+				newWrite.descriptorCount = 1;
+				newWrite.pImageInfo = &imageWrite.imageInfo; // Optional
+			}
+			else
+			{
+				newWrite.descriptorCount = imageWrite.image_count;
+				newWrite.pImageInfo =imageWrite.image_array; // Optional
+			}
+		
 			newWrite.pTexelBufferView = nullptr; // Optional	
 
 
@@ -201,8 +230,38 @@ void DescriptorSetBuilder::update_descriptor(int set, vk::DescriptorSet& descrip
 
 vk::DescriptorSet DescriptorSetBuilder::build_descriptor(int set, DescriptorLifetime lifetime)
 {
+	
 	vk::DescriptorSetLayout layout = effect->build_descriptor_layouts(parentPool->device)[set];
-	vk::DescriptorSet newSet = parentPool->allocate_descriptor(layout, lifetime);
+
+	void* pNext = nullptr;
+	uint32_t counts[1];
+	counts[0] = 4096; // Set 0 has a variable count descriptor with a maximum of 32 elements
+//
+	VkDescriptorSetVariableDescriptorCountAllocateInfo set_counts = {};
+	set_counts.pNext = nullptr;
+	set_counts.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO;
+	set_counts.descriptorSetCount = 1;//counts.size();
+	set_counts.pDescriptorCounts = counts;//counts.data();
+
+
+	for (const ImageWriteDescriptor& imageWrite : imageWrites) {
+		if (imageWrite.image_array != nullptr && imageWrite.dstSet == set)
+		{
+			counts[0] = imageWrite.image_count;
+			pNext = &set_counts;
+		}
+	}
+	//std::vector<uint32_t> counts;
+	//for (int i = 0; i < 10; i++)
+	//{
+	//	//counts.push_back(effect->privData->bindingSets[set].)
+	//	//counts.push_back(4096);
+	//}
+	
+
+
+
+	vk::DescriptorSet newSet = parentPool->allocate_descriptor(layout, lifetime,pNext);
 
 	update_descriptor(set, newSet, parentPool->device);
 	return newSet;

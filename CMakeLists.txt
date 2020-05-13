@@ -8,6 +8,7 @@ add_subdirectory(third_party)
 add_subdirectory(modules)
 add_subdirectory(src)
 
+add_compile_options("/await")
 
 file(GLOB_RECURSE GLSL_SOURCE_FILES
     "${PROJECT_SOURCE_DIR}/assets/shaders/*.frag"

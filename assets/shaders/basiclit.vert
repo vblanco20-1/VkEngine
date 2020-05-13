@@ -45,6 +45,8 @@ layout(location = 3) out vec3 fragPos;
 layout(location = 4) out vec3 eyePos;
 layout(location = 5) out vec4 ShadowCoord;
 
+
+layout(location = 6 )flat out  int ObjectID;
 const mat4 biasMat = mat4( 
 	0.5, 0.0, 0.0, 0.0,
 	0.0, 0.5, 0.0, 0.0,
@@ -54,6 +56,7 @@ const mat4 biasMat = mat4(
 
 void main() {
 
+	ObjectID = gl_InstanceIndex;
 	vec4 inPosition = get_position(gl_InstanceIndex,gl_VertexIndex);
 	vec4 inColor =  get_color(gl_InstanceIndex,gl_VertexIndex);
 	vec2 inTexCoord= get_uv0(gl_InstanceIndex,gl_VertexIndex);

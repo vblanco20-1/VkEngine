@@ -20,7 +20,7 @@ namespace vke {
 		//allocate new descriptor. handle has to be valid
 		//returns true if allocation succeeded, and false if it didnt
 		//will mutate the handle if it requires a new vkDescriptorPool
-		bool Allocate(const VkDescriptorSetLayout& layout, VkDescriptorSet& builtSet);
+		bool Allocate(const VkDescriptorSetLayout& layout, VkDescriptorSet& builtSet, void* pNext = nullptr);
 
 		
 		DescriptorAllocatorPool* ownerPool{nullptr};

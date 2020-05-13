@@ -14,14 +14,26 @@ layout(buffer_reference, std430) readonly buffer VertexBuffer {
 
 struct PerObject{
 	mat4 model;
+	ivec4 tex1;
+	ivec4 tex2;
     VertexBuffer vertex_buffer;
-    VertexBuffer vertex_buffer_pad1;
+    VertexBuffer vertex_buffer_pad;
 };
 layout(std430,set = 0, binding = 2) readonly buffer Pos 
 {
    PerObject objects[ ];
 } MainObjectBuffer;
 
+int get_texture(int textureIndex, int oIdx)
+{
+	if(textureIndex < 4)
+	{
+		return MainObjectBuffer.objects[oIdx].tex1[textureIndex];
+	}
+	else{
+		return MainObjectBuffer.objects[oIdx].tex2[textureIndex-4];
+	}
+}
 
 vec4 get_position(int oIdx,int vIdx){
 

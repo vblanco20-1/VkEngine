@@ -24,7 +24,7 @@ void UI::DrawEngineUI(VulkanEngine* engine)
 
 	ImGui::SetNextWindowBgAlpha(0.35f); // Transparent background
 	static bool p_open = true;
-	ImGui::Begin("Example: Simple overlay", &p_open, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav);
+	ImGui::Begin("Example: Simple overlay", &p_open, ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing);
 
 
 	ImGui::Text("frametime = %f", engine->eng_stats.frametime);

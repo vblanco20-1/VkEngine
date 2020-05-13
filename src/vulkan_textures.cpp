@@ -1324,3 +1324,17 @@ TextureLoader* TextureLoader::create_new_loader(VulkanEngine* ownerEngine)
 
 	return loader;
 }
+
+void TextureBindlessCache::AddToCache(TextureResource& resource, EntityID id)
+{
+	vk::DescriptorImageInfo newImage = {};
+	newImage.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+	newImage.imageView = resource.imageView;
+	newImage.sampler = resource.textureSampler;
+
+	resource.bindlessHandle = image_Ids.size();
+
+	all_images.push_back(newImage);
+	image_Ids.push_back(id);	
+}
+

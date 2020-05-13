@@ -17,7 +17,7 @@
 
 //#define RTX_ON
 
-constexpr int MAX_FRAMES_IN_FLIGHT =1;
+constexpr int MAX_FRAMES_IN_FLIGHT =2;
 constexpr int MAX_UNIFORM_BUFFER = 5000;
 constexpr int SHADOWMAP_DIM = 2048;
 
@@ -62,8 +62,10 @@ struct ExtensionFeatures {
 
 struct GpuObjectData {
 	glm::mat4 model_matrix;
+	glm::ivec4 tex1;
+	glm::ivec4 tex2;
 	VkDeviceAddress vertex_buffer_adress;
-	VkDeviceAddress vertex_buffer_adress_pad1;
+	VkDeviceAddress vertex_buffer_adress_pad;
 };
 
 struct IndexBufferCache {
@@ -74,6 +76,9 @@ struct IndexBufferCache {
 class TextureLoader;
 class VulkanEngine {
 public:
+
+	class TextureBindlessCache* texCache;
+
 	ExtensionFeatures features{};
 	TextureLoader* tex_loader;
 	PlayerCamera playerCam;

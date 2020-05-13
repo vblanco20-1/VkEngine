@@ -350,9 +350,10 @@ bool compile_shader(const char* path, ShaderModule* outModule)
 
 struct ShaderDescriptorBindings {
     std::vector<VkDescriptorSetLayoutBinding> descriptorBindings;
+    std::vector<VkDescriptorBindingFlags> descriptorFlags;
 };
 
-void add_binding(ShaderDescriptorBindings* bindings, VkDescriptorSetLayoutBinding newBind) {
+void add_binding(ShaderDescriptorBindings* bindings, VkDescriptorSetLayoutBinding newBind, VkDescriptorBindingFlags flags = 0) {
 
     //merge stage
     for (VkDescriptorSetLayoutBinding& bind : bindings->descriptorBindings) {
@@ -366,6 +367,7 @@ void add_binding(ShaderDescriptorBindings* bindings, VkDescriptorSetLayoutBindin
     }
 
     bindings->descriptorBindings.push_back(newBind);
+    bindings->descriptorFlags.push_back(flags);
 }
 
 struct ShaderEffectPrivateData {
@@ -682,11 +684,29 @@ bool ShaderEffect::build_effect(VkDevice device)
         {
             const SPIRType& type = comp.get_type(resource.base_type_id);
 
+            const SPIRType& array_type = comp.get_type(resource.type_id);
+
+            bool is_bindless_array = false;
+            if (array_type.array.size() > 0) {
+                if (array_type.array.front() == 0) {
+                    is_bindless_array = true;
+               }
+            }
+
 			BindInfo newinfo;
 			newinfo.set = comp.get_decoration(resource.id, spv::DecorationDescriptorSet);
 			newinfo.binding = comp.get_decoration(resource.id, spv::DecorationBinding);
 			newinfo.range = 0;
             newinfo.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+
+            VkDescriptorBindingFlags flasgs = 0;
+            if (is_bindless_array)
+            {
+                newinfo.array_len = 0;
+                flasgs = VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT | VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT;
+                
+            }
+
 			//if (type.image.dim == spv::Dim::DimCube)
 			//{
 			//    newinfo.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -697,25 +717,30 @@ bool ShaderEffect::build_effect(VkDevice device)
 
 			VkDescriptorSetLayoutBinding vkbind = createLayoutBinding(newinfo, ShaderTypeToVulkanFlag(ShaderMod.type));
 
-			add_binding(&privData->bindingSets[newinfo.set], vkbind);
+            if (is_bindless_array)
+            {
+                vkbind.descriptorCount = 4096;
+            }
+
+			add_binding(&privData->bindingSets[newinfo.set], vkbind, flasgs);
 
 			privData->reflectionData.DataBindings[comp.get_name(resource.id)] = newinfo;
         }
 
-		for (const Resource& resource : res.acceleration_structures)
-		{
-			BindInfo newinfo;
-			newinfo.set = comp.get_decoration(resource.id, spv::DecorationDescriptorSet);
-			newinfo.binding = comp.get_decoration(resource.id, spv::DecorationBinding);
-			newinfo.range = 0;
-			newinfo.type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
-
-			VkDescriptorSetLayoutBinding vkbind = createLayoutBinding(newinfo, ShaderTypeToVulkanFlag(ShaderMod.type));
-
-			add_binding(&privData->bindingSets[newinfo.set], vkbind);            		
-
-            privData->reflectionData.DataBindings[comp.get_name(resource.id)] = newinfo;
-		}
+		//for (const Resource& resource : res.acceleration_structures)
+		//{
+		//	BindInfo newinfo;
+		//	newinfo.set = comp.get_decoration(resource.id, spv::DecorationDescriptorSet);
+		//	newinfo.binding = comp.get_decoration(resource.id, spv::DecorationBinding);
+		//	newinfo.range = 0;
+		//	newinfo.type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+        //
+		//	VkDescriptorSetLayoutBinding vkbind = createLayoutBinding(newinfo, ShaderTypeToVulkanFlag(ShaderMod.type));
+        //
+		//	add_binding(&privData->bindingSets[newinfo.set], vkbind);            		
+        //
+        //    privData->reflectionData.DataBindings[comp.get_name(resource.id)] = newinfo;
+		//}
 
         VkShaderStageFlags stage_flags{};
 
@@ -789,11 +814,17 @@ std::array<VkDescriptorSetLayout, 4> ShaderEffect::build_descriptor_layouts(VkDe
 		std::array< VkDescriptorSetLayout, 4> descriptorSetLayouts;
 
 		for (int i = 0; i < 4; i++) {
+
+			VkDescriptorSetLayoutBindingFlagsCreateInfo binding_flags{};
+			binding_flags.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
+			binding_flags.bindingCount = privData->bindingSets[i].descriptorFlags.size();
+			binding_flags.pBindingFlags = privData->bindingSets[i].descriptorFlags.data();
+
 			VkDescriptorSetLayoutCreateInfo layoutInfo;
 
 			layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 			layoutInfo.flags = 0;
-			layoutInfo.pNext = nullptr;
+            layoutInfo.pNext = &binding_flags;//nullptr;
 			layoutInfo.pBindings = privData->bindingSets[i].descriptorBindings.data();
 			layoutInfo.bindingCount = privData->bindingSets[i].descriptorBindings.size();
 

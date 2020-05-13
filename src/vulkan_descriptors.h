@@ -30,6 +30,8 @@ struct DescriptorSetBuilder {
 		int dstBinding;
 		vk::DescriptorType descriptorType;
 		vk::DescriptorImageInfo imageInfo;
+		vk::DescriptorImageInfo* image_array{nullptr};
+		int image_count;
 	};
 
 	struct BufferWriteDescriptor {
@@ -45,6 +47,8 @@ struct DescriptorSetBuilder {
 	ShaderEffect* effect;
 	DescriptorMegaPool* parentPool;
 
+
+	void bind_image_array(int set, int binding, vk::DescriptorImageInfo* images, int count);
 
 	void bind_image(int set, int binding,const vk::DescriptorImageInfo& imageInfo, bool bImageWrite = false);
 	void bind_image(const char* name,const vk::DescriptorImageInfo& imageInfo);
@@ -69,7 +73,7 @@ struct DescriptorAllocator {
 };
 struct DescriptorMegaPool {
 
-	vk::DescriptorSet allocate_descriptor(vk::DescriptorSetLayout layout, DescriptorLifetime lifetime);
+	vk::DescriptorSet allocate_descriptor(vk::DescriptorSetLayout layout, DescriptorLifetime lifetime, void* pNext = nullptr);
 	
 	void initialize(int numFrames, vk::Device _device);
 	void set_frame(int frameNumber);

@@ -1,7 +1,10 @@
 #version 450
 #extension GL_ARB_separate_shader_objects : enable
  #extension GL_GOOGLE_include_directive : enable
+ #extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_buffer_reference : enable
 
+#include "object_buffer.inl"
 #include "texture_samplers.inl"
 
 layout(set = 0, binding = 0) uniform UniformBufferObject {
@@ -31,8 +34,10 @@ layout(location = 2) in vec3 fragNormal;
 layout(location = 3) in vec3 fragPos;
 layout(location = 4) in vec3 eyePos;
 layout(location = 5) in vec4 inShadowCoord;
+layout(location = 6) flat in int ObjectID;
 
-layout(location = 0) out vec4 outColor;
+
+layout(location = 0) out  vec4 outColor;
 #define ambientshadow 0.1
 float shadowSample(){
    return texture( shadowMap, (inShadowCoord / inShadowCoord.w).st).r;
@@ -176,10 +181,64 @@ vec3 Uncharted2Tonemap(vec3 x)
 	return ((x*(A*x+C*B)+D*E)/(x*(A*x+B)+D*F))-E/F;
 }
 
+vec3 get_albedo(vec2 uv){
 
+	int txid = get_texture(0,ObjectID);
+	if(txid >= 0)
+	{
+		return vec3(texture(all_textures[txid], uv));
+	}
+	else{
+		return vec3(1.f,0.1f,0.1f);
+	}	
+}
+
+vec4 get_emmisive(vec2 uv){
+
+	int txid = get_texture(3,ObjectID);
+	if(txid >= 0)
+	{
+		return (texture(all_textures[txid], uv));
+	}
+	else{
+		return vec4(1.f,0.1f,0.1f,1.f);
+	}	
+}
+
+
+struct MatParams{
+	vec3 albedo;	
+	float metallic;
+	vec4 emmisive;
+	float roughness;
+};
+
+MatParams get_params(vec2 uv){
+	MatParams params;
+	params.albedo = get_albedo(uv);
+	params.emmisive = get_emmisive(uv);
+
+	int txid = get_texture(2,ObjectID);
+	if(txid >= 0)
+	{
+		//vec3 tex3 = texture(tex3, fragTexCoord).xyz;
+		vec4 smp = vec4(1.f);
+		smp = vec4(texture(all_textures[txid], uv));
+		params.metallic = smp.b;
+		params.roughness =  smp.g;
+		
+	}
+	else{
+		params.metallic = 0;
+		params.roughness =  0.9f;
+	}
+	
+	return params;	
+}
 
 void main() {
 
+	MatParams params = get_params(fragTexCoord);
 	vec2 screenspace = vec2(0.f);
 	screenspace.y = gl_FragCoord.y / sceneParams.viewport.w;//900.f;
 	screenspace.x = gl_FragCoord.x / sceneParams.viewport.z;//1700.f;
@@ -190,19 +249,18 @@ void main() {
 	vec3 light_dir = normalize(vec3(100.0f, 600.0f, 800.0f)) * 1.f;
 
     float ao = 1.f;
-	vec3 albedo = clamp(texture(tex1, fragTexCoord).rgb,vec3(0.01),vec3(1.f));
+	vec3 albedo = params.albedo;//get_albedo(fragTexCoord);
 
-	float metallic = 1;
-	float roughness = 0.9;
+	float metallic = params.metallic;//1;
+	float roughness = params.roughness;//0.9;
 	
-	vec3 tex3 = texture(tex3, fragTexCoord).xyz;
+	//vec3 tex3 = texture(tex3, fragTexCoord).xyz;
 	//if(tex3 != vec3(1)){
- 	 metallic = tex3.b;
-	 roughness =  tex3.g;
+ 	// metallic = tex3.b;
+	// roughness =  tex3.g;
 	//}
 
-	vec4 emmisive = texture(tex4, fragTexCoord);
-
+	vec4 emmisive = params.emmisive; //texture(tex4, fragTexCoord) ;
     vec3 N = normalize(fragNormal);
     vec3 V = normalize(eyePos - fragPos);
     vec3 R = reflect(-V, N); 
@@ -281,7 +339,10 @@ void main() {
 	//outColor = tex_test;
 	//outColor = vec4(ssao);
 
-	outColor = vec4(color, 1.0);
+
+outColor =vec4(color, 1.0);
+
+	
 	
 	
 	//outColor=	vec4(prefilteredReflection(N, sceneParams.ambient.w).rgb, 1.0);
