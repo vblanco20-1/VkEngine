@@ -300,14 +300,14 @@ void VulkanEngine::init_vulkan()
 		createInfo.enabledLayerCount = 0;
 	}
 	
-	VkValidationFeatureEnableEXT enables[] =
-	{ VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT };
-	VkValidationFeaturesEXT features = {};
-	features.sType = VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT;
-	features.enabledValidationFeatureCount = 1;
-	features.pEnabledValidationFeatures = enables;
-	
-	createInfo.pNext = &features;
+	//VkValidationFeatureEnableEXT enables[] =
+	//{ VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT };
+	//VkValidationFeaturesEXT features = {};
+	//features.sType = VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT;
+	//features.enabledValidationFeatureCount = 1;
+	//features.pEnabledValidationFeatures = enables;
+	//
+	//createInfo.pNext = &features;
 
 	instance = vk::createInstance(createInfo);
 	if (enableValidationLayers)
@@ -315,7 +315,7 @@ void VulkanEngine::init_vulkan()
 		init_vulkan_debug();
 	}
 
-	gpuCrashTracker.Initialize();
+	//gpuCrashTracker.Initialize();
 
 	VkSurfaceKHR vksurface;
 	if (!SDL_Vulkan_CreateSurface(sdl_get_window(), instance, &vksurface)) {
@@ -2099,8 +2099,14 @@ void VulkanEngine::render_shadow_pass(const vk::CommandBuffer& cmd, int height, 
 
 	std::sort(drawUnits.begin(), drawUnits.end(), [](const ShadowDrawUnit& a, const ShadowDrawUnit& b) {
 
-		return a.indexBuffer->buffer < b.indexBuffer->buffer;
-		});
+		if (a.indexBuffer->buffer == b.indexBuffer->buffer)
+		{return  a.index_offset < b.index_offset;
+		}
+		else {
+
+			return a.indexBuffer->buffer < b.indexBuffer->buffer;
+		}
+	});
 
 
 
@@ -2120,7 +2126,7 @@ void VulkanEngine::render_shadow_pass(const vk::CommandBuffer& cmd, int height, 
 	for (int i = 0; i < drawUnits.size(); i++)
 	{
 		auto& unit = drawUnits[i];
-		if (LastIndex != unit.indexBuffer->buffer && idx_ofs != unit.index_offset) {
+		if (LastIndex != unit.indexBuffer->buffer || idx_ofs != unit.index_offset) {
 			if (i != 0) {
 				instancedDraws.push_back(pendingDraw);
 			}
@@ -2131,6 +2137,7 @@ void VulkanEngine::render_shadow_pass(const vk::CommandBuffer& cmd, int height, 
 			pendingDraw.instance_count = 1;
 			pendingDraw.index_offset = unit.index_offset;
 			LastIndex = unit.indexBuffer->buffer;
+			idx_ofs = unit.index_offset;
 		}
 		else {
 			pendingDraw.instance_count++;
@@ -2144,11 +2151,11 @@ void VulkanEngine::render_shadow_pass(const vk::CommandBuffer& cmd, int height, 
 	int draw_idx = 0;
 #if 1
 	for (auto& draw : instancedDraws) {
-		//cmd.bindIndexBuffer(draw.index_buffer, 0, vk::IndexType::eUint32);
+		cmd.bindIndexBuffer(draw.index_buffer, 0, vk::IndexType::eUint32);
 
 
 		//cmd.setCheckpointNV("Draw Shadow", extensionDispatcher);
-		//cmd.drawIndexed(draw.index_count, draw.instance_count, draw.index_offset, 0, draw.first_index);
+		cmd.drawIndexed(draw.index_count, draw.instance_count, draw.index_offset, 0, draw.first_index);
 		eng_stats.drawcalls++;
 		eng_stats.shadow_drawcalls++;
 	}
@@ -2695,7 +2702,7 @@ void VulkanEngine::RenderMainPass(const vk::CommandBuffer& cmd)
 
 		
 		//cmd.setCheckpointNV("Draw Mainpass", extensionDispatcher);
-		//cmd.drawIndexed(static_cast<uint32_t>(unit.index_count), 1,unit.index_offset, 0, unit.object_idx);
+		cmd.drawIndexed(static_cast<uint32_t>(unit.index_count), 1,unit.index_offset, 0, unit.object_idx);
 		eng_stats.drawcalls++;
 
 		first_render = false;
@@ -2763,10 +2770,6 @@ void VulkanEngine::RenderGBufferPass(const vk::CommandBuffer& cmd)
 	
 	eng_stats.gbuffer_drawcalls = 0;
 	for (const DrawUnit& unit : drawables) {
-		if (unit.object_idx == 310)
-		{
-			cmd.setCheckpointNV("Crashtastic", extensionDispatcher);
-		}
 
 		const bool bShouldBindPipeline = unit.pipeline != last_pipeline;
 
@@ -2814,19 +2817,8 @@ void VulkanEngine::RenderGBufferPass(const vk::CommandBuffer& cmd)
 			last_index_buffer = unit.indexBuffer;
 		}		
 
-		std::string debug_str;
-		debug_str = "DrawPrepass";
-
 		
-
-		//DrawUnit* alc=	new DrawUnit();
-		//alc = unit;
-		//memcpy(alc, &unit, sizeof(DrawUnit));
-
-		//cmd.setCheckpointNV("Draw Prepass", extensionDispatcher);
-		//cmd.setCheckpointNV(alc, extensionDispatcher);
-		//
-		//cmd.drawIndexed(static_cast<uint32_t>(unit.index_count), 1, unit.index_offset, 0, unit.object_idx);
+		cmd.drawIndexed(static_cast<uint32_t>(unit.index_count), 1, unit.index_offset, 0, unit.object_idx);
 		eng_stats.drawcalls++;
 		eng_stats.gbuffer_drawcalls++;
 		first_render = false;
@@ -2983,12 +2975,6 @@ void VulkanEngine::update_uniform_buffer(uint32_t currentImage)
 			renderable.object_idx = copyidx;
 			copyidx++;
 			});
-
-		for (int i = 0; i < 10; i++)
-		{
-
-			object_matrices.push_back(object_matrices[0]);
-		}
 	}
 
 	if (copyidx > 0) {
@@ -3263,8 +3249,12 @@ EntityID VulkanEngine::load_mesh(const char* model_path, std::string modelName)
 
 	return id;
 }
-uint32_t hash_index_buffer(std::vector<uint32_t>& indices) {
-	return murmurhash((const char*)indices.data(), indices.size() * sizeof(uint32_t), 0);
+uint64_t hash_index_buffer(std::vector<uint32_t>& indices) {
+	uint32_t murmur = murmurhash((const char*)indices.data(), indices.size() * sizeof(uint32_t), 0);
+	//murmur is 32 bits, we encode index count on the other 32 bits
+	uint64_t size = indices.size() << 32;
+	uint64_t merged = size | uint64_t(murmur);
+	return merged;
 }
 EntityID VulkanEngine::load_assimp_mesh(aiMesh* mesh)
 {
@@ -3328,24 +3318,24 @@ EntityID VulkanEngine::load_assimp_mesh(aiMesh* mesh)
 	}
 
 	//hash the indices to find duplicates already loaded
-	uint32_t hash;
+	
 	{
 		ZoneScopedNC("Hash index buffer", tracy::Color::Blue);
-		hash = hash_index_buffer(newMesh.indices);
+		newMesh.index_hash = hash_index_buffer(newMesh.indices);
 
 	}
 
 	bool bUploadIndices = false;
 
 	//search in cache
-	auto cached = indexCache.IndexBuffers.find(hash);
+	auto cached = indexCache.IndexBuffers.find(newMesh.index_hash);
 	if (cached == indexCache.IndexBuffers.end()) {
 		bUploadIndices = true;
 	}
 	else {
 		//std::cout << "index cache hit" << std::endl;
 
-		newMesh.indexBuffer = indexCache.IndexBuffers[hash];
+		newMesh.indexBuffer = indexCache.IndexBuffers[newMesh.index_hash];
 	}
 
 
@@ -3387,14 +3377,14 @@ EntityID VulkanEngine::load_assimp_mesh(aiMesh* mesh)
 		vmaUnmapMemory(allocator, index_staging_allocation.allocation);
 		
 
-		createBuffer(indexBufferSize, /*vk::BufferUsageFlagBits::eTransferSrc | */vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress, vk::MemoryPropertyFlagBits::eDeviceLocal, VMA_MEMORY_USAGE_GPU_ONLY, newMesh.indexBuffer);
+		createBuffer(indexBufferSize, vk::BufferUsageFlagBits::eTransferSrc | vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress, vk::MemoryPropertyFlagBits::eDeviceLocal, VMA_MEMORY_USAGE_GPU_ONLY, newMesh.indexBuffer);
 
 		copyBuffer(index_staging_allocation.buffer, newMesh.indexBuffer.buffer, indexBufferSize);
 
 		vmaDestroyBuffer(allocator, index_staging_allocation.buffer, index_staging_allocation.allocation);
 
 		//upload to cache
-		indexCache.IndexBuffers[hash] = newMesh.indexBuffer;
+		indexCache.IndexBuffers[newMesh.index_hash] = newMesh.indexBuffer;
 	}
 	
 	EntityID id = createResource(mesh->mName.C_Str(), newMesh);
@@ -3669,34 +3659,54 @@ bool VulkanEngine::load_scene(const char* db_path, const char* scene_path, glm::
 
 	size_t total_index_size = 0;
 	//merge all index buffers into a bigass one
-	render_registry.view<MeshResource>().each([&](MeshResource& mesh) {
-
-		total_index_size += mesh.indices.size() * sizeof(mesh.indices[0]);
-
-	});
-
-	if(false)
+	vk::CommandBuffer commandBuffer = beginSingleTimeCommands();
+	for (auto [k, v] : indexCache.IndexBuffers)
 	{
-		size_t upload_offset = 0;
-		AllocatedBuffer megabuffer;
+		indexCache.IndexOffsets[k] = total_index_size;
+		//last 32 bits of the key hash is size
+		total_index_size += k >> 32;
+	}
 
-		createBuffer(total_index_size, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress, vk::MemoryPropertyFlagBits::eDeviceLocal, VMA_MEMORY_USAGE_GPU_ONLY, megabuffer);
+	//render_registry.view<MeshResource>().each([&](MeshResource& mesh) {
+	//
+	//	total_index_size += mesh.indices.size() * sizeof(mesh.indices[0]);
+	//
+	//});
 
+	if(true)
+	{
+		//size_t upload_offset = 0;
+		//size_t index_offset = 0;		
 
+		createBuffer(total_index_size * sizeof(uint32_t), vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress, vk::MemoryPropertyFlagBits::eDeviceLocal, VMA_MEMORY_USAGE_GPU_ONLY, megabuffer);
 
-		vk::CommandBuffer commandBuffer = beginSingleTimeCommands();
-		render_registry.view<MeshResource>().each([&](MeshResource& mesh) {
-
-			mesh.index_offset = upload_offset;
+		for (auto [k, v] : indexCache.IndexBuffers)
+		{
 			
+			//last 32 bits of the key hash is size
+			size_t index_count= k >> 32;
+
 			vk::BufferCopy copyRegion;
 			copyRegion.srcOffset = 0; // Optional
-			copyRegion.dstOffset = upload_offset; // Optional
-			copyRegion.size = mesh.indices.size();
-			commandBuffer.copyBuffer(mesh.indexBuffer.buffer, megabuffer.buffer, 1, &copyRegion);
+			copyRegion.dstOffset = indexCache.IndexOffsets[k] * sizeof(uint32_t); // Optional
+			copyRegion.size = index_count * sizeof(uint32_t);
+			commandBuffer.copyBuffer(v.buffer, megabuffer.buffer, 1, &copyRegion);
+		}
 
+		render_registry.view<MeshResource>().each([&](MeshResource& mesh) {
+
+			mesh.index_offset = indexCache.IndexOffsets[mesh.index_hash];//index_offset;
 			mesh.indexBuffer = megabuffer;
-			upload_offset += copyRegion.size;
+			
+			//vk::BufferCopy copyRegion;
+			//copyRegion.srcOffset = 0; // Optional
+			//copyRegion.dstOffset = index_offset * sizeof(mesh.indices[0]); // Optional
+			//copyRegion.size = mesh.indices.size() * sizeof(mesh.indices[0]);
+			//commandBuffer.copyBuffer(mesh.indexBuffer.buffer, megabuffer.buffer, 1, &copyRegion);
+			//
+			//index_offset += mesh.indices.size();
+			//mesh.indexBuffer = megabuffer;
+			//upload_offset += copyRegion.size;
 
 		
 		});

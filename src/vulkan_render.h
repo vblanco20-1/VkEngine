@@ -72,12 +72,14 @@ struct GpuObjectData {
 
 struct IndexBufferCache {
 	//hash is the hash for the indices themselves
-	std::unordered_map<uint32_t, AllocatedBuffer> IndexBuffers;
+	std::unordered_map<uint64_t, AllocatedBuffer> IndexBuffers;
+	std::unordered_map<uint64_t, size_t> IndexOffsets;
 };
 
 class TextureLoader;
 class VulkanEngine {
 public:
+	AllocatedBuffer megabuffer;
 	GpuCrashTracker gpuCrashTracker;
 	class TextureBindlessCache* texCache;
 

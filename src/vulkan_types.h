@@ -132,6 +132,7 @@ struct MeshResource : public ResourceComponent {
 
 	size_t index_offset = 0;
 	size_t vertex_offset = 0;
+	size_t index_hash;
 
 	AccelerationStructure accelStructure;
 };
