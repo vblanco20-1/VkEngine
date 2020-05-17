@@ -15,6 +15,7 @@
 #include "engine_ui.h"
 #include "shader_processor.h"
 #include "framegraph.h"
+#include "vulkan/vulkan.hpp"
 
 struct InputComponent {
 	glm::vec3 movement_input;
@@ -188,8 +189,25 @@ int main(int argc, char *argv[])
 		}
 		if (!bDontRender) {
 			
+			try
+			{
+				vkGlobals.draw_frame();
+			}
+			catch(vk::DeviceLostError& e){
 
-			vkGlobals.draw_frame();
+				
+				uint32_t checkpointCount = 0;
+				vkGlobals.extensionDispatcher.vkGetQueueCheckpointDataNV(vkGlobals.graphicsQueue, &checkpointCount, nullptr);
+				//
+				//
+				std::vector<VkCheckpointDataNV> datas;
+				datas.resize(checkpointCount);
+				vkGlobals.extensionDispatcher.vkGetQueueCheckpointDataNV(vkGlobals.graphicsQueue, &checkpointCount, datas.data());
+				Sleep(3000);
+
+				// Terminate on failure
+				exit(1);
+			}
 		}
 		
 	}

@@ -506,8 +506,9 @@ bool FrameGraph::build( VulkanEngine* engine)
 	sampler.maxLod = 1.0f;
 	sampler.borderColor = vk::BorderColor::eFloatOpaqueWhite;
 
-	VkSampler mainSampler = engine->device.createSampler(sampler);
-
+	VkSamplerCreateInfo samplerInfo = sampler;
+	VkSampler mainSampler;// = engine->device.createSampler(sampler);
+	vkCreateSampler(engine->device, &samplerInfo, nullptr, &mainSampler);
 	//build images
 	for (auto [n, atch] : graph_attachments)
 	{

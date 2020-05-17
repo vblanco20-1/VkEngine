@@ -19,6 +19,7 @@ add_library(vma INTERFACE)
 
 find_package(Vulkan REQUIRED) 
 
+add_subdirectory(nv_aftermath)
 add_subdirectory(json)
 add_subdirectory(sqlite)
 add_subdirectory(cppcoro)

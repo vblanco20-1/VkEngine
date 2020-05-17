@@ -300,12 +300,22 @@ void VulkanEngine::init_vulkan()
 		createInfo.enabledLayerCount = 0;
 	}
 	
+	VkValidationFeatureEnableEXT enables[] =
+	{ VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT };
+	VkValidationFeaturesEXT features = {};
+	features.sType = VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT;
+	features.enabledValidationFeatureCount = 1;
+	features.pEnabledValidationFeatures = enables;
 	
+	createInfo.pNext = &features;
+
 	instance = vk::createInstance(createInfo);
 	if (enableValidationLayers)
 	{
 		init_vulkan_debug();
 	}
+
+	gpuCrashTracker.Initialize();
 
 	VkSurfaceKHR vksurface;
 	if (!SDL_Vulkan_CreateSurface(sdl_get_window(), instance, &vksurface)) {
@@ -2023,12 +2033,14 @@ void VulkanEngine::render_shadow_pass(const vk::CommandBuffer& cmd, int height, 
 		const AllocatedBuffer* indexBuffer;
 		uint32_t object_idx;
 		uint32_t index_count;
+		uint32_t index_offset;
 	};
 
 	struct InstancedDraw {
 		uint32_t first_index;
 		uint32_t instance_count;
 		uint32_t index_count;
+		uint32_t index_offset;
 		vk::Buffer index_buffer;
 	};
 	eng_stats.shadow_drawcalls = 0;
@@ -2081,7 +2093,7 @@ void VulkanEngine::render_shadow_pass(const vk::CommandBuffer& cmd, int height, 
 		unit.object_idx = renderable.object_idx;
 		unit.indexBuffer = &mesh.indexBuffer;
 		unit.index_count = mesh.indices.size();
-
+		unit.index_offset = mesh.index_offset;
 		drawUnits.push_back(unit);
 		});
 
@@ -2103,11 +2115,12 @@ void VulkanEngine::render_shadow_pass(const vk::CommandBuffer& cmd, int height, 
 	}
 	unmapBuffer(shadow_instance_buffers[currentFrameIndex]);
 
+	int idx_ofs = -1;
 	InstancedDraw pendingDraw;
 	for (int i = 0; i < drawUnits.size(); i++)
 	{
 		auto& unit = drawUnits[i];
-		if (LastIndex != unit.indexBuffer->buffer) {
+		if (LastIndex != unit.indexBuffer->buffer && idx_ofs != unit.index_offset) {
 			if (i != 0) {
 				instancedDraws.push_back(pendingDraw);
 			}
@@ -2116,6 +2129,7 @@ void VulkanEngine::render_shadow_pass(const vk::CommandBuffer& cmd, int height, 
 			pendingDraw.index_buffer = unit.indexBuffer->buffer;
 			pendingDraw.index_count = unit.index_count;
 			pendingDraw.instance_count = 1;
+			pendingDraw.index_offset = unit.index_offset;
 			LastIndex = unit.indexBuffer->buffer;
 		}
 		else {
@@ -2130,8 +2144,11 @@ void VulkanEngine::render_shadow_pass(const vk::CommandBuffer& cmd, int height, 
 	int draw_idx = 0;
 #if 1
 	for (auto& draw : instancedDraws) {
-		cmd.bindIndexBuffer(draw.index_buffer, 0, vk::IndexType::eUint32);
-		cmd.drawIndexed(draw.index_count, draw.instance_count,0 , 0, draw.first_index);
+		//cmd.bindIndexBuffer(draw.index_buffer, 0, vk::IndexType::eUint32);
+
+
+		//cmd.setCheckpointNV("Draw Shadow", extensionDispatcher);
+		//cmd.drawIndexed(draw.index_count, draw.instance_count, draw.index_offset, 0, draw.first_index);
 		eng_stats.drawcalls++;
 		eng_stats.shadow_drawcalls++;
 	}
@@ -2573,7 +2590,7 @@ void VulkanEngine::RenderMainPass(const vk::CommandBuffer& cmd)
 			newDrawUnit.object_idx = renderable.object_idx;
 			newDrawUnit.pipeline = pipeline.pipeline;
 			newDrawUnit.effect = pipeline.effect;
-
+			newDrawUnit.index_offset = mesh.index_offset;
 			drawables.push_back(newDrawUnit);
 		}		
 	});
@@ -2677,8 +2694,8 @@ void VulkanEngine::RenderMainPass(const vk::CommandBuffer& cmd)
 		//cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, piplayout, 2, 1, &unit.material_set, 0, nullptr);
 
 		
-
-		cmd.drawIndexed(static_cast<uint32_t>(unit.index_count), 1, 0, 0, unit.object_idx);
+		//cmd.setCheckpointNV("Draw Mainpass", extensionDispatcher);
+		//cmd.drawIndexed(static_cast<uint32_t>(unit.index_count), 1,unit.index_offset, 0, unit.object_idx);
 		eng_stats.drawcalls++;
 
 		first_render = false;
@@ -2734,7 +2751,7 @@ void VulkanEngine::RenderGBufferPass(const vk::CommandBuffer& cmd)
 			newDrawUnit.object_idx = renderable.object_idx;
 			newDrawUnit.pipeline = gbufferPipeline;//pipeline.pipeline;
 			newDrawUnit.effect = effect;
-
+			newDrawUnit.index_offset = mesh.index_offset;
 			drawables.push_back(newDrawUnit);
 		}
 		});
@@ -2746,6 +2763,10 @@ void VulkanEngine::RenderGBufferPass(const vk::CommandBuffer& cmd)
 	
 	eng_stats.gbuffer_drawcalls = 0;
 	for (const DrawUnit& unit : drawables) {
+		if (unit.object_idx == 310)
+		{
+			cmd.setCheckpointNV("Crashtastic", extensionDispatcher);
+		}
 
 		const bool bShouldBindPipeline = unit.pipeline != last_pipeline;
 
@@ -2793,7 +2814,19 @@ void VulkanEngine::RenderGBufferPass(const vk::CommandBuffer& cmd)
 			last_index_buffer = unit.indexBuffer;
 		}		
 
-		cmd.drawIndexed(static_cast<uint32_t>(unit.index_count), 1, 0, 0, unit.object_idx);
+		std::string debug_str;
+		debug_str = "DrawPrepass";
+
+		
+
+		//DrawUnit* alc=	new DrawUnit();
+		//alc = unit;
+		//memcpy(alc, &unit, sizeof(DrawUnit));
+
+		//cmd.setCheckpointNV("Draw Prepass", extensionDispatcher);
+		//cmd.setCheckpointNV(alc, extensionDispatcher);
+		//
+		//cmd.drawIndexed(static_cast<uint32_t>(unit.index_count), 1, unit.index_offset, 0, unit.object_idx);
 		eng_stats.drawcalls++;
 		eng_stats.gbuffer_drawcalls++;
 		first_render = false;
@@ -2950,6 +2983,12 @@ void VulkanEngine::update_uniform_buffer(uint32_t currentImage)
 			renderable.object_idx = copyidx;
 			copyidx++;
 			});
+
+		for (int i = 0; i < 10; i++)
+		{
+
+			object_matrices.push_back(object_matrices[0]);
+		}
 	}
 
 	if (copyidx > 0) {
@@ -3348,7 +3387,7 @@ EntityID VulkanEngine::load_assimp_mesh(aiMesh* mesh)
 		vmaUnmapMemory(allocator, index_staging_allocation.allocation);
 		
 
-		createBuffer(indexBufferSize, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress, vk::MemoryPropertyFlagBits::eDeviceLocal, VMA_MEMORY_USAGE_GPU_ONLY, newMesh.indexBuffer);
+		createBuffer(indexBufferSize, /*vk::BufferUsageFlagBits::eTransferSrc | */vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress, vk::MemoryPropertyFlagBits::eDeviceLocal, VMA_MEMORY_USAGE_GPU_ONLY, newMesh.indexBuffer);
 
 		copyBuffer(index_staging_allocation.buffer, newMesh.indexBuffer.buffer, indexBufferSize);
 
@@ -3627,6 +3666,44 @@ bool VulkanEngine::load_scene(const char* db_path, const char* scene_path, glm::
 			loaded_meshes.push_back(load_assimp_mesh(scene->mMeshes[i]));
 		}
 	}
+
+	size_t total_index_size = 0;
+	//merge all index buffers into a bigass one
+	render_registry.view<MeshResource>().each([&](MeshResource& mesh) {
+
+		total_index_size += mesh.indices.size() * sizeof(mesh.indices[0]);
+
+	});
+
+	if(false)
+	{
+		size_t upload_offset = 0;
+		AllocatedBuffer megabuffer;
+
+		createBuffer(total_index_size, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress, vk::MemoryPropertyFlagBits::eDeviceLocal, VMA_MEMORY_USAGE_GPU_ONLY, megabuffer);
+
+
+
+		vk::CommandBuffer commandBuffer = beginSingleTimeCommands();
+		render_registry.view<MeshResource>().each([&](MeshResource& mesh) {
+
+			mesh.index_offset = upload_offset;
+			
+			vk::BufferCopy copyRegion;
+			copyRegion.srcOffset = 0; // Optional
+			copyRegion.dstOffset = upload_offset; // Optional
+			copyRegion.size = mesh.indices.size();
+			commandBuffer.copyBuffer(mesh.indexBuffer.buffer, megabuffer.buffer, 1, &copyRegion);
+
+			mesh.indexBuffer = megabuffer;
+			upload_offset += copyRegion.size;
+
+		
+		});
+
+		endSingleTimeCommands(commandBuffer);
+	}
+
 	{
 		ZoneScopedNC("Descriptor creation", tracy::Color::Magenta);
 

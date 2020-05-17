@@ -130,6 +130,9 @@ struct MeshResource : public ResourceComponent {
 	std::vector<Vertex> vertices;
 	std::vector<uint32_t> indices;
 
+	size_t index_offset = 0;
+	size_t vertex_offset = 0;
+
 	AccelerationStructure accelStructure;
 };
 
@@ -176,13 +179,15 @@ struct RenderMeshComponent {
 };
 
 struct DrawUnit {
+	uint32_t index_count;
+	uint32_t object_idx;
+	uint32_t index_offset;
 	vk::Pipeline pipeline;
 	vk::DescriptorSet material_set;
 	vk::Buffer vertexBuffer;
 	vk::Buffer indexBuffer;
 	ShaderEffect* effect;
-	uint32_t index_count;
-	uint32_t object_idx;
+
 };
 
 struct TransformComponent {

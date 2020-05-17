@@ -7,6 +7,7 @@
 #include "player_camera.h"
 #include "framegraph.h"
 #include "frame_resource.h"
+#include "NsightAftermathGpuCrashTracker.h"
 
 #ifndef ASSET_PATH
 	//#define ASSET_PATH errorpath
@@ -17,7 +18,7 @@
 
 //#define RTX_ON
 
-constexpr int MAX_FRAMES_IN_FLIGHT =2;
+constexpr int MAX_FRAMES_IN_FLIGHT =1;
 constexpr int MAX_UNIFORM_BUFFER = 5000;
 constexpr int SHADOWMAP_DIM = 2048;
 
@@ -46,7 +47,8 @@ const std::vector<const char*> deviceExtensions = {
 	VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME,
 	VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
 	#endif
-
+	VK_NV_DEVICE_DIAGNOSTIC_CHECKPOINTS_EXTENSION_NAME,
+	//VK_NV_DEVICE_DIAGNOSTICS_CONFIG_EXTENSION_NAME
 	//VK_NV_GLSL_SHADER_EXTENSION_NAME
 };
 
@@ -76,7 +78,7 @@ struct IndexBufferCache {
 class TextureLoader;
 class VulkanEngine {
 public:
-
+	GpuCrashTracker gpuCrashTracker;
 	class TextureBindlessCache* texCache;
 
 	ExtensionFeatures features{};

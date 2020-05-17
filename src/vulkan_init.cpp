@@ -157,6 +157,16 @@ void VulkanEngine::create_device()
 	float fprio = 1.0f;
 	queueCreateInfo.pQueuePriorities = &fprio;
 
+	auto& diagnosticsConfig = vk::DeviceDiagnosticsConfigCreateInfoNV{};
+
+	
+	vk::DeviceDiagnosticsConfigFlagsNV aftermathFlags =
+		vk::DeviceDiagnosticsConfigFlagBitsNV::eEnableResourceTracking |
+		vk::DeviceDiagnosticsConfigFlagBitsNV::eEnableAutomaticCheckpoints |
+		vk::DeviceDiagnosticsConfigFlagBitsNV::eEnableShaderDebugInfo;
+	
+	diagnosticsConfig.setFlags(aftermathFlags);
+
 	vk::DeviceQueueCreateInfo presentQueueCreateInfo;
 	presentQueueCreateInfo.queueFamilyIndex = presentFamilyIndex;
 	presentQueueCreateInfo.queueCount = 1;
@@ -166,11 +176,14 @@ void VulkanEngine::create_device()
 	vk::PhysicalDeviceFeatures deviceFeatures;
 	deviceFeatures.samplerAnisotropy = true;
 	deviceFeatures.shaderSampledImageArrayDynamicIndexing = true;
+	deviceFeatures.fragmentStoresAndAtomics = true;
+	deviceFeatures.vertexPipelineStoresAndAtomics = true;
+	deviceFeatures.shaderInt64 = true;
 	//deviceFeatures.
 
 	VkPhysicalDeviceDescriptorIndexingFeatures descriptor_indexing_features{};
 	descriptor_indexing_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
-
+	descriptor_indexing_features.pNext = nullptr;//&diagnosticsConfig;
 	// Enable non-uniform indexing
 	descriptor_indexing_features.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
 	descriptor_indexing_features.runtimeDescriptorArray = VK_TRUE;
@@ -199,6 +212,12 @@ void VulkanEngine::create_device()
 	vk12features.shaderSampledImageArrayNonUniformIndexing = true;
 	vk12features.runtimeDescriptorArray = true;
 	vk12features.imagelessFramebuffer = true;
+	vk12features.descriptorBindingVariableDescriptorCount = true;
+	vk12features.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
+	vk12features.runtimeDescriptorArray = VK_TRUE;
+	vk12features.descriptorBindingVariableDescriptorCount = VK_TRUE;
+	vk12features.descriptorBindingPartiallyBound = VK_TRUE;
+	
 #ifdef RTX_ON
 	vk12features.pNext = &rayFeatures;
 #else
@@ -208,7 +227,7 @@ void VulkanEngine::create_device()
 	vk::PhysicalDeviceFeatures2 features2;
 	features2.features = deviceFeatures;
 	features2.pNext =  &vk12features;
-
+	
 
 	//deviceFeatures.
 	//--- DEVICE CREATE
