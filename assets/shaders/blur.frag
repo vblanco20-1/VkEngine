@@ -146,7 +146,7 @@ void main()
    }
 #endif
 
-
+#if 0
   float blurRange = floor(KERNEL_RADIUS);
   if(blurRange != 0){
 for (float x = -blurRange; x < blurRange; x++) 
@@ -163,5 +163,7 @@ for (float x = -blurRange; x < blurRange; x++)
   
 
   out_Color = clamp((c_total/w_total),0.f,1.f);
+  #endif
+  out_Color =center_c.r;
 }
 #endif

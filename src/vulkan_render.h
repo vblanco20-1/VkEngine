@@ -141,6 +141,9 @@ public:
 	std::vector < AllocatedBuffer>  gbuffer_instance_buffers;
 	std::vector < AllocatedBuffer>  gbuffer_indirect_buffers;
 
+	std::vector < AllocatedBuffer> mainpass_instance_buffers;
+	std::vector < AllocatedBuffer> mainpass_indirect_buffers;
+
 	std::vector < AllocatedBuffer> sceneParamBuffers;
 	//std::vector<vk::DeviceMemory> uniformBuffersMemory;
 
