@@ -1664,6 +1664,7 @@ void VulkanEngine::create_uniform_buffers()
 	sceneParamBuffers.resize(swapChainImages.size());
 	object_buffers.resize(swapChainImages.size());
 	shadow_instance_buffers.resize(swapChainImages.size());
+	shadow_indirect_buffers.resize(swapChainImages.size());
 	//uniformBuffersMemory.resize(swapChainImages.size());
 
 	for (size_t i = 0; i < swapChainImages.size(); i++) {
@@ -1684,6 +1685,9 @@ void VulkanEngine::create_uniform_buffers()
 
 
 		createBuffer(sizeof(int32_t) * 10000, vk::BufferUsageFlagBits::eStorageBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_CPU_ONLY, shadow_instance_buffers[i]);
+
+		createBuffer(sizeof(VkDrawIndexedIndirectCommand) * 10000, vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eIndirectBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_CPU_ONLY, shadow_indirect_buffers[i]);
+
 
 		//shadow instance id buffer
 		//createBuffer(sizeof(int32_t) * 10000, vk::BufferUsageFlagBits::eStorageBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_CPU_TO_GPU, shadow_instance_buffers[i]);
@@ -2150,15 +2154,40 @@ void VulkanEngine::render_shadow_pass(const vk::CommandBuffer& cmd, int height, 
 	int binds = 0;
 	int draw_idx = 0;
 #if 1
-	for (auto& draw : instancedDraws) {
-		cmd.bindIndexBuffer(draw.index_buffer, 0, vk::IndexType::eUint32);
+	cmd.bindIndexBuffer(megabuffer.buffer, 0, vk::IndexType::eUint32);
 
+	//convert to indirect
+	void* indirect = mapBuffer(shadow_indirect_buffers[currentFrameIndex]);
+	{
+		ZoneScopedN("Indirect Upload")
+			VkDrawIndexedIndirectCommand* commands = (VkDrawIndexedIndirectCommand*)indirect;
 
-		//cmd.setCheckpointNV("Draw Shadow", extensionDispatcher);
-		cmd.drawIndexed(draw.index_count, draw.instance_count, draw.index_offset, 0, draw.first_index);
-		eng_stats.drawcalls++;
-		eng_stats.shadow_drawcalls++;
+		for (int i = 0; i < instancedDraws.size(); i++) {
+
+			auto draw = instancedDraws[i];
+
+			commands[i].indexCount = draw.index_count;
+			commands[i].instanceCount= draw.instance_count;
+			commands[i].firstIndex= draw.index_offset;
+			commands[i].vertexOffset=0;
+			commands[i].firstInstance= draw.first_index;
+
+			//commands[i]. = drawUnits[i].object_idx;
+		}
 	}
+	unmapBuffer(shadow_indirect_buffers[currentFrameIndex]);
+
+	eng_stats.drawcalls++;
+	eng_stats.shadow_drawcalls++;
+	cmd.drawIndexedIndirect(shadow_indirect_buffers[currentFrameIndex].buffer, vk::DeviceSize(0), (uint32_t)instancedDraws.size(), sizeof(VkDrawIndexedIndirectCommand));
+	//for (auto& draw : instancedDraws) {		
+	//
+	//
+	//	//cmd.setCheckpointNV("Draw Shadow", extensionDispatcher);
+	//	cmd.drawIndexed(draw.index_count, draw.instance_count, draw.index_offset, 0, draw.first_index);
+	//	eng_stats.drawcalls++;
+	//	eng_stats.shadow_drawcalls++;
+	//}
 #else 
 	for (auto& unit : drawUnits)
 	{

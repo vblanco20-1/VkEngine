@@ -179,6 +179,8 @@ void VulkanEngine::create_device()
 	deviceFeatures.fragmentStoresAndAtomics = true;
 	deviceFeatures.vertexPipelineStoresAndAtomics = true;
 	deviceFeatures.shaderInt64 = true;
+	deviceFeatures.multiDrawIndirect = true;
+	deviceFeatures.drawIndirectFirstInstance = true;
 	//deviceFeatures.
 
 	VkPhysicalDeviceDescriptorIndexingFeatures descriptor_indexing_features{};
