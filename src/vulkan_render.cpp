@@ -1665,6 +1665,9 @@ void VulkanEngine::create_uniform_buffers()
 	object_buffers.resize(swapChainImages.size());
 	shadow_instance_buffers.resize(swapChainImages.size());
 	shadow_indirect_buffers.resize(swapChainImages.size());
+
+	gbuffer_instance_buffers.resize(swapChainImages.size());
+	gbuffer_indirect_buffers.resize(swapChainImages.size());
 	//uniformBuffersMemory.resize(swapChainImages.size());
 
 	for (size_t i = 0; i < swapChainImages.size(); i++) {
@@ -1687,6 +1690,10 @@ void VulkanEngine::create_uniform_buffers()
 		createBuffer(sizeof(int32_t) * 10000, vk::BufferUsageFlagBits::eStorageBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_CPU_ONLY, shadow_instance_buffers[i]);
 
 		createBuffer(sizeof(VkDrawIndexedIndirectCommand) * 10000, vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eIndirectBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_CPU_ONLY, shadow_indirect_buffers[i]);
+
+		createBuffer(sizeof(int32_t) * 10000, vk::BufferUsageFlagBits::eStorageBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_CPU_ONLY, gbuffer_instance_buffers[i]);
+
+		createBuffer(sizeof(VkDrawIndexedIndirectCommand) * 10000, vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eIndirectBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_CPU_ONLY, gbuffer_indirect_buffers[i]);
 
 
 		//shadow instance id buffer
@@ -2796,13 +2803,40 @@ void VulkanEngine::RenderGBufferPass(const vk::CommandBuffer& cmd)
 		return a.vertexBuffer < b.vertexBuffer;
 		});
 
+
+	//convert to indirect
+	void* indirect = mapBuffer(gbuffer_indirect_buffers[currentFrameIndex]);
+	{
+		ZoneScopedN("Indirect Upload")
+			VkDrawIndexedIndirectCommand* commands = (VkDrawIndexedIndirectCommand*)indirect;
+
+		for (int i = 0; i < drawables.size(); i++) {
+
+			auto draw = drawables[i];
+			commands[i].indexCount = draw.index_count;
+			commands[i].instanceCount = 1;
+			commands[i].firstIndex = draw.index_offset;
+			commands[i].vertexOffset = 0;
+			commands[i].firstInstance = draw.object_idx;
+
+			//commands[i]. = drawUnits[i].object_idx;
+		}
+	}
+	unmapBuffer(gbuffer_indirect_buffers[currentFrameIndex]);
+
+	//eng_stats.drawcalls++;
+	//eng_stats.shadow_drawcalls++;
+
+
 	
 	eng_stats.gbuffer_drawcalls = 0;
-	for (const DrawUnit& unit : drawables) {
+	//for (const DrawUnit& unit : drawables) {
+	//
+	//	const bool bShouldBindPipeline = unit.pipeline != last_pipeline;
 
-		const bool bShouldBindPipeline = unit.pipeline != last_pipeline;
-
-		if (bShouldBindPipeline) {
+		if (true)//bShouldBindPipeline) 
+		{
+			const DrawUnit& unit = drawables[0];
 			cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, unit.pipeline);
 
 			auto pass = render_graph.get_pass("GBuffer");
@@ -2839,19 +2873,22 @@ void VulkanEngine::RenderGBufferPass(const vk::CommandBuffer& cmd)
 			build_and_bind_descriptors(setBuilder, 0, cmd);
 		}
 
-		if (last_index_buffer != unit.indexBuffer) {
+		//if (last_index_buffer != unit.indexBuffer) {
+		{
+		cmd.bindIndexBuffer(megabuffer.buffer, 0, vk::IndexType::eUint32);
+		//	cmd.bindIndexBuffer(unit.indexBuffer, 0, vk::IndexType::eUint32);
 
-			cmd.bindIndexBuffer(unit.indexBuffer, 0, vk::IndexType::eUint32);
-
-			last_index_buffer = unit.indexBuffer;
+		//	last_index_buffer = unit.indexBuffer;
 		}		
 
+		cmd.drawIndexedIndirect(gbuffer_indirect_buffers[currentFrameIndex].buffer, vk::DeviceSize(0), (uint32_t)drawables.size(), sizeof(VkDrawIndexedIndirectCommand));
+
 		
-		cmd.drawIndexed(static_cast<uint32_t>(unit.index_count), 1, unit.index_offset, 0, unit.object_idx);
+		//cmd.drawIndexed(static_cast<uint32_t>(unit.index_count), 1, unit.index_offset, 0, unit.object_idx);
 		eng_stats.drawcalls++;
 		eng_stats.gbuffer_drawcalls++;
 		first_render = false;
-	}
+	//}
 }
 #pragma intrinsic(__movsq)
 //std::vector<UniformBufferObject> StagingCPUUBOArray;

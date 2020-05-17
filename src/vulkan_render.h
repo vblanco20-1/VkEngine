@@ -138,6 +138,9 @@ public:
 	std::vector < AllocatedBuffer>  shadow_instance_buffers;
 	std::vector < AllocatedBuffer>  shadow_indirect_buffers;
 
+	std::vector < AllocatedBuffer>  gbuffer_instance_buffers;
+	std::vector < AllocatedBuffer>  gbuffer_indirect_buffers;
+
 	std::vector < AllocatedBuffer> sceneParamBuffers;
 	//std::vector<vk::DeviceMemory> uniformBuffersMemory;
 
