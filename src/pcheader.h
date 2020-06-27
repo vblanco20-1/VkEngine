@@ -3,7 +3,7 @@
 //disable conversion related annoying warnings
 //#pragma warning( disable : 4018 4244 4267 4101 4838 4305)
 #define WIN32_LEAN_AND_MEAN
-#define VMA_BUFFER_DEVICE_ADDRESS
+#define VMA_BUFFER_DEVICE_ADDRESS 1
 #include <vk_mem_alloc.h>  //vk_mem_alloc.h"
 
 #define VK_ENABLE_BETA_EXTENSIONS
@@ -31,7 +31,7 @@
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
-
+ 
 #include <chrono>
 
 #define TRACY_ENABLE

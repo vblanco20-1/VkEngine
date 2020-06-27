@@ -157,15 +157,15 @@ void VulkanEngine::create_device()
 	float fprio = 1.0f;
 	queueCreateInfo.pQueuePriorities = &fprio;
 
-	auto& diagnosticsConfig = vk::DeviceDiagnosticsConfigCreateInfoNV{};
-
-	
-	vk::DeviceDiagnosticsConfigFlagsNV aftermathFlags =
-		vk::DeviceDiagnosticsConfigFlagBitsNV::eEnableResourceTracking |
-		vk::DeviceDiagnosticsConfigFlagBitsNV::eEnableAutomaticCheckpoints |
-		vk::DeviceDiagnosticsConfigFlagBitsNV::eEnableShaderDebugInfo;
-	
-	diagnosticsConfig.setFlags(aftermathFlags);
+	//auto& diagnosticsConfig = vk::DeviceDiagnosticsConfigCreateInfoNV{};
+	//
+	//
+	//vk::DeviceDiagnosticsConfigFlagsNV aftermathFlags =
+	//	vk::DeviceDiagnosticsConfigFlagBitsNV::eEnableResourceTracking |
+	//	vk::DeviceDiagnosticsConfigFlagBitsNV::eEnableAutomaticCheckpoints |
+	//	vk::DeviceDiagnosticsConfigFlagBitsNV::eEnableShaderDebugInfo;
+	//
+	//diagnosticsConfig.setFlags(aftermathFlags);
 
 	vk::DeviceQueueCreateInfo presentQueueCreateInfo;
 	presentQueueCreateInfo.queueFamilyIndex = presentFamilyIndex;
@@ -241,7 +241,7 @@ void VulkanEngine::create_device()
 		std::array<vk::DeviceQueueCreateInfo, 2> queues{ queueCreateInfo,presentQueueCreateInfo };
 		createInfo.pQueueCreateInfos = queues.data();
 		createInfo.queueCreateInfoCount = 1;
-		createInfo.pEnabledFeatures = nullptr;//&&&deviceFeatures;
+		createInfo.pEnabledFeatures = &deviceFeatures;
 		createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
 		createInfo.ppEnabledExtensionNames = deviceExtensions.data();
 		createInfo.pNext = &features2;
@@ -259,7 +259,9 @@ void VulkanEngine::create_device()
 		device = physicalDevice.createDevice(createInfo);
 	}
 
-	
+	std::cout << "device created1 " << std::endl;
+	char d;
+	//std::cin >> d;
 
 	graphicsQueue = device.getQueue(graphicsFamilyIndex, 0);
 	presentQueue = device.getQueue(presentFamilyIndex, 0);

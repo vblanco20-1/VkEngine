@@ -105,7 +105,7 @@ struct TextureResource : public ResourceComponent {
 	AllocatedImage image;
 	vk::ImageView imageView;
 	vk::Sampler textureSampler;
-	int32_t bindlessHandle = -1;
+	uint64_t bindlessHandle = -1;
 };
 
 //cold data for texture

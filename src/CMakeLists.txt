@@ -16,7 +16,7 @@ set(SOURCE_FILES ${PROJ_SOURCES} ${PROJ_HEADERS})
 add_executable(vkEngine ${SOURCE_FILES})
 
 
-#target_precompile_headers(vkEngine PUBLIC pcheader.h)
+target_precompile_headers(vkEngine PUBLIC pcheader.h)
 target_link_libraries(vkEngine  imgui entt glm gli assimp sdl2 vma Vulkan::Vulkan tracy nv_aftermath::nv_aftermath)
 target_link_libraries(vkEngine shader_processor scene_processor)
 set_target_properties(vkEngine PROPERTIES

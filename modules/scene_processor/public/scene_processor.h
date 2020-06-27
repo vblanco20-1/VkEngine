@@ -5,6 +5,8 @@
 
 #include <cppcoro/generator.hpp>
 
+#include <microGUID.hpp>
+
 typedef unsigned char stbi_uc;
 namespace sp {
 	enum class SceneNodeType : uint8_t {
@@ -91,6 +93,7 @@ namespace sp {
 		std::array<float,3> color;
 	};
 	struct DbMesh {
+		guid::BinaryGUID guid;
 		int id;
 		std::string name;
 		char* position_buffer;
@@ -112,6 +115,7 @@ namespace sp {
 		struct TextureAssignement {
 			int texture_slot;
 			std::string texture_name;
+			guid::BinaryGUID guid;
 		};
 		int id;
 		std::string name;
@@ -120,6 +124,7 @@ namespace sp {
 	};
 	struct DbTexture {
 		int id;
+		guid::BinaryGUID guid;
 		std::string name;
 		std::string path;
 		//stbi_uc* stb_pixels	{nullptr};

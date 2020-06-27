@@ -37,8 +37,15 @@ int main(int argc, char *argv[])
 	initialize_sdl();
 
 	VulkanEngine vkGlobals;
+
+	char c;
+	//std::cin >> c;
 	//try {
 		vkGlobals.init_vulkan();
+
+		char b;
+	//	std::cin >> b;
+
 	//}	
 	///catch (std::runtime_error& e)
 	///{
@@ -211,6 +218,10 @@ int main(int argc, char *argv[])
 		}
 		
 	}
+
+	char a;
+	//std::cin >> a;
+
 	_CrtDumpMemoryLeaks();
 	vkGlobals.clear_vulkan();
 	destroy_sdl();

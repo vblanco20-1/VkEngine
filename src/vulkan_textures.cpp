@@ -592,6 +592,7 @@ struct DirectInlineLoad {
 struct BaseTextureLoad {
 	std::string path;
 	std::string name;
+	guid::BinaryGUID guid;
 };
 
 struct LoadStagingBuffer {
@@ -623,24 +624,7 @@ public:
 
 	vk::CommandBuffer get_upload_command_buffer() {
 
-		//if (upload_buffer == vk::CommandBuffer{}) {
-		//	vk::CommandBufferAllocateInfo allocInfo;
-		//	allocInfo.level = vk::CommandBufferLevel::ePrimary;
-		//	allocInfo.commandPool = owner->commandPool;
-		//	allocInfo.commandBufferCount = 1;
-		//
-		//	upload_buffer = owner->device.allocateCommandBuffers(allocInfo)[0];
-		//}
-		//else {
-		//	upload_buffer.reset(vk::CommandBufferResetFlagBits::eReleaseResources);
-		//}
-		//
-		////owner->device.resetCommandPool(owner->commandPool, vk::CommandPoolResetFlagBits::eReleaseResources);
-		//
-		//upload_buffer.begin(vk::CommandBufferBeginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
-		//return upload_buffer;
 
-		
 		vk::CommandBufferAllocateInfo allocInfo;
 		allocInfo.level = vk::CommandBufferLevel::ePrimary;
 		allocInfo.commandPool = owner->transferCommandPool;
@@ -983,6 +967,7 @@ void RealTextureLoader::add_load_from_db(EntityID e ,SceneLoader* loader,DbTextu
 	texresource.x = texture.size_x;
 	texresource.y = texture.size_y;
 	texresource.channels = texture.channels;
+	
 
 
 	owner->createBuffer(image_size, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_UNKNOWN,
@@ -1052,6 +1037,8 @@ void RealTextureLoader::finish_image_batch()
 
 		owner->render_registry.assign<TextureResourceMetadata>(new_entity, metadata);
 
+		owner->loadedTextures[texload.guid] = new_entity;
+
 		load_registry.destroy(e);
 	}
 }
@@ -1060,6 +1047,7 @@ void RealTextureLoader::add_request_from_assimp_db(SceneLoader* loader, aiMateri
 {
 	load_all_textures(loader, scenepath);
 	return;
+#if 0
 
 	aiString texpath;
 	if (material->GetTextureCount(textype))
@@ -1092,7 +1080,7 @@ void RealTextureLoader::add_request_from_assimp_db(SceneLoader* loader, aiMateri
 				BaseTextureLoad bload;
 				bload.path = tx_path;
 				bload.name = txpath;
-
+				bload.guid = pending_load->second.guid;
 				load_registry.assign_or_replace<BaseTextureLoad>(load_id, bload);
 
 				this->add_load_from_db(load_id, loader, pending_load->second);
@@ -1128,6 +1116,7 @@ void RealTextureLoader::add_request_from_assimp_db(SceneLoader* loader, aiMateri
 						BaseTextureLoad bload;
 						bload.path = tx_path;
 						bload.name = txpath;
+						bload.guid = texture.guid;
 
 						load_registry.assign_or_replace<BaseTextureLoad>(load_id, bload);
 
@@ -1142,6 +1131,7 @@ void RealTextureLoader::add_request_from_assimp_db(SceneLoader* loader, aiMateri
 			}
 		}
 	}
+#endif
 }
 
 void RealTextureLoader::load_all_textures(SceneLoader* loader, const std::string& scenepath)
@@ -1171,7 +1161,7 @@ void RealTextureLoader::load_all_textures(SceneLoader* loader, const std::string
 			BaseTextureLoad bload;
 			bload.path = tx_path;
 			bload.name = t.name;
-	
+			bload.guid = t.guid;
 			load_registry.assign_or_replace<BaseTextureLoad>(load_id, bload);
 	
 			this->add_load_from_db(load_id, loader, t);
@@ -1335,6 +1325,6 @@ void TextureBindlessCache::AddToCache(TextureResource& resource, EntityID id)
 	resource.bindlessHandle = image_Ids.size();
 
 	all_images.push_back(newImage);
-	image_Ids.push_back(id);	
+	image_Ids.push_back(id);
 }
 

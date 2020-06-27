@@ -14,6 +14,11 @@ layout(set = 0, binding = 0) uniform UniformBufferObject {
 	vec4 eye;
 } ubo;
 
+layout(set = 0, binding = 1) readonly buffer Lights 
+{
+   vec4 objects[ ];
+} LightData;
+
 layout(set = 1, binding = 1) uniform UniformBufferObject2 {
     mat4 model;
     mat4 view;

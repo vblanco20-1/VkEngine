@@ -7,6 +7,7 @@
 #include "player_camera.h"
 #include "framegraph.h"
 #include "frame_resource.h"
+#include <microGUID.hpp>
 #include "NsightAftermathGpuCrashTracker.h"
 
 #ifndef ASSET_PATH
@@ -47,7 +48,7 @@ const std::vector<const char*> deviceExtensions = {
 	VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME,
 	VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
 	#endif
-	VK_NV_DEVICE_DIAGNOSTIC_CHECKPOINTS_EXTENSION_NAME,
+	//VK_NV_DEVICE_DIAGNOSTIC_CHECKPOINTS_EXTENSION_NAME,
 	//VK_NV_DEVICE_DIAGNOSTICS_CONFIG_EXTENSION_NAME
 	//VK_NV_GLSL_SHADER_EXTENSION_NAME
 };
@@ -199,7 +200,7 @@ public:
 		VmaAllocation depthImageAlloc;
 	} shadowPass;
 
-	struct GBufferPass {
+	struct GBufferPass { 
 		int32_t width, height;
 		VkFramebuffer frameBuffer;
 		FrameBufferAttachment posdepth;
@@ -375,6 +376,9 @@ public:
 	template<typename C>
 	bool doesResourceExist(const char* resource_name);
 	entt::registry render_registry;
+
+
+	std::unordered_map<guid::BinaryGUID, EntityID> loadedTextures;
 
 	std::unordered_map<std::string, EntityID> resourceMap;	
 	std::unordered_map<std::string, EntityID> sceneNodeMap;

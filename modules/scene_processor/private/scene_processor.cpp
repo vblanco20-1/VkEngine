@@ -1,5 +1,6 @@
 #define NOMINMAX
-
+#define MICROGUID_IMPLEMENTATION
+#include <microGUID.hpp>
 
 #include "scene_processor.h"
 #include <sqlite3.h>
@@ -31,7 +32,9 @@ using namespace sp;
 class RealSceneLoader : public  sp::SceneLoader {
 
 public:
-
+	RealSceneLoader() {
+		guidgen.init();
+	}
 	void load_mesh_infos();
 	
 	void add_request_from_assimp(DbMaterial& mat, const aiScene* scene, aiMaterial* material, aiTextureType textype, const std::string& scenepath);
@@ -58,6 +61,8 @@ public:
 
 	std::vector<gli::texture*> gli_delete_queue;
 	std::vector<stbi_uc*> stb_delete_queue;
+
+	guid::GUIDGenerator guidgen;
 };
 
 sp::SceneLoader* sp::SceneLoader::Create()
@@ -92,7 +97,8 @@ CREATE TABLE Meshes(id INT PRIMARY KEY,
 	position_buffer BLOB,
 	normals_buffer BLOB,
 	uv0_buffer BLOB,
-	index_buffer BLOB);
+	index_buffer BLOB,
+	guid BLOB);
 )";
 
 static const char* query_insert_mesh = R"(
@@ -103,16 +109,14 @@ static const char* query_create_texture_table = R"(
 DROP TABLE IF EXISTS Textures;
 CREATE TABLE Textures(
 	id INT , 
-	name TEXT PRIMARY KEY, 
-	size_x INT,
-	size_y INT,	
-	channels INT,
+	name TEXT PRIMARY KEY, 	
 	pixels BLOB,
-	metadata TEXT);
+	metadata TEXT,
+	guid BLOB);
 )";
 
 static const char* query_insert_texture = R"(
-INSERT INTO Textures(id, name,size_x,size_y,channels,pixels,metadata) VALUES (?, ? , ? , ?,?,?,?);
+INSERT INTO Textures(id, name,pixels,metadata, guid) VALUES (?, ? , ? , ?,?);
 )";
 
 static const char* query_create_material_table = R"(
@@ -363,6 +367,10 @@ int insert_textures(sqlite3* db, std::vector<DbTexture>& textures)
 	sqlite3_stmt* res;
 	int rc = sqlite3_prepare_v2(db, query_insert_texture, -1, &res, 0);
 
+	//guid::GUIDGenerator guidgen{};
+
+	//guidgen.init();
+
 	if (rc == SQLITE_OK) {
 		for (int i = 0; i < textures.size(); i++) {
 			const DbTexture& m = textures[i];
@@ -370,20 +378,31 @@ int insert_textures(sqlite3* db, std::vector<DbTexture>& textures)
 			sqlite3_bind_int(res, 1, i);
 			sqlite3_bind_text(res, 2, m.name.c_str(), m.name.size(), SQLITE_TRANSIENT);
 
-			sqlite3_bind_int(res, 3, m.size_x);
-			sqlite3_bind_int(res, 4, m.size_y);
-			sqlite3_bind_int(res, 5, m.channels);
-			sqlite3_bind_blob(res, 6, m.data_raw, m.byte_size, SQLITE_TRANSIENT);
+			//sqlite3_bind_int(res, 3, m.size_x);
+			//sqlite3_bind_int(res, 4, m.size_y);
+			//sqlite3_bind_int(res, 5, m.channels);
+			sqlite3_bind_blob(res, 3, m.data_raw, m.byte_size, SQLITE_TRANSIENT);
+
+
+			guid::BinaryGUID newguid = m.guid;//guidgen.make_binary_guid();
 
 			json metadata;
+
+			metadata["sizex"] = m.size_x;
+			metadata["sizey"] = m.size_y;
+			metadata["channels"] = m.channels;
 
 			metadata["original-path"] = m.path;		
 			metadata["format"] = to_string(vk::Format{ m.vk_format });
 			metadata["format-n"] = m.vk_format;
 			metadata["blob_size"] = m.byte_size;
+			metadata["guid"] = &guid::convert_to_text(newguid).letters[0];
 			std::string mtstring = metadata.dump();
 
-			sqlite3_bind_text(res, 7, mtstring.c_str(), mtstring.size(), SQLITE_TRANSIENT);
+			sqlite3_bind_text(res, 4, mtstring.c_str(), mtstring.size(), SQLITE_TRANSIENT);
+
+
+			sqlite3_bind_blob(res, 5, &newguid.bytes[0], sizeof(guid::BinaryGUID), SQLITE_TRANSIENT);
 
 			rc = sqlite3_step(res);
 
@@ -431,6 +450,18 @@ int insert_materials(sqlite3* db, std::vector<DbMaterial>& materials)
 				json tex;
 				tex["name"] = t.texture_name;
 				tex["slot"] = t.texture_slot;
+				auto textguid = guid::convert_to_text(t.guid);
+
+				//if ( guid::convert_to_binary(textguid) != t.guid)
+				//{
+				//	std::abort();
+				//}
+				//if (guid::convert_to_text(guid::convert_to_binary(textguid)) != textguid)
+				//{
+				//	std::abort();
+				//}
+
+				tex["guid"] = &textguid.letters[0];
 				texList.push_back(tex);
 			}
 
@@ -570,6 +601,7 @@ void RealSceneLoader::add_request_from_assimp(DbMaterial& mat, const aiScene* sc
 		DbMaterial::TextureAssignement assignement;
 		assignement.texture_name = texname;
 		assignement.texture_slot = textype;
+		//assignement.guid = 
 		mat.textures.push_back(assignement);
 	}
 }
@@ -645,10 +677,13 @@ int RealSceneLoader::transform_scene(const char* scene_path, const SceneProcessC
 	
 
 
+	std::unordered_map<std::string, guid::BinaryGUID> textureguids;
 	if (config.bLoadTextures)
 	{
 		std::string scenepath = sc_path.parent_path().string();
 		std::unordered_map<std::string, DbTexture> texturemap;
+		
+		//std::unordered_map<std::string, DbTexture> texturemap;
 		for (int i = 0; i < scene->mNumMaterials; i++) {
 			add_request_from_assimp(texturemap, scene, scene->mMaterials[i], aiTextureType_DIFFUSE, scenepath);
 			add_request_from_assimp(texturemap, scene, scene->mMaterials[i], aiTextureType_NORMALS, scenepath);
@@ -664,9 +699,14 @@ int RealSceneLoader::transform_scene(const char* scene_path, const SceneProcessC
 		std::vector<DbTexture> textures;
 		textures.reserve(texturemap.size());
 		for (auto [K, V] : texturemap) {
+			V.guid = guidgen.make_binary_guid();
+			
 			textures.push_back(V);			
 		}
 
+ 		for (const auto &tx : textures) {
+			textureguids[tx.name] = tx.guid;
+		}
 		insert_textures(db, textures);
 
 		for (auto p : this->gli_delete_queue) {
@@ -700,6 +740,13 @@ int RealSceneLoader::transform_scene(const char* scene_path, const SceneProcessC
 			add_request_from_assimp(mat, scene, scene->mMaterials[i], aiTextureType_UNKNOWN, scenepath);
 
 			allMaterials.push_back(mat);
+		}
+
+		for (auto& m : allMaterials) {
+			for (auto& tx : m.textures)
+			{
+				tx.guid = textureguids[tx.texture_name];
+			}
 		}
 
 		insert_materials(db, allMaterials);
@@ -874,7 +921,7 @@ cppcoro::generator<sp::DbTexture> RealSceneLoader::load_all_textures()
 	sqlite3_stmt* pStmt;
 	char* err_msg = 0;
 
-	char* sql = "SELECT size_x,size_y,channels,name,metadata,pixels FROM Textures";
+	char* sql = "SELECT name,metadata,pixels,guid FROM Textures";
 
 	int error = sqlite3_prepare_v2(loaded_db, sql, -1, &pStmt, 0);
 	if (error != SQLITE_OK) {
@@ -891,22 +938,27 @@ cppcoro::generator<sp::DbTexture> RealSceneLoader::load_all_textures()
 
 			DbTexture outTexture;
 	
-			outTexture.size_x = sqlite3_column_int(pStmt, 0);
-			outTexture.size_y = sqlite3_column_int(pStmt, 1);
-			outTexture.channels = sqlite3_column_int(pStmt, 2);
-			auto tx   = sqlite3_column_text(pStmt, 3);
-			auto meta = sqlite3_column_text(pStmt, 4);
+			auto tx   = sqlite3_column_text(pStmt,0);
+			auto meta = sqlite3_column_text(pStmt, 1);
 
 			json metadata = json::parse(meta);
-
+			
+			outTexture.size_x = metadata["sizex"];
+			outTexture.size_y = metadata["sizey"];
+			outTexture.channels = metadata["channels"];
 			outTexture.path = metadata["original-path"];
 			outTexture.vk_format = metadata["format-n"];
 			outTexture.byte_size = metadata["blob_size"];
 
 			outTexture.name = reinterpret_cast<const char*>(tx);
 
-			bytes = sqlite3_column_bytes(load_texture_query, 5);
-			const void* ptr = sqlite3_column_blob(load_texture_query, 5);
+			bytes = sqlite3_column_bytes(pStmt, 2);
+			const void* ptr = sqlite3_column_blob(pStmt, 2);
+
+			auto guidbytes = sqlite3_column_bytes(pStmt, 3);
+			const void* guidptr = sqlite3_column_blob(pStmt, 3);
+
+			memcpy(&outTexture.guid.bytes[0], guidptr , sizeof(guid::BinaryGUID));
 
 			outTexture.data_raw = (stbi_uc*)malloc(bytes);
 			memcpy(outTexture.data_raw, ptr, bytes);
@@ -935,7 +987,7 @@ int RealSceneLoader::load_textures_from_db(const char* scene_path, std::vector<D
 	char* err_msg = 0;
 
 
-	char* sql = "SELECT size_x,size_y,channels,name,metadata FROM Textures";
+	char* sql = "SELECT name,metadata FROM Textures";
 
 	int error = sqlite3_prepare_v2(loaded_db, sql, -1, &pStmt, 0);
 	if (error != SQLITE_OK) {
@@ -954,14 +1006,17 @@ int RealSceneLoader::load_textures_from_db(const char* scene_path, std::vector<D
 			DbTexture outTexture;
 
 			//outTexture.buffer_size = sqlite3_column_bytes(pStmt, 0);			
-			outTexture.size_x = sqlite3_column_int(pStmt, 0);
-			outTexture.size_y = sqlite3_column_int(pStmt, 1);
-			outTexture.channels = sqlite3_column_int(pStmt, 2);
-			auto tx = sqlite3_column_text(pStmt, 3);
-			auto meta = sqlite3_column_text(pStmt, 4);
+			//outTexture.size_x = sqlite3_column_int(pStmt, 0);
+			//outTexture.size_y = sqlite3_column_int(pStmt, 1);
+			//outTexture.channels = sqlite3_column_int(pStmt, 2);
+			auto tx = sqlite3_column_text(pStmt, 0);
+			auto meta = sqlite3_column_text(pStmt, 1);
 
 			json metadata = json::parse( meta );
 
+			outTexture.size_x = metadata["sizex"];
+			outTexture.size_y = metadata["sizey"];
+			outTexture.channels = metadata["channels"];
 			outTexture.path = metadata["original-path"];
 			outTexture.vk_format = metadata["format-n"];
 			outTexture.byte_size = metadata["blob_size"];
@@ -1024,6 +1079,7 @@ int RealSceneLoader::load_materials_from_db(const char* scene_path, std::vector<
 				
 				DbMaterial::TextureAssignement tex;
 				tex.texture_name = t["name"] ;
+				tex.guid = guid::convert_to_binary(std::string(t["guid"]).c_str());
 				tex.texture_slot = t["slot"];
 				outMaterial.textures.push_back(tex);
 			}
@@ -1082,7 +1138,7 @@ int RealSceneLoader::open_db(const char* database_path)
 	}
 
 	loaded_db = db;
-	char* sql = "SELECT pixels,size_x,size_y FROM Textures WHERE name = ?";
+	char* sql = "SELECT pixels,metadata FROM Textures WHERE name = ?";
 
 	sqlite3_stmt* pStmt;
 	rc = sqlite3_prepare_v2(db, sql, -1, &pStmt, 0);
@@ -1110,14 +1166,22 @@ int RealSceneLoader::load_db_texture(std::string texture_name, DbTexture& outTex
 	int rc = sqlite3_step(load_texture_query);
 
 	int bytes = 0;
-
+	using namespace nlohmann;
 	if (rc == SQLITE_ROW) {
 
 		bytes = sqlite3_column_bytes(load_texture_query, 0);
 
 		const void* ptr = sqlite3_column_blob(load_texture_query, 0);
-		outTexture.size_x = sqlite3_column_int(load_texture_query, 1);
-		outTexture.size_y = sqlite3_column_int(load_texture_query, 2);
+		
+
+		auto meta = sqlite3_column_text(load_texture_query, 1);
+
+		json metadata = json::parse(meta);
+
+		outTexture.size_x = metadata["sizex"];
+		outTexture.size_y = metadata["sizey"];
+		outTexture.channels = metadata["channels"];
+
 		outTexture.data_raw = (stbi_uc*)malloc(bytes);
 
 		memcpy(outTexture.data_raw, ptr, bytes);

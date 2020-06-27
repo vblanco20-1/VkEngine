@@ -12,6 +12,7 @@ add_library(assimp INTERFACE)
 add_library(asimp INTERFACE)
 add_library(sdl2 INTERFACE)
 add_library(vma INTERFACE)
+add_library(microguid INTERFACE)
 
 
 #add_library(glslang INTERFACE)
@@ -52,6 +53,10 @@ endif()
 
 
 message(STATUS "entt directory: ${ext_entt_SOURCE_DIR}")
+
+#microguid -----------------------------------
+
+target_include_directories(microguid INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/microGUID")  
 
 #IMGUI -------------------------------------
 

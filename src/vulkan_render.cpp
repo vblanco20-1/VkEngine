@@ -314,7 +314,9 @@ void VulkanEngine::init_vulkan()
 	{
 		init_vulkan_debug();
 	}
-
+	std::cout << "instance created " << std::endl;
+	char c;
+	//std::cin >> c;
 	//gpuCrashTracker.Initialize();
 
 	VkSurfaceKHR vksurface;
@@ -329,6 +331,10 @@ void VulkanEngine::init_vulkan()
 	pick_physical_device();
 
 	create_device();
+
+	std::cout << "device created " << std::endl;
+	char d;
+	//std::cin >> d;
 
 	descriptorMegapool.initialize(MAX_FRAMES_IN_FLIGHT,device);
 
@@ -519,8 +525,8 @@ void VulkanEngine::init_vulkan()
 	loadConfig.bLoadMaterials = true;
 	loadConfig.database_name = "bistro_ext.db";
 	loadConfig.rootMatrix =& glm::mat4(1.f)[0][0];//&glm::rotate(glm::scale(glm::vec3(100.f)), glm::radians(90.f), glm::vec3(1, 0, 0))[0][0];
-	//loader->transform_scene(MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Exterior.fbx"),//glm::mat4(100.f));
-	//	loadConfig);
+	loader->transform_scene(MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Exterior.fbx"),//glm::mat4(100.f));
+		loadConfig);
 
 	load_scene("bistro_ext.db",MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Exterior.fbx"), glm::rotate(glm::scale(glm::vec3(100.f)), glm::radians(90.f), glm::vec3(1, 0, 0)));
 
@@ -3700,7 +3706,8 @@ bool VulkanEngine::load_scene(const char* db_path, const char* scene_path, glm::
 				case aiTextureType_DIFFUSE_ROUGHNESS:
 					slot = 6; break;
 				}
-				newMat.textureIDs[slot] = resourceMap[t.texture_name];
+				//newMat.textureIDs[slot] = resourceMap[t.texture_name];
+				newMat.textureIDs[slot] = loadedTextures[t.guid];
 			}
 
 			materials[i] = newMat;
@@ -3762,11 +3769,6 @@ bool VulkanEngine::load_scene(const char* db_path, const char* scene_path, glm::
 		total_index_size += k >> 32;
 	}
 
-	//render_registry.view<MeshResource>().each([&](MeshResource& mesh) {
-	//
-	//	total_index_size += mesh.indices.size() * sizeof(mesh.indices[0]);
-	//
-	//});
 
 	if(true)
 	{
@@ -3790,20 +3792,8 @@ bool VulkanEngine::load_scene(const char* db_path, const char* scene_path, glm::
 
 		render_registry.view<MeshResource>().each([&](MeshResource& mesh) {
 
-			mesh.index_offset = indexCache.IndexOffsets[mesh.index_hash];//index_offset;
+			mesh.index_offset = indexCache.IndexOffsets[mesh.index_hash];
 			mesh.indexBuffer = megabuffer;
-			
-			//vk::BufferCopy copyRegion;
-			//copyRegion.srcOffset = 0; // Optional
-			//copyRegion.dstOffset = index_offset * sizeof(mesh.indices[0]); // Optional
-			//copyRegion.size = mesh.indices.size() * sizeof(mesh.indices[0]);
-			//commandBuffer.copyBuffer(mesh.indexBuffer.buffer, megabuffer.buffer, 1, &copyRegion);
-			//
-			//index_offset += mesh.indices.size();
-			//mesh.indexBuffer = megabuffer;
-			//upload_offset += copyRegion.size;
-
-		
 		});
 
 		endSingleTimeCommands(commandBuffer);
@@ -3814,8 +3804,6 @@ bool VulkanEngine::load_scene(const char* db_path, const char* scene_path, glm::
 
 		for (int i = 0; i < scene->mNumMeshes; i++)
 		{
-			//loaded_meshes.push_back(load_assimp_mesh(scene->mMeshes[i]));
-
 			try {
 				std::string matname = scene->mMaterials[scene->mMeshes[i]->mMaterialIndex]->GetName().C_Str();
 			
