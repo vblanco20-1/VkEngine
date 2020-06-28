@@ -13,6 +13,9 @@
 #include "vulkan_textures.h"
 #include <scene_processor.h>
 
+#include <future>
+#include <thread>
+
 using namespace sp;
 std::pair<TextureResource,TextureResourceMetadata> VulkanEngine::load_texture_resource(const char* image_path, bool bIsCubemap /*= false*/)
 {
@@ -1002,7 +1005,7 @@ void RealTextureLoader::add_load_from_db(EntityID e ,SceneLoader* loader,DbTextu
 	LoadStagingBuffer& staging = load_registry.assign<LoadStagingBuffer>(e);
 	LoadImageAlloc& texresource = load_registry.assign<LoadImageAlloc>(e);
 	const BaseTextureLoad& texload = load_registry.get<BaseTextureLoad>(e);
-	size_t image_size = texture.byte_size; //texture.size_x * texture.size_y *texture.channels;
+	size_t image_size = texture.byte_size;
 
 	texresource.format = vk::Format{ texture.vk_format };
 	texresource.x = texture.size_x;
@@ -1375,37 +1378,91 @@ TextureLoader* TextureLoader::create_new_loader(VulkanEngine* ownerEngine)
 
 	return loader;
 }
+struct LoadPacket {
+	guid::BinaryGUID guid;
+	void* mappedData;
+	EntityID entity;
+};
 
+struct TextureAsyncLoadState {
+	std::vector<LoadPacket> packets;
+	std::future<void> async_f;
+	std::atomic<bool> isDone;
+};
+
+enum class ETextureAsyncLoad {
+	Idle,
+	AsyncLoad,
+	WaitVulkan
+};
 void RealTextureLoader::update_background_loads()
 {
+	static ETextureAsyncLoad loadState = ETextureAsyncLoad::Idle;
+	static TextureAsyncLoadState* asyncstate = nullptr;
 
-	if (bLoadingTextures) {
+	if (loadState == ETextureAsyncLoad::WaitVulkan) {
 		if (checkUploadFinished()) {
 			ZoneScopedNC("Texture batch wait load queue", tracy::Color::Red);
 			finish_image_batch();
 
-
-			bLoadingTextures = false;
+			loadState = ETextureAsyncLoad::Idle;
 		}
 		else {
 			return;
 		}
 	}
-	//load_all_textures_coroutines(loader, scenepath);
-	if(load_requests.size() > 0)
+	else if (loadState == ETextureAsyncLoad::AsyncLoad)
+	{
+		if (asyncstate->isDone == true) {
+		
+			ZoneScopedNC("Texture ASync loads", tracy::Color::Orange3);
+			vk::CommandBuffer cmd = get_upload_command_buffer();
+
+			tracy::VkCtx* profilercontext = (tracy::VkCtx*)owner->get_profiler_context(cmd);
+
+			for (auto p : asyncstate->packets) {
+				const LoadStagingBuffer& staging = load_registry.get<LoadStagingBuffer>(p.entity);
+				DbTexture& texture = load_registry.get<DbTexture>(p.entity);
+				LoadImageAlloc& texresource = load_registry.get<LoadImageAlloc>(p.entity);
+
+				vmaUnmapMemory(owner->allocator, staging.buffer.allocation);
+
+				owner->createImage(texture.size_x, texture.size_y, texresource.format,
+					vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+					vk::MemoryPropertyFlagBits::eDeviceLocal, texresource.image);
+
+				vk::Image target_image = texresource.image.image;
+
+				{
+					TracyVkZone(profilercontext, VkCommandBuffer(cmd), "Upload Image");
+					uploadImage(cmd, target_image, texresource.format, staging, texresource);
+				}
+			}
+			delete asyncstate;
+			asyncstate = nullptr;
+			{
+				if (uploadFence != nullptr)
+				{
+					owner->device.resetFences(1, (vk::Fence*) & uploadFence);
+				}
+
+				submit_command_buffer(cmd, true);
+			}
+
+			loadState = ETextureAsyncLoad::WaitVulkan;
+		}
+	}
+
+	if(loadState == ETextureAsyncLoad::Idle &&  load_requests.size() > 0)
 	{
 		ZoneScopedNC("Database load all textures", tracy::Color::Red);
 		
 		owner->device.resetCommandPool(owner->transferCommandPool, vk::CommandPoolResetFlagBits{});
 
-		vk::CommandBuffer cmd = get_upload_command_buffer();
-		
-		tracy::VkCtx* profilercontext = (tracy::VkCtx*)owner->get_profiler_context(cmd);
 		int ntextures = 0;
 
-
 		std::vector<EntityID> batch_to_load;
-		batch_to_load.reserve(20);
+		batch_to_load.reserve(10);
 		int i = load_requests.size() - 1;
 		//check the load requests, so they arent duplicated, and put the entities in the vector above
 		while(i >= 0) {
@@ -1421,50 +1478,75 @@ void RealTextureLoader::update_background_loads()
 						batch_to_load.push_back(e);
 
 						pending_loads.erase(it);
-						if (batch_to_load.size() >= 20) {
+						if (batch_to_load.size() >= 10) {
 							break;
 						}
 					}
 				}
 			}			
 		}
+		vk::CommandBuffer cmd = get_upload_command_buffer();
 
+		if (asyncstate == nullptr)
+		{
+			asyncstate = new TextureAsyncLoadState();
+		}
+
+		tracy::VkCtx* profilercontext = (tracy::VkCtx*)owner->get_profiler_context(cmd);
 		for (auto e : batch_to_load) {
-			bLoadingTextures = true;
-			EntityID load_id = e;//load_registry.create();
+			loadState = ETextureAsyncLoad::AsyncLoad;
+			//bLoadingTextures = true;
+			EntityID load_id = e;
 
 			auto t = load_registry.get<DbTexture>(load_id);
-			//std::string tx_path = scenepath + "/" + t.name;
-
+			
 			BaseTextureLoad bload = load_registry.get<BaseTextureLoad>(load_id);
 
 			EntityID resourceid = owner->loadedTextures[bload.guid];
 
 			loading_resources.push_back(resourceid);
-			add_load_from_db(load_id, preloaded_db, t);
+			//add_load_from_db(load_id, preloaded_db, t);
 
-			const LoadStagingBuffer& staging = load_registry.get<LoadStagingBuffer>(load_id);
-			const LoadImageAlloc& texresource = load_registry.get<LoadImageAlloc>(load_id);
-
-			vk::Image target_image = texresource.image.image;
 			{
-				TracyVkZone(profilercontext, VkCommandBuffer(cmd), "Upload Image");
-				uploadImage(cmd, target_image, texresource.format, staging, texresource);
+				ZoneScopedNC("Texture upload-direct", tracy::Color::Orange);
+
+				DbTexture& texture = t;
+				LoadStagingBuffer& staging = load_registry.assign<LoadStagingBuffer>(e);
+				LoadImageAlloc& texresource = load_registry.assign<LoadImageAlloc>(e);
+				const BaseTextureLoad& texload = load_registry.get<BaseTextureLoad>(e);
+				size_t image_size = t.byte_size;
+
+				texresource.format = vk::Format{ texture.vk_format };
+				texresource.x = texture.size_x;
+				texresource.y = texture.size_y;
+				texresource.channels = texture.channels;
+
+				owner->createBuffer(image_size, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_UNKNOWN,
+					staging.buffer);
+
+				void* data;
+				vmaMapMemory(owner->allocator, staging.buffer.allocation, &data);
+
+				LoadPacket packet;
+				packet.guid = texture.guid;
+				packet.mappedData = data;
+				packet.entity = e;
+				asyncstate->packets.push_back(packet);
 			}
 		}
-		
-		{
-			if (uploadFence != nullptr)
-			{
 
-				owner->device.resetFences(1, (vk::Fence*) & uploadFence);
-			}
+		asyncstate->isDone = false;
+		asyncstate->async_f = std::async(std::launch::async, [this]() { 
+			
+			for (auto p : asyncstate->packets) {
+				ZoneScopedNC("DB GUID LOAD", tracy::Color::Red);
+				LoadImageAlloc& texresource = load_registry.get<LoadImageAlloc>(p.entity);
 
-			//ZoneScopedNC("Texture batch wait load queue", tracy::Color::Red);
+				preloaded_db->load_db_texture(p.guid, p.mappedData);
+			}		
+			asyncstate->isDone = true;
+		});
 
-			submit_command_buffer(cmd,true);
-			//wait_queue_idle();
-		}
 	}
 }
 
