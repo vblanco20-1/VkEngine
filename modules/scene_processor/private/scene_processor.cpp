@@ -50,14 +50,16 @@ public:
 
 
 	virtual int open_db(const char* database_path) override;
-
+	virtual cppcoro::generator<DbTexture> preload_all_textures()override;
 
 	virtual int load_db_texture(std::string texture_name, DbTexture& outTexture) override;
 
 	virtual int load_db_texture(std::string texture_name, void* outData) override;
+	virtual int load_db_texture(guid::BinaryGUID guid, void* outData) override;
+
 	sqlite3* loaded_db;
 	sqlite3_stmt* load_texture_query;
-
+	sqlite3_stmt* load_texture_query_guid;
 
 	std::vector<gli::texture*> gli_delete_queue;
 	std::vector<stbi_uc*> stb_delete_queue;
@@ -73,6 +75,7 @@ sp::SceneLoader* sp::SceneLoader::Create()
 void sp::SceneLoader::load_from_file(const char* scene_path, Matrix rootMatrix)
 {
 }
+
 
 
 
@@ -109,10 +112,10 @@ static const char* query_create_texture_table = R"(
 DROP TABLE IF EXISTS Textures;
 CREATE TABLE Textures(
 	id INT , 
-	name TEXT PRIMARY KEY, 	
+	name TEXT , 	
 	pixels BLOB,
 	metadata TEXT,
-	guid BLOB);
+	guid BLOB PRIMARY KEY);
 )";
 
 static const char* query_insert_texture = R"(
@@ -913,7 +916,67 @@ int RealSceneLoader::load_meshes_from_db(const char* scene_path, std::vector < M
 
 	return 0;
 }
+cppcoro::generator<DbTexture> RealSceneLoader::preload_all_textures()
+{
+	using nlohmann::json;
 
+	sqlite3_stmt* pStmt;
+	char* err_msg = 0;
+
+	char* sql = "SELECT name,metadata,guid FROM Textures";
+
+	int error = sqlite3_prepare_v2(loaded_db, sql, -1, &pStmt, 0);
+	if (error != SQLITE_OK) {
+
+		fprintf(stderr, "Failed to prepare statement\n");
+		co_return;
+	}
+	while (true) {
+		int rc = sqlite3_step(pStmt);
+
+		int bytes = 0;
+
+		if (rc == SQLITE_ROW) {
+
+			DbTexture outTexture;
+
+			auto tx = sqlite3_column_text(pStmt, 0);
+			auto meta = sqlite3_column_text(pStmt, 1);
+
+			json metadata = json::parse(meta);
+
+			outTexture.size_x = metadata["sizex"];
+			outTexture.size_y = metadata["sizey"];
+			outTexture.channels = metadata["channels"];
+			outTexture.path = metadata["original-path"];
+			outTexture.vk_format = metadata["format-n"];
+			outTexture.byte_size = metadata["blob_size"];
+
+			outTexture.name = reinterpret_cast<const char*>(tx);
+
+			auto guidbytes = sqlite3_column_bytes(pStmt, 2);
+			const void* guidptr = sqlite3_column_blob(pStmt, 2);
+
+			memcpy(&outTexture.guid.bytes[0], guidptr, sizeof(guid::BinaryGUID));
+
+			//no pixel data on preload
+			outTexture.data_raw = nullptr;
+
+			co_yield outTexture;
+		}
+		else if (rc == SQLITE_DONE)
+		{
+			break;
+		}
+		else {
+			sqlite3_finalize(pStmt);
+			co_return;
+		}
+	}
+
+	sqlite3_finalize(pStmt);
+	co_return;
+}
 cppcoro::generator<sp::DbTexture> RealSceneLoader::load_all_textures()
 {
 	using nlohmann::json;
@@ -1127,7 +1190,7 @@ int RealSceneLoader::open_db(const char* database_path)
 	sqlite3* db;
 	char* err_msg = 0;
 
-	int rc = sqlite3_open_v2(database_path, &db,SQLITE_OPEN_READWRITE,nullptr);
+	int rc = sqlite3_open_v2(database_path, &db, SQLITE_OPEN_READWRITE, nullptr);
 
 	if (rc != SQLITE_OK) {
 
@@ -1138,6 +1201,7 @@ int RealSceneLoader::open_db(const char* database_path)
 	}
 
 	loaded_db = db;
+	{
 	char* sql = "SELECT pixels,metadata FROM Textures WHERE name = ?";
 
 	sqlite3_stmt* pStmt;
@@ -1154,9 +1218,30 @@ int RealSceneLoader::open_db(const char* database_path)
 	}
 
 	load_texture_query = pStmt;
+	}
+	{
+		char* sql = "SELECT pixels,metadata FROM Textures WHERE guid = ?";
+
+		sqlite3_stmt* pStmt;
+		rc = sqlite3_prepare_v2(db, sql, -1, &pStmt, 0);
+
+		if (rc != SQLITE_OK) {
+
+			fprintf(stderr, "Failed to prepare statement\n");
+			fprintf(stderr, "Cannot open database: %s\n", sqlite3_errmsg(db));
+
+			//sqlite3_close(db);
+
+			return 1;
+		}
+
+		load_texture_query_guid = pStmt;
+	}
 
 	return 0;
 }
+
+
 
 
 int RealSceneLoader::load_db_texture(std::string texture_name, DbTexture& outTexture) 
@@ -1213,5 +1298,27 @@ int RealSceneLoader::load_db_texture(std::string texture_name, void* outData)
 		return 0;
 	}
 	sqlite3_reset(load_texture_query);
+	return 1;
+}
+
+int RealSceneLoader::load_db_texture(guid::BinaryGUID guid, void* outData)
+{
+	sqlite3_bind_blob(load_texture_query_guid, 1,&guid.bytes[0], sizeof(guid), SQLITE_TRANSIENT);
+
+	int rc = sqlite3_step(load_texture_query_guid);
+
+	int bytes = 0;
+
+	if (rc == SQLITE_ROW) {
+
+		bytes = sqlite3_column_bytes(load_texture_query_guid, 0);
+		const void* ptr = sqlite3_column_blob(load_texture_query_guid, 0);
+
+		memcpy(outData, ptr, bytes);
+
+		sqlite3_reset(load_texture_query_guid);
+		return 0;
+	}
+	sqlite3_reset(load_texture_query_guid);
 	return 1;
 }

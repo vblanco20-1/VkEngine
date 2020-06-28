@@ -106,6 +106,7 @@ struct TextureResource : public ResourceComponent {
 	vk::ImageView imageView;
 	vk::Sampler textureSampler;
 	uint64_t bindlessHandle = -1;
+	bool bFullyLoaded{ false };
 };
 
 //cold data for texture

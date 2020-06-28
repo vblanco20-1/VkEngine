@@ -512,8 +512,8 @@ void VulkanEngine::init_vulkan()
 	sp::SceneLoader* loader = sp::SceneLoader::Create();
 
 	sp::SceneProcessConfig loadConfig;
-	loadConfig.bLoadMeshes = true;
-	loadConfig.bLoadNodes = true;
+	loadConfig.bLoadMeshes = false;//true;
+	loadConfig.bLoadNodes = false;
 	//textures take a huge amount of time
 	loadConfig.bLoadTextures = true;
 	
@@ -525,8 +525,8 @@ void VulkanEngine::init_vulkan()
 	loadConfig.bLoadMaterials = true;
 	loadConfig.database_name = "bistro_ext.db";
 	loadConfig.rootMatrix =& glm::mat4(1.f)[0][0];//&glm::rotate(glm::scale(glm::vec3(100.f)), glm::radians(90.f), glm::vec3(1, 0, 0))[0][0];
-	loader->transform_scene(MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Exterior.fbx"),//glm::mat4(100.f));
-		loadConfig);
+	//loader->transform_scene(MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Exterior.fbx"),//glm::mat4(100.f));
+	//	loadConfig);
 
 	load_scene("bistro_ext.db",MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Exterior.fbx"), glm::rotate(glm::scale(glm::vec3(100.f)), glm::radians(90.f), glm::vec3(1, 0, 0)));
 
@@ -1784,8 +1784,15 @@ void VulkanEngine::draw_frame()
 	ZoneNamedNC(Framemark1, "Draw Frame 0", tracy::Color::Blue1, currentFrameIndex == 0);
 	ZoneNamedNC(Framemark2, "Draw Frame 1", tracy::Color::Blue2, currentFrameIndex == 1);
 	ZoneNamedNC(Framemark3, "Draw Frame 2 ", tracy::Color::Blue3, currentFrameIndex == 2);
+	{
+		ZoneScopedNC("Texture Loads", tracy::Color::Orange);
+		tex_loader->update_background_loads();
+	}
 	//("Draw Frame", color);
 	{
+
+
+
 		ZoneScopedNC("Real Fence", tracy::Color::Yellow);
 		device.waitForFences(1, &inFlightFences[currentFrameIndex], VK_TRUE, 100000000);
 		device.resetFences(1, &inFlightFences[currentFrameIndex]);
@@ -3649,8 +3656,15 @@ bool VulkanEngine::load_scene(const char* db_path, const char* scene_path, glm::
 	{
 		const bool outputMaterialInfo = true;
 		std::string scenepath = sc_path.parent_path().string();
-		ZoneScopedNC("Texture request building", tracy::Color::Green);
-		tex_loader->load_all_textures(loader, scenepath);
+
+		{
+			ZoneScopedNC("Texture pre-loading", tracy::Color::Green);
+			tex_loader->preload_textures(loader);
+		}
+		{
+			ZoneScopedNC("Texture request building", tracy::Color::Green);
+			//tex_loader->load_all_textures(loader, scenepath);
+		}
 	}
 
 
@@ -3736,8 +3750,8 @@ bool VulkanEngine::load_scene(const char* db_path, const char* scene_path, glm::
 			{
 				TextureResource& res = render_registry.get<TextureResource>(tid);
 				if (res.bindlessHandle == -1) {
-					texCache->AddToCache(res, tid);
 					
+					texCache->AddToCache(res, tid);									
 				}
 				tex_handle = res.bindlessHandle;
 			}
@@ -3804,16 +3818,16 @@ bool VulkanEngine::load_scene(const char* db_path, const char* scene_path, glm::
 
 		for (int i = 0; i < scene->mNumMeshes; i++)
 		{
-			try {
-				std::string matname = scene->mMaterials[scene->mMeshes[i]->mMaterialIndex]->GetName().C_Str();
-			
-				auto descriptor_id = create_basic_descriptor_sets(pipeline_id, matname, materials[scene->mMeshes[i]->mMaterialIndex].textureIDs);
-				mesh_descriptors.push_back(descriptor_id);
-			}
-			catch (std::runtime_error & e) {
-				std::cout << "error creating descriptor:" << e.what() << std::endl;
+			//try {
+			//	std::string matname = scene->mMaterials[scene->mMeshes[i]->mMaterialIndex]->GetName().C_Str();
+			//
+			//	auto descriptor_id = create_basic_descriptor_sets(pipeline_id, matname, materials[scene->mMeshes[i]->mMaterialIndex].textureIDs);
+			//	mesh_descriptors.push_back(descriptor_id);
+			//}
+			//catch (std::runtime_error & e) {
+			//	std::cout << "error creating descriptor:" << e.what() << std::endl;
 				mesh_descriptors.push_back(blank_descriptor);
-			}
+			//}
 		}
 	}
 

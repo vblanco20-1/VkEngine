@@ -114,6 +114,8 @@ std::pair<TextureResource,TextureResourceMetadata> VulkanEngine::load_texture_re
 	metadata.texture_size.x = texWidth;
 	metadata.texture_size.y = texHeight;
 
+	texture.bFullyLoaded = true;
+
 	return { texture,metadata };
 }
 
@@ -617,10 +619,15 @@ public:
 
 	void uploadImage(vk::CommandBuffer cmd, vk::Image target_image, vk::Format format, const LoadStagingBuffer& staging, const LoadImageAlloc& texresource);
 
+	virtual void preload_textures(sp::SceneLoader* loader);
 
+	virtual void request_texture_load(guid::BinaryGUID textureGUID) override final;
 
 	void add_load_from_db_coro(EntityID e, SceneLoader* loader, DbTexture& texture);
 	void add_load_from_db(EntityID e, SceneLoader* loader, DbTexture& texture);
+
+
+	sp::SceneLoader* preloaded_db;
 
 	vk::CommandBuffer get_upload_command_buffer() {
 
@@ -639,18 +646,42 @@ public:
 		return cmd;
 	}
 
-	void submit_command_buffer(vk::CommandBuffer cmd) {
+	void submit_command_buffer(vk::CommandBuffer cmd, bool withFence = false) {
 		cmd.end();
 
 		vk::SubmitInfo submitInfo;
 		submitInfo.commandBufferCount = 1;
 		submitInfo.pCommandBuffers = &cmd;
 
-		owner->graphicsQueue.submit(submitInfo, nullptr);
+		if (withFence) {
+
+			if (uploadFence == nullptr) {
+			
+				vk::FenceCreateInfo info;
+				
+				uploadFence = owner->device.createFence(info);
+			}
+
+
+			owner->graphicsQueue.submit(submitInfo, uploadFence);
+		}
+		else {
+			owner->graphicsQueue.submit(submitInfo, nullptr);
+		}
 	}
 	void wait_queue_idle() {
 		owner->graphicsQueue.waitIdle();
 		owner->device.resetCommandPool(owner->transferCommandPool, vk::CommandPoolResetFlagBits{});
+	}
+
+	bool checkUploadFinished() {
+		auto result = owner->device.waitForFences(1, (vk::Fence*)&uploadFence, true, 0);
+		if (result == vk::Result::eTimeout) {
+			return false;
+		}
+		else {
+			return true;
+		}
 	}
 
 	void finish_upload_command_buffer() {
@@ -665,10 +696,19 @@ public:
 
 	vk::CommandBuffer upload_buffer{};
 
+	VkFence uploadFence{VK_NULL_HANDLE};
+
 	std::unordered_map<std::string, EntityID> path_references;
 
 	std::unordered_map<std::string, DbTexture> pending_db_textures;
 
+	std::unordered_map<guid::BinaryGUID, EntityID> pending_loads;
+
+	std::vector<guid::BinaryGUID> load_requests;
+
+	std::vector<EntityID> loading_resources;
+
+	bool bLoadingTextures{ false };
 	bool bLoadedDB{false};
 	//std::vector<TextureLoadRequest2> requests;
 
@@ -684,6 +724,7 @@ public:
 
 	virtual void load_all_textures(SceneLoader* loader, const std::string& scenepath) override;
 	void load_all_textures_coroutines(SceneLoader* loader, const std::string& scenepath);
+	virtual void update_background_loads() override;
 };
 
 
@@ -977,8 +1018,8 @@ void RealTextureLoader::add_load_from_db(EntityID e ,SceneLoader* loader,DbTextu
 	vmaMapMemory(owner->allocator, staging.buffer.allocation, &data);
 
 	//load directly from DB to buffer
-	loader->load_db_texture(texture.name, data);
-
+	//loader->load_db_texture(texture.name, data);
+	loader->load_db_texture(texture.guid, data);
 	vmaUnmapMemory(owner->allocator, staging.buffer.allocation);
 
 	owner->createImage(texture.size_x, texture.size_y, texresource.format,
@@ -992,7 +1033,7 @@ void RealTextureLoader::finish_image_batch()
 
 	ZoneScopedNC("Texture batch image view creation", tracy::Color::Blue);
 	
-	for (auto e : upload_view) {		
+	for (auto e : upload_view) {
 		const LoadStagingBuffer& staging = upload_view.get<LoadStagingBuffer>(e);
 		const LoadImageAlloc& texresource = upload_view.get<LoadImageAlloc>(e);
 		const BaseTextureLoad& texload = upload_view.get<BaseTextureLoad>(e);
@@ -1027,17 +1068,37 @@ void RealTextureLoader::finish_image_batch()
 		samplerInfo.maxLod = 0.0f;
 
 		newResource.textureSampler = owner->device.createSampler(samplerInfo);
-
-		auto new_entity = owner->createResource(texload.name.c_str(), newResource);
-
+		newResource.bFullyLoaded = true;
 		TextureResourceMetadata metadata;
 		metadata.image_format = format;
 		metadata.texture_size.x = texresource.x;
 		metadata.texture_size.y = texresource.y;
 
-		owner->render_registry.assign<TextureResourceMetadata>(new_entity, metadata);
+		if (owner->loadedTextures.find(texload.guid) != owner->loadedTextures.end())
+		{
+			 EntityID res = owner->loadedTextures[texload.guid];
+			 newResource.bindlessHandle = owner->getResource<TextureResource>(res).bindlessHandle;
+			owner->render_registry.replace<TextureResource>(res, newResource);
+			owner->render_registry.replace<TextureResourceMetadata>(res, metadata);
 
-		owner->loadedTextures[texload.guid] = new_entity;
+
+			if (owner->texCache->image_Ids.size() > newResource.bindlessHandle && newResource.bindlessHandle > 0) {
+			
+				if (owner->texCache->image_Ids[newResource.bindlessHandle] == res) {
+					owner->texCache->Refresh(newResource, newResource.bindlessHandle);
+				}
+			}
+
+		}
+		else {
+
+
+			auto new_entity = owner->createResource(texload.name.c_str(), newResource);
+
+			owner->render_registry.assign<TextureResourceMetadata>(new_entity, metadata);
+
+			owner->loadedTextures[texload.guid] = new_entity;
+		}
 
 		load_registry.destroy(e);
 	}
@@ -1148,7 +1209,7 @@ void RealTextureLoader::load_all_textures(SceneLoader* loader, const std::string
 		owner->device.resetCommandPool(owner->transferCommandPool, vk::CommandPoolResetFlagBits{});
 	
 		vk::CommandBuffer cmd = get_upload_command_buffer();
-		auto upload_view = load_registry.view<LoadStagingBuffer, LoadImageAlloc>();
+		//auto upload_view = load_registry.view<LoadStagingBuffer, LoadImageAlloc>();
 		tracy::VkCtx* profilercontext = (tracy::VkCtx*)owner->get_profiler_context(cmd);
 		int ntextures = 0;
 		for (auto t : loader->load_all_textures()){//textures) {
@@ -1164,7 +1225,7 @@ void RealTextureLoader::load_all_textures(SceneLoader* loader, const std::string
 			bload.guid = t.guid;
 			load_registry.assign_or_replace<BaseTextureLoad>(load_id, bload);
 	
-			this->add_load_from_db(load_id, loader, t);
+			add_load_from_db(load_id, loader, t);
 	
 			const LoadStagingBuffer& staging = load_registry.get<LoadStagingBuffer>(load_id);
 			const LoadImageAlloc& texresource = load_registry.get<LoadImageAlloc>(load_id);
@@ -1315,16 +1376,166 @@ TextureLoader* TextureLoader::create_new_loader(VulkanEngine* ownerEngine)
 	return loader;
 }
 
+void RealTextureLoader::update_background_loads()
+{
+
+	if (bLoadingTextures) {
+		if (checkUploadFinished()) {
+			ZoneScopedNC("Texture batch wait load queue", tracy::Color::Red);
+			finish_image_batch();
+
+
+			bLoadingTextures = false;
+		}
+		else {
+			return;
+		}
+	}
+	//load_all_textures_coroutines(loader, scenepath);
+	if(load_requests.size() > 0)
+	{
+		ZoneScopedNC("Database load all textures", tracy::Color::Red);
+		
+		owner->device.resetCommandPool(owner->transferCommandPool, vk::CommandPoolResetFlagBits{});
+
+		vk::CommandBuffer cmd = get_upload_command_buffer();
+		
+		tracy::VkCtx* profilercontext = (tracy::VkCtx*)owner->get_profiler_context(cmd);
+		int ntextures = 0;
+
+
+		std::vector<EntityID> batch_to_load;
+		batch_to_load.reserve(20);
+		int i = load_requests.size() - 1;
+		//check the load requests, so they arent duplicated, and put the entities in the vector above
+		while(i >= 0) {
+			auto gd = load_requests[i];
+			i--;
+			auto it = pending_loads.find(gd);
+			if (it != pending_loads.end()) {
+				EntityID e = pending_loads[gd];
+				if (load_registry.valid(e)) {
+					if (load_registry.has<BaseTextureLoad>(e))
+					{
+						load_requests.pop_back();
+						batch_to_load.push_back(e);
+
+						pending_loads.erase(it);
+						if (batch_to_load.size() >= 20) {
+							break;
+						}
+					}
+				}
+			}			
+		}
+
+		for (auto e : batch_to_load) {
+			bLoadingTextures = true;
+			EntityID load_id = e;//load_registry.create();
+
+			auto t = load_registry.get<DbTexture>(load_id);
+			//std::string tx_path = scenepath + "/" + t.name;
+
+			BaseTextureLoad bload = load_registry.get<BaseTextureLoad>(load_id);
+
+			EntityID resourceid = owner->loadedTextures[bload.guid];
+
+			loading_resources.push_back(resourceid);
+			add_load_from_db(load_id, preloaded_db, t);
+
+			const LoadStagingBuffer& staging = load_registry.get<LoadStagingBuffer>(load_id);
+			const LoadImageAlloc& texresource = load_registry.get<LoadImageAlloc>(load_id);
+
+			vk::Image target_image = texresource.image.image;
+			{
+				TracyVkZone(profilercontext, VkCommandBuffer(cmd), "Upload Image");
+				uploadImage(cmd, target_image, texresource.format, staging, texresource);
+			}
+		}
+		
+		{
+			if (uploadFence != nullptr)
+			{
+
+				owner->device.resetFences(1, (vk::Fence*) & uploadFence);
+			}
+
+			//ZoneScopedNC("Texture batch wait load queue", tracy::Color::Red);
+
+			submit_command_buffer(cmd,true);
+			//wait_queue_idle();
+		}
+	}
+}
+
+void RealTextureLoader::preload_textures(sp::SceneLoader* loader)
+{
+	preloaded_db = loader;
+	for (auto tx : loader->preload_all_textures()) {
+		EntityID load_id = load_registry.create();
+
+		//std::string tx_path = scenepath + "/" + t.name;
+
+		BaseTextureLoad bload;
+		bload.path = "nopath";
+		bload.name = tx.name;
+		bload.guid = tx.guid;
+		load_registry.assign_or_replace<BaseTextureLoad>(load_id, bload);
+		load_registry.assign_or_replace<DbTexture>(load_id, tx);
+
+		pending_loads[tx.guid] = load_id;
+
+		load_requests.push_back(tx.guid);
+		//create entity for the resource on main engine, reserving it
+		TextureResource newResource;
+		newResource.bindlessHandle = -1;
+
+		auto new_entity = owner->createResource(tx.name.c_str(), newResource);
+
+		TextureResourceMetadata metadata;
+		metadata.image_format = vk::Format{ tx.vk_format };
+		metadata.texture_size.x = tx.size_x;
+		metadata.texture_size.y = tx.size_y;
+
+		owner->render_registry.assign<TextureResourceMetadata>(new_entity, metadata);
+
+		owner->loadedTextures[tx.guid] = new_entity;
+	}
+}
+
+void RealTextureLoader::request_texture_load(guid::BinaryGUID textureGUID)
+{
+	load_requests.push_back(textureGUID);
+}
+
 void TextureBindlessCache::AddToCache(TextureResource& resource, EntityID id)
+{
+
+	vk::DescriptorImageInfo newImage = {};
+	newImage.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+	newImage.imageView = resource.imageView;
+	newImage.sampler = resource.textureSampler;
+
+	//if image is null, we are adding a dummy, so duplicate the index zero which is black or white default
+	if (VkImage(resource.image.image) == VK_NULL_HANDLE || !resource.bFullyLoaded) {
+		newImage = all_images[0];//.back();
+	}
+	
+
+	resource.bindlessHandle = image_Ids.size();
+
+	all_images.push_back(newImage);
+	image_Ids.push_back(id);
+}
+
+void TextureBindlessCache::Refresh(TextureResource& resource, int index)
 {
 	vk::DescriptorImageInfo newImage = {};
 	newImage.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
 	newImage.imageView = resource.imageView;
 	newImage.sampler = resource.textureSampler;
 
-	resource.bindlessHandle = image_Ids.size();
 
-	all_images.push_back(newImage);
-	image_Ids.push_back(id);
+	all_images[index] = newImage;
 }
 
