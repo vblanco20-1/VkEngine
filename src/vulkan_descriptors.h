@@ -4,14 +4,14 @@
 
  
 struct DescriptorUBOParams {
-	vk::Buffer buffer;
+	VkBuffer buffer;
 	size_t range;
 };
 
 struct DescriptorImageParams {
-	vk::ImageLayout layout;
-	vk::ImageView view;
-	vk::Sampler sampler;
+	VkImageLayout layout;
+	VkImageView view;
+	VkSampler sampler;
 
 
 };
@@ -28,18 +28,18 @@ struct DescriptorSetBuilder {
 	struct ImageWriteDescriptor {
 		int dstSet;
 		int dstBinding;
-		vk::DescriptorType descriptorType;
-		vk::DescriptorImageInfo imageInfo;
-		vk::DescriptorImageInfo* image_array{nullptr};
+		VkDescriptorType descriptorType;
+		VkDescriptorImageInfo imageInfo;
+		VkDescriptorImageInfo* image_array{nullptr};
 		int image_count;
 	};
 
 	struct BufferWriteDescriptor {
 		int dstSet;
 		int dstBinding;
-		vk::DescriptorType descriptorType;
-		vk::DescriptorBufferInfo bufferInfo;
-		vk::WriteDescriptorSetAccelerationStructureKHR accelinfo;
+		VkDescriptorType descriptorType;
+		VkDescriptorBufferInfo bufferInfo;
+		VkWriteDescriptorSetAccelerationStructureKHR accelinfo;
 	};
 
 	DescriptorSetBuilder(ShaderEffect* _effect,DescriptorMegaPool *_parentPool);
@@ -48,18 +48,18 @@ struct DescriptorSetBuilder {
 	DescriptorMegaPool* parentPool;
 
 
-	void bind_image_array(int set, int binding, vk::DescriptorImageInfo* images, int count);
+	void bind_image_array(int set, int binding, VkDescriptorImageInfo* images, int count);
 
-	void bind_image(int set, int binding,const vk::DescriptorImageInfo& imageInfo, bool bImageWrite = false);
-	void bind_image(const char* name,const vk::DescriptorImageInfo& imageInfo);
+	void bind_image(int set, int binding,const VkDescriptorImageInfo& imageInfo, bool bImageWrite = false);
+	void bind_image(const char* name,const VkDescriptorImageInfo& imageInfo);
 
-	void bind_buffer(int set, int binding,const vk::DescriptorBufferInfo& bufferInfo, vk::DescriptorType bufferType);
-	void bind_buffer(const char* name, const vk::DescriptorBufferInfo& bufferInfo);
+	void bind_buffer(int set, int binding,const VkDescriptorBufferInfo& bufferInfo, VkDescriptorType bufferType);
+	void bind_buffer(const char* name, const VkDescriptorBufferInfo& bufferInfo);
 
-	void bind_raystructure(int set, int binding, const vk::WriteDescriptorSetAccelerationStructureKHR& info);
+	void bind_raystructure(int set, int binding, const VkWriteDescriptorSetAccelerationStructureKHR& info);
 
-	void update_descriptor(int set, vk::DescriptorSet& descriptor,const vk::Device& device);
-	vk::DescriptorSet build_descriptor(int set, DescriptorLifetime lifetime);
+	void update_descriptor(int set, VkDescriptorSet& descriptor,const VkDevice& device);
+	VkDescriptorSet build_descriptor(int set, DescriptorLifetime lifetime);
 
 	std::vector<ImageWriteDescriptor> imageWrites;
 	std::vector<BufferWriteDescriptor> bufferWrites;
@@ -69,13 +69,13 @@ struct DescriptorSetBuilder {
 struct DescriptorAllocator {
 	int max_descriptors;
 	int current_descriptors;
-	vk::DescriptorPool pool;
+	VkDescriptorPool pool;
 };
 struct DescriptorMegaPool {
 
-	vk::DescriptorSet allocate_descriptor(vk::DescriptorSetLayout layout, DescriptorLifetime lifetime, void* pNext = nullptr);
+	VkDescriptorSet allocate_descriptor(VkDescriptorSetLayout layout, DescriptorLifetime lifetime, void* pNext = nullptr);
 	
-	void initialize(int numFrames, vk::Device _device);
+	void initialize(int numFrames, VkDevice _device);
 	void set_frame(int frameNumber);
 
 	vke::DescriptorAllocatorHandle dynamicHandle;
@@ -84,7 +84,7 @@ struct DescriptorMegaPool {
 	vke::DescriptorAllocatorPool* dynamicAllocatorPool;
 	vke::DescriptorAllocatorPool* staticAllocatorPool;
 
-	vk::Device device;
+	VkDevice device;
 };
 
 

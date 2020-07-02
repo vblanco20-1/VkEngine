@@ -12,7 +12,7 @@ namespace sp {
 
 class TextureBindlessCache {
 public:
-	std::vector< vk::DescriptorImageInfo> all_images;
+	std::vector< VkDescriptorImageInfo> all_images;
 	std::vector< EntityID> image_Ids;
 
 	void TextureBindlessCache::AddToCache(TextureResource& resource, EntityID id);

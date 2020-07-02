@@ -158,8 +158,8 @@ const TBuiltInResource DefaultTBuiltInResource = {
     /* .maxTaskWorkGroupSizeY_NV = */ 1,
     /* .maxTaskWorkGroupSizeZ_NV = */ 1,
     /* .maxMeshViewCountNV = */ 4,
-
-    /* .limits = */ {
+   3 ,
+    /* .limits = */TLimits {
     /* .nonInductiveForLoops = */ 1,
     /* .whileLoops = */ 1,
     /* .doWhileLoops = */ 1,
