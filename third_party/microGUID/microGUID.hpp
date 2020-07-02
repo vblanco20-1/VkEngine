@@ -1,6 +1,6 @@
 #pragma once
 #include "stdint.h"
-#include <functional> 
+
 namespace guid {
 
 	struct BinaryGUID {
@@ -81,8 +81,11 @@ namespace guid {
 #pragma optimize( "", off )
 
 namespace std {
+	template <class _Kty>
+	struct hash;
+
 	template<>
-	class hash<guid::BinaryGUID> {
+	struct hash<guid::BinaryGUID> {
 	public:
 		size_t operator()(const guid::BinaryGUID& s) const
 		{
@@ -99,6 +102,8 @@ namespace std {
 		}
 	};
 }
+
+
 /* unoptimized code section */
 #pragma optimize( "", on )
 #ifdef MICROGUID_IMPLEMENTATION

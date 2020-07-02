@@ -1,6 +1,6 @@
 #include "vulkan_descriptors.h"
 #include "shader_processor.h"
-
+ 
 #define IM_ARRAYSIZE(_ARR)          ((int)(sizeof(_ARR) / sizeof(*_ARR))) 
 vk::DescriptorPool create_descriptor_pool(vk::Device device, int count) {
 	VkDescriptorPoolSize pool_sizes[] =

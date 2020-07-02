@@ -2,7 +2,7 @@
 #include "vulkan_types.h"
 #include "descriptor_allocator.h"
 
-
+ 
 struct DescriptorUBOParams {
 	vk::Buffer buffer;
 	size_t range;

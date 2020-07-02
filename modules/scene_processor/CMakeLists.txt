@@ -7,10 +7,14 @@ find_package(Vulkan REQUIRED)
 add_compile_options("/await")
 
 add_library(scene_processor "${CMAKE_CURRENT_SOURCE_DIR}/private/scene_processor.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/public/scene_processor.h")
-target_include_directories(scene_processor 
-		PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/private"
+target_include_directories(scene_processor  
+		PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/private"  "${CMAKE_CURRENT_SOURCE_DIR}"
 		PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/public")
 
+
+
+		
+target_precompile_headers(scene_processor PRIVATE pch.h)
 
 target_link_libraries(scene_processor PUBLIC cppcoro::cppcoro microguid)
 target_link_libraries(scene_processor PRIVATE Vulkan::Vulkan assimp  glm gli sqlite::sqlite json::json)

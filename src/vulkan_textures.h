@@ -7,7 +7,7 @@ struct aiMaterial;
 enum aiTextureType;
 
 namespace sp {
-	class SceneLoader;
+	struct SceneLoader;
 }
 
 class TextureBindlessCache {

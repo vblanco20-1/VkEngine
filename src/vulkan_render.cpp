@@ -2,7 +2,7 @@
 #include "vulkan_render.h"
 #include "sdl_render.h"
 #include "rawbuffer.h"
-#include <glm/gtx/vector_angle.hpp>
+#include <glm/gtx/vector_angle.hpp> 
 #include "termcolor.hpp" 
 //#include <gli/gli.hpp>
 #include <vk_format.h>
@@ -15,10 +15,7 @@
 
 #include "shader_processor.h"
 #include "vulkan_pipelines.h"
-#define STB_IMAGE_IMPLEMENTATION
-#define TINYGLTF_IMPLEMENTATION
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "tiny_gltf.h"
+
 #include <assimp/pbrmaterial.h>
 
 #include <framegraph.h>

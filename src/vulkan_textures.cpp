@@ -1,13 +1,13 @@
 #include "vulkan_render.h"
-#include "sdl_render.h"
+//#include "sdl_render.h"
 #include "rawbuffer.h"
 
 #include "termcolor.hpp"
-#include <gli/gli.hpp>
+#include <gli/gli.hpp> 
 #include <vk_format.h>
 //#include <tiny_obj_loader.h>
 
-#include "tiny_gltf.h"
+//#include "tiny_gltf.h"
 #include "stb_image.h"
 
 #include "vulkan_textures.h"
@@ -15,6 +15,8 @@
 
 #include <future>
 #include <thread>
+ 
+ 
 
 using namespace sp;
 std::pair<TextureResource,TextureResourceMetadata> VulkanEngine::load_texture_resource(const char* image_path, bool bIsCubemap /*= false*/)

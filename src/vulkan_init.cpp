@@ -2,9 +2,9 @@
 #include "vulkan_types.h"
 #include "vulkan_render.h"
 #include "sdl_render.h"
-
+ 
 #include "termcolor.hpp"
-
+ 
 static VKAPI_ATTR VkBool32 VKAPI_CALL vulkanValidationErrorCallback(
 	VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
 	VkDebugUtilsMessageTypeFlagsEXT messageType,

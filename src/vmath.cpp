@@ -10,4 +10,4 @@ Vec2f random_vector()
  std::uniform_real_distribution<float> distribution(-1.0, 1.0);
 
  return Vec2f{ distribution(rng), distribution(rng) }.normalized();
-}
+} 

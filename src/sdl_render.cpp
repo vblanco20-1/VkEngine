@@ -3,12 +3,8 @@
 #include <SDL_image.h>
 #include <SDL_vulkan.h>
 #include "entt/entt.hpp"
-//#define STB_IMAGE_IMPLEMENTATION
-//#include <stb_image.h>
-//#define TINYOBJLOADER_IMPLEMENTATION
-//#include <tiny_obj_loader.h>
-#define VMA_IMPLEMENTATION
-#include "vk_mem_alloc.h"
+
+
 SDL_Renderer *gRenderer;
 SDL_Window *gWindow;
 

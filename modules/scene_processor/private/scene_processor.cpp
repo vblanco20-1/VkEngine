@@ -1,8 +1,8 @@
+
 #define NOMINMAX
 #define MICROGUID_IMPLEMENTATION
 #include <microGUID.hpp>
 
-#include "scene_processor.h"
 #include <sqlite3.h>
 #include <stdio.h>
 #include <string>
@@ -12,6 +12,7 @@
 #include <fstream>
 #include <chrono>
 
+#include <vulkan/vulkan.hpp>
 
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
@@ -22,9 +23,14 @@
 #include <nlohmann/json.hpp>
 
 #include "stb_image.h"
-#include <vulkan/vulkan.hpp>
-#include <gli/gli.hpp>
+
+#include <gli/gli.hpp> 
 #include <vk_format.h>
+
+
+
+#include "scene_processor.h"
+
 using namespace sp;
 
 

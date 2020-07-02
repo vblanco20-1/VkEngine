@@ -2,7 +2,7 @@ cmake_minimum_required (VERSION 3.16)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
 find_package(Vulkan REQUIRED)
-
+ 
 file(GLOB PROJ_HEADERS *.h)
 file(GLOB PROJ_SOURCES *.cpp)
 
@@ -13,7 +13,7 @@ set(SOURCE_FILES ${PROJ_SOURCES} ${PROJ_HEADERS})
  
   
  
-add_executable(vkEngine ${SOURCE_FILES})
+add_executable(vkEngine ${SOURCE_FILES}) 
 
 
 target_precompile_headers(vkEngine PUBLIC pcheader.h)
