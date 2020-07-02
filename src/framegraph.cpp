@@ -2,31 +2,32 @@
 #include <iostream>
 #include <pcheader.h>
 #include "vulkan_render.h"
+#include <vk_flags.h>
+#include <vk_initializers.h>
 
-
-std::array < vk::SubpassDependency, 2> build_basic_subpass_dependencies()
+std::array < VkSubpassDependency, 2> build_basic_subpass_dependencies()
 {
-	std::array < vk::SubpassDependency, 2> dependencies;
+	std::array < VkSubpassDependency, 2> dependencies;
 	dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
 	dependencies[0].dstSubpass = 0;
 
-	dependencies[0].srcStageMask = vk::PipelineStageFlagBits::eFragmentShader;
-	dependencies[0].dstStageMask = vk::PipelineStageFlagBits::eEarlyFragmentTests;
+	dependencies[0].srcStageMask = (VkPipelineStageFlags)vkf::PipelineStageFlagBits::eFragmentShader;
+	dependencies[0].dstStageMask = (VkPipelineStageFlags)vkf::PipelineStageFlagBits::eEarlyFragmentTests;
 
-	dependencies[0].srcAccessMask = vk::AccessFlagBits::eShaderRead;
-	dependencies[0].dstAccessMask = vk::AccessFlagBits::eDepthStencilAttachmentWrite;
+	dependencies[0].srcAccessMask = (VkAccessFlagBits)vkf::AccessFlagBits::eShaderRead;
+	dependencies[0].dstAccessMask = (VkAccessFlagBits)vkf::AccessFlagBits::eDepthStencilAttachmentWrite;
 
-	dependencies[0].dependencyFlags = vk::DependencyFlagBits::eByRegion;
+	dependencies[0].dependencyFlags = (VkDependencyFlags)vkf::DependencyFlagBits::eByRegion;
 
 	dependencies[1].srcSubpass = 0;
 	dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
 
-	dependencies[1].srcStageMask = vk::PipelineStageFlagBits::eLateFragmentTests;
-	dependencies[1].dstStageMask = vk::PipelineStageFlagBits::eFragmentShader;
+	dependencies[1].srcStageMask = (VkPipelineStageFlags)vkf::PipelineStageFlagBits::eLateFragmentTests;
+	dependencies[1].dstStageMask = (VkPipelineStageFlags)vkf::PipelineStageFlagBits::eFragmentShader;
 
-	dependencies[1].srcAccessMask = vk::AccessFlagBits::eDepthStencilAttachmentWrite;
-	dependencies[1].dstAccessMask = vk::AccessFlagBits::eShaderRead;
-	dependencies[1].dependencyFlags = vk::DependencyFlagBits::eByRegion;
+	dependencies[1].srcAccessMask = (VkAccessFlagBits)vkf::AccessFlagBits::eDepthStencilAttachmentWrite;
+	dependencies[1].dstAccessMask = (VkAccessFlagBits)vkf::AccessFlagBits::eShaderRead;
+	dependencies[1].dependencyFlags = (VkDependencyFlags)vkf::DependencyFlagBits::eByRegion;
 
 	return dependencies;
 }
@@ -98,63 +99,66 @@ void RenderPass::set_depth_attachment(std::string name, const RenderAttachmentIn
 
 vk::AttachmentDescription make_color_attachment(const RenderAttachmentInfo* info, bool bFirstWrite, bool bReadAfter) {
 
-	vk::AttachmentDescription attachment;
-	attachment.format = (vk::Format)info->format;
-	attachment.samples = vk::SampleCountFlagBits::e1;
+	VkAttachmentDescription attachment = {};
+	attachment.format = info->format;
+	attachment.samples = (VkSampleCountFlagBits)vkf::SampleCountFlagBits::e1;
 
 
 	if (bFirstWrite) {
-		attachment.loadOp = info->bClear ? vk::AttachmentLoadOp::eClear : vk::AttachmentLoadOp::eDontCare;
+		attachment.loadOp = (VkAttachmentLoadOp)(info->bClear ? vkf::AttachmentLoadOp::eClear : vkf::AttachmentLoadOp::eDontCare);
 	}
 	else {
-		attachment.loadOp = vk::AttachmentLoadOp::eLoad;
+		attachment.loadOp = (VkAttachmentLoadOp)vkf::AttachmentLoadOp::eLoad;
 	}
 
 
-	attachment.storeOp = bReadAfter ? vk::AttachmentStoreOp::eStore : vk::AttachmentStoreOp::eDontCare;
+	attachment.storeOp = bReadAfter ? (VkAttachmentStoreOp)vkf::AttachmentStoreOp::eStore : (VkAttachmentStoreOp)vkf::AttachmentStoreOp::eDontCare;
 
 
 	if (bFirstWrite) {
-		attachment.initialLayout = vk::ImageLayout::eUndefined;
+		attachment.initialLayout = (VkImageLayout)vkf::ImageLayout::eUndefined;
 	}
 	else {
-		attachment.initialLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+		attachment.initialLayout = (VkImageLayout)vkf::ImageLayout::eShaderReadOnlyOptimal;
 	}
 
-	attachment.finalLayout = bReadAfter ? vk::ImageLayout::eShaderReadOnlyOptimal : vk::ImageLayout::eColorAttachmentOptimal;
+	attachment.finalLayout = bReadAfter ? (VkImageLayout)vkf::ImageLayout::eShaderReadOnlyOptimal : (VkImageLayout)vkf::ImageLayout::eColorAttachmentOptimal;
 
 	return attachment;
 }
 
 
-vk::AttachmentDescription make_depth_attachment(const RenderAttachmentInfo* info, bool bFirstWrite, bool bReadAfter, bool bWrittenNext) {
+VkAttachmentDescription make_depth_attachment(const RenderAttachmentInfo* info, bool bFirstWrite, bool bReadAfter, bool bWrittenNext) {
 
-	vk::AttachmentDescription attachment;
-	attachment.format = (vk::Format)info->format;
-	attachment.samples = vk::SampleCountFlagBits::e1;
-
-	if (bFirstWrite) {
-		attachment.loadOp = info->bClear ? vk::AttachmentLoadOp::eClear : vk::AttachmentLoadOp::eDontCare;
-	}
-	else {
-		attachment.loadOp = vk::AttachmentLoadOp::eLoad;
-	}
-
-	attachment.storeOp = (bReadAfter || bWrittenNext) ? vk::AttachmentStoreOp::eStore : vk::AttachmentStoreOp::eDontCare;
-
+	VkAttachmentDescription attachment = {};
+	
+	attachment.format = info->format;
+	attachment.samples = (VkSampleCountFlagBits)vkf::SampleCountFlagBits::e1;
 
 	if (bFirstWrite) {
-		attachment.initialLayout = vk::ImageLayout::eUndefined;
+		attachment.loadOp = info->bClear ? (VkAttachmentLoadOp)vkf::AttachmentLoadOp::eClear : (VkAttachmentLoadOp)vkf::AttachmentLoadOp::eDontCare;
 	}
 	else {
-		attachment.initialLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
+		attachment.loadOp = (VkAttachmentLoadOp)vkf::AttachmentLoadOp::eLoad;
+	}
+
+	auto storeOp = (bReadAfter || bWrittenNext) ? vkf::AttachmentStoreOp::eStore : vkf::AttachmentStoreOp::eDontCare;
+	attachment.storeOp = (VkAttachmentStoreOp)storeOp;
+
+
+	if (bFirstWrite) {
+		attachment.initialLayout = +vkf::ImageLayout::eUndefined;
+	}
+	else {
+		attachment.initialLayout = +vkf::ImageLayout::eDepthStencilAttachmentOptimal;
 	}
 
 	if (bWrittenNext) {
-		attachment.finalLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
+		attachment.finalLayout = +vkf::ImageLayout::eDepthStencilAttachmentOptimal;
 	}
 	else {
-		attachment.finalLayout = bReadAfter ? vk::ImageLayout::eDepthStencilReadOnlyOptimal : vk::ImageLayout::eDepthStencilAttachmentOptimal;
+		auto finalLayout = bReadAfter ? vkf::ImageLayout::eDepthStencilReadOnlyOptimal : vkf::ImageLayout::eDepthStencilAttachmentOptimal;
+		attachment.finalLayout = +finalLayout;
 	}
 
 	return attachment;
@@ -182,9 +186,9 @@ void FrameGraph::build_render_pass(RenderPass* pass, VulkanEngine* eng)
 		bool bAccessedAsReadAfter = false;
 		//if (useridx + 1 < numusers) {
 
-			if (graphAth->uses.usages[(useridx +1) % numusers] == RenderGraphImageAccess::Read) {
-				bAccessedAsReadAfter = true;
-			}
+		if (graphAth->uses.usages[(useridx + 1) % numusers] == RenderGraphImageAccess::Read) {
+			bAccessedAsReadAfter = true;
+		}
 		//}
 
 		bool first_use = (useridx == 0);
@@ -234,12 +238,12 @@ void FrameGraph::build_render_pass(RenderPass* pass, VulkanEngine* eng)
 		pass->physical_attachments.push_back(physAttachment);
 
 		attachmentIndex++;
-	} 
+	}
 
 	std::cout << "Pass Building : " << pass->name << "-----------------" << std::endl;
 
-	std::vector<vk::AttachmentReference> references;
-	std::vector<vk::AttachmentDescription> attachments;
+	std::vector<VkAttachmentReference> references;
+	std::vector<VkAttachmentDescription> attachments;
 	int color_attachments = 0;
 	int depth_attachments = 0;
 
@@ -247,9 +251,10 @@ void FrameGraph::build_render_pass(RenderPass* pass, VulkanEngine* eng)
 	int index = 0;
 	for (auto attachment : pass->physical_attachments) {
 
-		vk::AttachmentReference athref;
+		VkAttachmentReference athref = {};
+
 		athref.attachment = attachment.index;
-		athref.layout = attachment.bIsDepth ? vk::ImageLayout::eDepthStencilAttachmentOptimal : vk::ImageLayout::eColorAttachmentOptimal;
+		athref.layout = (VkImageLayout)(attachment.bIsDepth ? vkf::ImageLayout::eDepthStencilAttachmentOptimal : vkf::ImageLayout::eColorAttachmentOptimal);
 		if (attachment.bIsDepth) {
 			depth_attachments++;
 		}
@@ -261,31 +266,33 @@ void FrameGraph::build_render_pass(RenderPass* pass, VulkanEngine* eng)
 	}
 
 
-	vk::SubpassDescription subpass;
-	subpass.pipelineBindPoint = vk::PipelineBindPoint::eGraphics;
+	VkSubpassDescription subpass = {};
+
+	subpass.pipelineBindPoint = (VkPipelineBindPoint)vkf::PipelineBindPoint::eGraphics;
 	subpass.colorAttachmentCount = color_attachments;
 
 	subpass.pColorAttachments = (color_attachments) ? references.data() : nullptr;
 
 	subpass.pDepthStencilAttachment = (depth_attachments) ? (references.data() + color_attachments) : nullptr;;
 
-	vk::RenderPassCreateInfo renderPassInfo;
+	VkRenderPassCreateInfo renderPassInfo = {};
+	renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
 	renderPassInfo.attachmentCount = attachments.size();
 	renderPassInfo.pAttachments = attachments.data();
 	renderPassInfo.subpassCount = 1;
 	renderPassInfo.pSubpasses = &subpass;
 
-	std::array < vk::SubpassDependency, 2> pass_dependencies = build_basic_subpass_dependencies();
+	std::array < VkSubpassDependency, 2> pass_dependencies = build_basic_subpass_dependencies();
 	renderPassInfo.dependencyCount = static_cast<uint32_t>(pass_dependencies.size());
 	renderPassInfo.pDependencies = pass_dependencies.data();
 
 	pass->built_pass = eng->device.createRenderPass(renderPassInfo);
 
 	//framebuffers
-	std::vector<vk::ImageView> FBAttachments;
+	std::vector<VkImageView> FBAttachments;
 
-	int width = 0;
-	int height = 0;	
+	uint32_t width = 0;
+	uint32_t height = 0;
 
 	for (auto attachment : pass->physical_attachments) {
 
@@ -298,8 +305,8 @@ void FrameGraph::build_render_pass(RenderPass* pass, VulkanEngine* eng)
 	pass->render_height = height;
 	pass->render_width = width;
 
-	vk::FramebufferCreateInfo fbufCreateInfo;
-	fbufCreateInfo.renderPass = pass->built_pass;
+	VkFramebufferCreateInfo fbufCreateInfo = vkinit::framebuffer_create_info(pass->built_pass, {width,height});	
+
 	fbufCreateInfo.attachmentCount = FBAttachments.size();
 	fbufCreateInfo.pAttachments = FBAttachments.data();
 	fbufCreateInfo.width = width;
@@ -308,7 +315,6 @@ void FrameGraph::build_render_pass(RenderPass* pass, VulkanEngine* eng)
 
 	std::cout << "building framebuffer for" << pass->name << std::endl;
 	pass->framebuffer = eng->device.createFramebuffer(fbufCreateInfo);
-	//assert(pass->built_pass != VkRenderPass{});
 }
 
 void FrameGraph::build_compute_barriers(RenderPass* pass, VulkanEngine* eng)
@@ -316,8 +322,8 @@ void FrameGraph::build_compute_barriers(RenderPass* pass, VulkanEngine* eng)
 	for (const auto& ath : pass->color_attachments) {
 		GraphAttachment* graphAth = &graph_attachments[ath.name];
 
-		vk::ImageSubresourceRange range;
-		range.aspectMask = vk::ImageAspectFlagBits::eColor;
+		VkImageSubresourceRange range = {};
+		range.aspectMask = +vkf::ImageAspectFlagBits::eColor;
 		range.baseMipLevel = 0;
 		range.levelCount = 1;
 		range.baseArrayLayer = 0;
@@ -328,7 +334,7 @@ void FrameGraph::build_compute_barriers(RenderPass* pass, VulkanEngine* eng)
 
 		bool bFirstUse = useridx == 0;
 
-		vk::ImageLayout current_layout = vk::ImageLayout::eGeneral;
+		VkImageLayout current_layout = +vkf::ImageLayout::eGeneral;
 	
 		
 
@@ -336,12 +342,13 @@ void FrameGraph::build_compute_barriers(RenderPass* pass, VulkanEngine* eng)
 		if (bFirstUse) {
 
 			// START BARRIER
-			vk::ImageMemoryBarrier startbarrier;
-			startbarrier.oldLayout = vk::ImageLayout::eUndefined;
+			VkImageMemoryBarrier startbarrier = {};
+			startbarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+			startbarrier.oldLayout = +vkf::ImageLayout::eUndefined;
 			startbarrier.newLayout = current_layout;
 
-			startbarrier.dstAccessMask = vk::AccessFlagBits::eShaderWrite;
-			startbarrier.srcAccessMask = vk::AccessFlagBits{};
+			startbarrier.dstAccessMask = +vkf::AccessFlagBits::eShaderWrite;
+			startbarrier.srcAccessMask = +vkf::AccessFlagBits{};
 
 			startbarrier.image = graphAth->image;
 			startbarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -356,33 +363,34 @@ void FrameGraph::build_compute_barriers(RenderPass* pass, VulkanEngine* eng)
 		//find what is the next user
 		if (useridx + 1 < numusers) {
 
-			vk::ImageLayout next_layout = vk::ImageLayout::eUndefined;
+			VkImageLayout next_layout = +vkf::ImageLayout::eUndefined;
 
 			RenderGraphImageAccess nextUsage = graphAth->uses.usages[useridx + 1];
 			RenderPass* nextUser = passes[graphAth->uses.users[useridx + 1]];
 		
 			if (nextUser->type == PassType::Graphics) {
 				if (nextUsage == RenderGraphImageAccess::Read) {
-					next_layout = vk::ImageLayout::eShaderReadOnlyOptimal;
+					next_layout = +vkf::ImageLayout::eShaderReadOnlyOptimal;
 				}
 			}
 			else {
 				if (nextUsage == RenderGraphImageAccess::Read) {
-					next_layout = vk::ImageLayout::eShaderReadOnlyOptimal;
+					next_layout = +vkf::ImageLayout::eShaderReadOnlyOptimal;
 				}
 				else {
-					next_layout = vk::ImageLayout::eGeneral;
+					next_layout = +vkf::ImageLayout::eGeneral;
 				}
 			}		
 			
 
 			// END BARRIER
-			vk::ImageMemoryBarrier endbarrier;
+			VkImageMemoryBarrier endbarrier = {};
+			endbarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
 			endbarrier.oldLayout = current_layout;
 			endbarrier.newLayout = next_layout;
 
-			endbarrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
-			endbarrier.srcAccessMask = vk::AccessFlagBits::eShaderWrite;
+			endbarrier.dstAccessMask = +vkf::AccessFlagBits::eShaderRead;
+			endbarrier.srcAccessMask = +vkf::AccessFlagBits::eShaderWrite;
 
 			endbarrier.image = graphAth->image;
 			endbarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -461,7 +469,7 @@ bool FrameGraph::build( VulkanEngine* engine)
 
 	//calculate usage flags
 	for (auto &[name, attachment] : graph_attachments) {
-		vk::ImageUsageFlags flags;
+		VkImageUsageFlags flags{0};
 		
 
 		for (int i = 0; i < attachment.uses.usages.size(); i++) {
@@ -471,40 +479,40 @@ bool FrameGraph::build( VulkanEngine* engine)
 			switch (usage) {
 			case RenderGraphImageAccess::Write:
 				if (pass->type == PassType::Compute) {
-					flags |= vk::ImageUsageFlagBits::eStorage;
+					flags |= +vkf::ImageUsageFlagBits::eStorage;
 				}
 				break;
 			case RenderGraphImageAccess::Read:
-				flags |= vk::ImageUsageFlagBits::eSampled;
+				flags |= +vkf::ImageUsageFlagBits::eSampled;
 				break;
 			case RenderGraphImageAccess::RenderTargetColor:
-				flags |= vk::ImageUsageFlagBits::eColorAttachment;
+				flags |= +vkf::ImageUsageFlagBits::eColorAttachment;
 				break;
 			case RenderGraphImageAccess::RenderTargetDepth:
-				flags |= vk::ImageUsageFlagBits::eDepthStencilAttachment;
+				flags |= +vkf::ImageUsageFlagBits::eDepthStencilAttachment;
 				break;				
 			}			
 		}
 
-		attachment.usageFlags = (VkImageUsageFlags)flags;
+		attachment.usageFlags = flags;
 	}
 	
 	//one sampler to rule them all
-	vk::SamplerCreateInfo sampler;
-	sampler.magFilter = vk::Filter::eLinear;
-	sampler.minFilter = vk::Filter::eLinear;
-	sampler.mipmapMode = vk::SamplerMipmapMode::eLinear;
+	VkSamplerCreateInfo sampler = vkinit::sampler_create_info(+vkf::Filter::eLinear);
+	sampler.magFilter = +vkf::Filter::eLinear;
+	sampler.minFilter = +vkf::Filter::eLinear;
+	sampler.mipmapMode = +vkf::SamplerMipmapMode::eLinear;
 	//sampler.magFilter = vk::Filter::eNearest;
 	//sampler.minFilter = vk::Filter::eNearest;
 	//sampler.mipmapMode = vk::SamplerMipmapMode::eNearest;
-	sampler.addressModeU = vk::SamplerAddressMode::eMirroredRepeat;
+	sampler.addressModeU = +vkf::SamplerAddressMode::eMirroredRepeat;
 	sampler.addressModeV = sampler.addressModeU;
 	sampler.addressModeW = sampler.addressModeU;
 	sampler.mipLodBias = 0.0f;
 	sampler.maxAnisotropy = 1.0f;
 	sampler.minLod = 0.0f;
 	sampler.maxLod = 1.0f;
-	sampler.borderColor = vk::BorderColor::eFloatOpaqueWhite;
+	sampler.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;//vk::BorderColor::eFloatOpaqueWhite;
 
 	VkSamplerCreateInfo samplerInfo = sampler;
 	VkSampler mainSampler;// = engine->device.createSampler(sampler);
@@ -513,8 +521,8 @@ bool FrameGraph::build( VulkanEngine* engine)
 	for (auto [n, atch] : graph_attachments)
 	{
 		GraphAttachment& v = graph_attachments[n];
-		vk::ImageCreateInfo imageCreateInfo;
-		imageCreateInfo.imageType = vk::ImageType::e2D;
+		VkImageCreateInfo imageCreateInfo = vkinit::image_create_info(v.info.format, v.usageFlags,VkExtent3D{0,0,0});
+		imageCreateInfo.imageType = VK_IMAGE_TYPE_2D;//+vkf::ImageType::e2D;
 
 		if (v.info.size_class == SizeClass::SwapchainRelative) {
 			imageCreateInfo.extent.width = v.info.size_x * this->swapchainSize.width;
@@ -530,10 +538,10 @@ bool FrameGraph::build( VulkanEngine* engine)
 		imageCreateInfo.extent.depth = 1;
 		imageCreateInfo.mipLevels = 1;
 		imageCreateInfo.arrayLayers = 1;
-		imageCreateInfo.samples = vk::SampleCountFlagBits::e1;
-		imageCreateInfo.tiling = vk::ImageTiling::eOptimal;
-		imageCreateInfo.format = (vk::Format)v.info.format;
-		imageCreateInfo.usage = (vk::ImageUsageFlagBits)v.usageFlags;
+		imageCreateInfo.samples = +vkf::SampleCountFlagBits::e1;
+		imageCreateInfo.tiling = VK_IMAGE_TILING_OPTIMAL;//+vkf::ImageTiling::eOptimal;
+		imageCreateInfo.format = v.info.format;
+		imageCreateInfo.usage = v.usageFlags;
 
 		VmaAllocationCreateInfo vmaallocInfo = {};
 		vmaallocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
@@ -547,11 +555,11 @@ bool FrameGraph::build( VulkanEngine* engine)
 
 		v.image = image;
 
-		vk::ImageViewCreateInfo imageViewInfo;
-		imageViewInfo.viewType = vk::ImageViewType::e2D;
-		imageViewInfo.format = (vk::Format)v.info.format;
-		imageViewInfo.subresourceRange = vk::ImageSubresourceRange{};
-		imageViewInfo.subresourceRange.aspectMask = is_used_as_depth(&v) ? vk::ImageAspectFlagBits::eDepth : vk::ImageAspectFlagBits::eColor;
+		VkImageViewCreateInfo imageViewInfo = vkinit::image_view_create_info(v.info.format,image);
+		imageViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;//vk::ImageViewType::e2D;
+		imageViewInfo.format = v.info.format;
+		imageViewInfo.subresourceRange = VkImageSubresourceRange{};
+		imageViewInfo.subresourceRange.aspectMask = is_used_as_depth(&v) ? +vkf::ImageAspectFlagBits::eDepth : +vkf::ImageAspectFlagBits::eColor;
 		imageViewInfo.subresourceRange.baseMipLevel = 0;
 		imageViewInfo.subresourceRange.levelCount = 1;
 		imageViewInfo.subresourceRange.baseArrayLayer = 0;
@@ -559,7 +567,7 @@ bool FrameGraph::build( VulkanEngine* engine)
 		imageViewInfo.image = image;
 
 		v.descriptor.imageView = engine->device.createImageView(imageViewInfo);
-		v.descriptor.imageLayout = VkImageLayout(is_used_as_depth(&v)  ? vk::ImageLayout::eDepthStencilReadOnlyOptimal : vk::ImageLayout::eShaderReadOnlyOptimal);
+		v.descriptor.imageLayout = is_used_as_depth(&v)  ? +vkf::ImageLayout::eDepthStencilReadOnlyOptimal : +vkf::ImageLayout::eShaderReadOnlyOptimal;
 		v.descriptor.sampler = mainSampler;
 	}
 
@@ -586,7 +594,7 @@ bool FrameGraph::build( VulkanEngine* engine)
 	return true;
 }
 
-RenderPass* FrameGraph::add_pass(std::string pass_name, std::function<void(vk::CommandBuffer, RenderPass*)> execution, PassType type, bool bPerformSubmit /*= false*/)
+RenderPass* FrameGraph::add_pass(std::string pass_name, std::function<void(VkCommandBuffer, RenderPass*)> execution, PassType type, bool bPerformSubmit /*= false*/)
 {
 	pass_definitions[pass_name] = RenderPass();
 
@@ -624,28 +632,26 @@ FrameGraph::GraphAttachment* FrameGraph::get_attachment(std::string name)
 
 
 
-vk::CommandBuffer FrameGraph::create_graphics_buffer(int threadID)
+VkCommandBuffer FrameGraph::create_graphics_buffer(int threadID)
 {
 	int frameid = owner->globalFrameNumber;
 
 	auto pool = commandPools.get(frameid)[threadID];
 	auto &usable_pool = usableCommands.get(frameid)[threadID];
 
-	vk::CommandBuffer buff;
+	VkCommandBuffer buff;
 	if (usable_pool.size() > 0) {
 		buff = usable_pool.back();
 		usable_pool.pop_back();
 	}
 	else {
 	
-		vk::CommandBufferAllocateInfo allocInfo;
-		allocInfo.commandPool = pool;
-		allocInfo.level = vk::CommandBufferLevel::ePrimary;
-		allocInfo.commandBufferCount = 1;
+		VkCommandBufferAllocateInfo allocInfo = vkinit::command_buffer_allocate_info(pool,1);
+		
 		buff = owner->device.allocateCommandBuffers(allocInfo)[0];
 	}
 
-	if (buff == vk::CommandBuffer{})
+	if (buff == VK_NULL_HANDLE)
 	{
 		std::cout << "YHo WTF";
 	}
@@ -654,7 +660,7 @@ vk::CommandBuffer FrameGraph::create_graphics_buffer(int threadID)
 	return  buff;
 }
 
-void FrameGraph::execute(vk::CommandBuffer _cmd)
+void FrameGraph::execute(VkCommandBuffer _cmd)
 {
 	int frameid = owner->globalFrameNumber;
 
@@ -662,7 +668,8 @@ void FrameGraph::execute(vk::CommandBuffer _cmd)
 	{
 
 		ZoneScopedNC("reset command pool", tracy::Color::Red);
-		owner->device.resetCommandPool(pool, vk::CommandPoolResetFlagBits{});
+		vkResetCommandPool(owner->device, pool, 0);
+		//owner->device.resetCommandPool(pool, VkCommandPoolResetFlagBits{0});
 
 		auto& pending = pendingCommands.get(frameid)[0];
 		auto& usable = usableCommands.get(frameid)[0];
@@ -673,14 +680,13 @@ void FrameGraph::execute(vk::CommandBuffer _cmd)
 		pending.clear();
 	}
 
-	vk::CommandBufferBeginInfo beginInfo;
-	beginInfo.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
-	beginInfo.pInheritanceInfo = nullptr; // Optional
-
-	vk::CommandBuffer cmd = create_graphics_buffer(0);
-
-	cmd.begin(beginInfo);
+	VkCommandBufferBeginInfo beginInfo = vkinit::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
 	
+
+	VkCommandBuffer cmd = create_graphics_buffer(0);
+
+
+	vkBeginCommandBuffer(cmd, &beginInfo);
 
 	int current_submission_id = 0;
 	for (auto pass : passes) {
@@ -690,36 +696,39 @@ void FrameGraph::execute(vk::CommandBuffer _cmd)
 			if (pass->type == PassType::Graphics) {
 
 			
-				vk::RenderPassBeginInfo renderPassInfo;
-				renderPassInfo.renderPass = pass->built_pass;
-				renderPassInfo.framebuffer = pass->framebuffer;
-				renderPassInfo.renderArea.offset = vk::Offset2D{ 0, 0 };
-				renderPassInfo.renderArea.extent.width = pass->render_width;
-				renderPassInfo.renderArea.extent.height = pass->render_height;
+				VkExtent2D renderArea;
+				renderArea.width = pass->render_width;
+				renderArea.height = pass->render_height;
+
+				VkRenderPassBeginInfo renderPassInfo =  vkinit::renderpass_begin_info(pass->built_pass, renderArea,pass->framebuffer);					
 
 				renderPassInfo.clearValueCount = pass->clearValues.size();
-				renderPassInfo.pClearValues = (vk::ClearValue*)pass->clearValues.data();
+				renderPassInfo.pClearValues = pass->clearValues.data();
 
-				cmd.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
+				//cmd.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
+				vkCmdBeginRenderPass(cmd, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 				pass->draw_callback(cmd, pass);
 
-				cmd.endRenderPass();
+				vkCmdEndRenderPass(cmd);
+				//cmd.endRenderPass();
 
 				if (pass->perform_submit) {
 				
-					cmd.end();
+					vkEndCommandBuffer(cmd);
+					//cmd.end();
 				
 					submit_commands(cmd, current_submission_id, current_submission_id + 1);
 					current_submission_id++;
 				
 					cmd = create_graphics_buffer(0);
-				
-					cmd.begin(beginInfo);
+
+					vkBeginCommandBuffer(cmd, &beginInfo);
+					//cmd.begin(beginInfo);
 				}
 			}
 			else if (pass->type == PassType::Compute) {
 
-				static std::vector<vk::ImageMemoryBarrier> image_barriers;
+				static std::vector<VkImageMemoryBarrier> image_barriers;
 
 				image_barriers.clear();
 				transform_images_to_write(pass, image_barriers, cmd);
@@ -731,14 +740,16 @@ void FrameGraph::execute(vk::CommandBuffer _cmd)
 
 				if (true){//pass->perform_submit) {
 
-					cmd.end();
+					vkEndCommandBuffer(cmd);
+					//cmd.end();
 
 					submit_commands(cmd, current_submission_id, current_submission_id + 1);
 					current_submission_id++;
 
 					cmd = create_graphics_buffer(0);
 
-					cmd.begin(beginInfo);
+					vkBeginCommandBuffer(cmd, &beginInfo);
+					//cmd.begin(beginInfo);
 				}
 			}
 			else {
@@ -746,24 +757,33 @@ void FrameGraph::execute(vk::CommandBuffer _cmd)
 			}			
 		}
 	}
-	
-	cmd.end();
+	vkEndCommandBuffer(cmd);
+	//cmd.end();
 	submit_commands(cmd, current_submission_id, 98);
 }
 
-void FrameGraph::transform_images_to_read(RenderPass* pass, std::vector<vk::ImageMemoryBarrier>& image_barriers, vk::CommandBuffer& cmd)
+void FrameGraph::transform_images_to_read(RenderPass* pass, std::vector<VkImageMemoryBarrier>& image_barriers, VkCommandBuffer& cmd)
 {
-	cmd.pipelineBarrier(vk::PipelineStageFlagBits::eAllGraphics, vk::PipelineStageFlagBits::eAllGraphics, vk::DependencyFlags{}, 0, nullptr, 0, nullptr, pass->endBarriers.size(), pass->endBarriers.data());
+
+	vkCmdPipelineBarrier(cmd,
+		+vkf::PipelineStageFlagBits::eAllGraphics,
+		+vkf::PipelineStageFlagBits::eAllGraphics,
+		VkDependencyFlags{},
+		0, nullptr, 0, nullptr, pass->endBarriers.size(), pass->endBarriers.data());
 }
 
-void FrameGraph::transform_images_to_write(RenderPass* pass, std::vector<vk::ImageMemoryBarrier>& image_barriers, vk::CommandBuffer& cmd)
+void FrameGraph::transform_images_to_write(RenderPass* pass, std::vector<VkImageMemoryBarrier>& image_barriers, VkCommandBuffer& cmd)
 {
-	cmd.pipelineBarrier(vk::PipelineStageFlagBits::eAllGraphics, vk::PipelineStageFlagBits::eAllGraphics, vk::DependencyFlags{}, 0, nullptr, 0, nullptr, pass->startBarriers.size(), pass->startBarriers.data());
+	vkCmdPipelineBarrier(cmd,
+		+vkf::PipelineStageFlagBits::eAllGraphics,
+		+vkf::PipelineStageFlagBits::eAllGraphics,		
+		
+		VkDependencyFlags{}, 0, nullptr, 0, nullptr, pass->startBarriers.size(), pass->startBarriers.data());
 }
 
-void FrameGraph::submit_commands(vk::CommandBuffer cmd, int wait_pass_index, int signal_pass_index)
+void FrameGraph::submit_commands(VkCommandBuffer cmd, int wait_pass_index, int signal_pass_index)
 {
-	vk::Semaphore signalSemaphores[] = { owner->frameTimelineSemaphore };
+	VkSemaphore signalSemaphores[] = { owner->frameTimelineSemaphore };
 	{
 		uint64_t waitValue3[3];
 
@@ -786,13 +806,13 @@ void FrameGraph::submit_commands(vk::CommandBuffer cmd, int wait_pass_index, int
 		timelineInfo3.signalSemaphoreValueCount = 1;
 		timelineInfo3.pSignalSemaphoreValues = signalValues;
 	
-		vk::SubmitInfo submitInfo;
+		VkSubmitInfo submitInfo = vkinit::submit_info(&cmd);
 
-		vk::Semaphore waitSemaphores[] = { /*owner->imageAvailableSemaphores[owner->currentFrameIndex],*/owner->frameTimelineSemaphore };
+		VkSemaphore waitSemaphores[] = { /*owner->imageAvailableSemaphores[owner->currentFrameIndex],*/owner->frameTimelineSemaphore };
 		//if (wait_pass_index != 0) {
 		//	waitSemaphores[0] = owner->frameTimelineSemaphore;
 		//}
-		vk::PipelineStageFlags waitStages[] = { vk::PipelineStageFlagBits::eColorAttachmentOutput,vk::PipelineStageFlagBits::eColorAttachmentOutput };
+		VkPipelineStageFlags waitStages[] = { +vkf::PipelineStageFlagBits::eColorAttachmentOutput,+vkf::PipelineStageFlagBits::eColorAttachmentOutput };
 
 		submitInfo.waitSemaphoreCount = 1;
 		//if (wait_pass_index != 0) {
@@ -810,7 +830,8 @@ void FrameGraph::submit_commands(vk::CommandBuffer cmd, int wait_pass_index, int
 		
 		{
 			ZoneScopedNC("Submit", tracy::Color::Red);
-			owner->graphicsQueue.submit(1, &submitInfo, vk::Fence{},/*owner->inFlightFences[owner->currentFrameIndex],*/ owner->extensionDispatcher); //
+			vkQueueSubmit(owner->graphicsQueue, 1, &submitInfo, VkFence{});
+			//fix owner->graphicsQueue.submit(1, &submitInfo, vk::Fence{},/*owner->inFlightFences[owner->currentFrameIndex],*/ owner->extensionDispatcher); //
 
 		}
 	}
@@ -831,9 +852,8 @@ void FrameGraph::build_command_pools()
 		i++;
 	}	
 
-	vk::CommandPoolCreateInfo poolInfo;
-	poolInfo.queueFamilyIndex = graphicsFamilyIndex;
-	poolInfo.flags = vk::CommandPoolCreateFlagBits::eTransient;
+	VkCommandPoolCreateInfo poolInfo = vkinit::command_pool_create_info(graphicsFamilyIndex,VK_COMMAND_POOL_CREATE_TRANSIENT_BIT);
+	
 	for (int i = 0; i < commandPools.num; i++) {
 		for(auto& pool : commandPools.items[i]){
 			pool = owner->device.createCommandPool(poolInfo);
@@ -871,7 +891,10 @@ bool FrameGraph::is_used_as_depth(const GraphAttachment* attachment) {
 }
 void RenderAttachmentInfo::set_clear_color(std::array<float, 4> col)
 {
-	clearValue.color = vk::ClearColorValue{ col };
+	for (int i = 0; i < 4; i++) {
+		clearValue.color.float32[i] = col[i];
+	}
+	
 	bClear = true;
 }
 

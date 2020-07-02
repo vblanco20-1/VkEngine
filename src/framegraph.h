@@ -66,10 +66,10 @@ public:
 
 	PassAttachment depth_attachment;
 
-	vk::RenderPass built_pass;
-	vk::Framebuffer framebuffer;
+	VkRenderPass built_pass;
+	VkFramebuffer framebuffer;
 
-	std::function<void(vk::CommandBuffer, RenderPass*)> draw_callback;
+	std::function<void(VkCommandBuffer, RenderPass*)> draw_callback;
 
 	int render_width = 0;
 	int render_height = 0;
@@ -77,8 +77,8 @@ public:
 	std::string name;
 	PassType type;
 	bool perform_submit;
-	std::vector<vk::ImageMemoryBarrier> startBarriers;
-	std::vector<vk::ImageMemoryBarrier> endBarriers;
+	std::vector<VkImageMemoryBarrier> startBarriers;
+	std::vector<VkImageMemoryBarrier> endBarriers;
 	//find image in local resources and check how its used 
 	bool find_image_access(std::string name, RenderGraphImageAccess& outAccess);
 	
@@ -119,19 +119,19 @@ public:
 
 	bool build(VulkanEngine* engine);
 
-	RenderPass* add_pass(std::string pass_name, std::function<void(vk::CommandBuffer, RenderPass*)> execution, PassType type, bool bPerformSubmit = false);
+	RenderPass* add_pass(std::string pass_name, std::function<void(VkCommandBuffer, RenderPass*)> execution, PassType type, bool bPerformSubmit = false);
 	RenderPass* get_pass(std::string name);
 	VkDescriptorImageInfo get_image_descriptor(std::string name);
 	GraphAttachment* get_attachment(std::string name);
 	
-	vk::CommandBuffer create_graphics_buffer(int threadID);
-	void execute(vk::CommandBuffer cmd);
+	VkCommandBuffer create_graphics_buffer(int threadID);
+	void execute(VkCommandBuffer cmd);
 
-	void transform_images_to_write(RenderPass* pass, std::vector<vk::ImageMemoryBarrier>& image_barriers, vk::CommandBuffer& cmd);
+	void transform_images_to_write(RenderPass* pass, std::vector<VkImageMemoryBarrier>& image_barriers, VkCommandBuffer& cmd);
 
-	void transform_images_to_read(RenderPass* pass, std::vector<vk::ImageMemoryBarrier>& image_barriers, vk::CommandBuffer& cmd);
+	void transform_images_to_read(RenderPass* pass, std::vector<VkImageMemoryBarrier>& image_barriers, VkCommandBuffer& cmd);
 
-	void submit_commands(vk::CommandBuffer cmd, int wait_pass_index, int signal_pass_index);
+	void submit_commands(VkCommandBuffer cmd, int wait_pass_index, int signal_pass_index);
 
 	void build_command_pools();
 
@@ -143,9 +143,9 @@ public:
 	std::unordered_map<std::string, RenderPass > pass_definitions;
 	std::unordered_map<std::string, GraphAttachment> graph_attachments;
 
-	FrameResource < std::array<vk::CommandPool,4> , 3 > commandPools;
-	FrameResource< std::array<std::vector<vk::CommandBuffer>, 4>, 3>  usableCommands;
-	FrameResource< std::array<std::vector<vk::CommandBuffer>, 4>, 3>  pendingCommands;
+	FrameResource < std::array<VkCommandPool,4> , 3 > commandPools;
+	FrameResource< std::array<std::vector<VkCommandBuffer>, 4>, 3>  usableCommands;
+	FrameResource< std::array<std::vector<VkCommandBuffer>, 4>, 3>  pendingCommands;
 
 	VkExtent2D swapchainSize;
 	std::vector<const char*> attachmentNames;
@@ -154,5 +154,5 @@ public:
 	int end_render_id = 0;
 };
 
-std::array < vk::SubpassDependency, 2> build_basic_subpass_dependencies();
+std::array < VkSubpassDependency, 2> build_basic_subpass_dependencies();
 
