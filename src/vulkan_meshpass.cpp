@@ -34,7 +34,7 @@ void inline set_pipeline_state_depth(int width, int height, const vk::CommandBuf
 	}
 }
 
-static CommandEncoder* encoder{nullptr};
+
 
 
 struct DrawUnitEncoder {
@@ -49,9 +49,23 @@ struct DrawUnitEncoder {
 	uint64_t indexBuffer;
 };
 
+
+bool IsVisible(ObjectBounds& bounds, Camera& mainCam)
+{
+	glm::vec3 bounds_center = glm::vec3(bounds.center_rad);
+	glm::vec3 dir = normalize(mainCam.eyeLoc - bounds_center);
+
+	float angle = glm::angle(dir, mainCam.eyeDir);
+
+	glm::vec3 bmin = bounds_center - glm::vec3(bounds.extent);
+	glm::vec3 bmax = bounds_center + glm::vec3(bounds.extent);
+
+	return mainCam.camfrustum.IsBoxVisible(bmin, bmax);	
+}
+
 void VulkanEngine::RenderMainPass_Other(const vk::CommandBuffer& cmd)
 {
-	
+	static CommandEncoder* encoder{ nullptr };
 	TextureResource bluenoise = getResource<TextureResource>(bluenoiseTexture);
 
 	ZoneScopedNC("Main Pass", tracy::Color::BlueViolet);
@@ -69,19 +83,9 @@ void VulkanEngine::RenderMainPass_Other(const vk::CommandBuffer& cmd)
 		const PipelineResource& pipeline = render_registry.get<PipelineResource>(renderable.pass_pipelines[(size_t)MeshPasIndex::MainPass]);
 		const DescriptorResource& descriptor = render_registry.get<DescriptorResource>(renderable.pass_descriptors[(size_t)MeshPasIndex::MainPass]);
 
-		bool bVisible = false;
+		
 
-		glm::vec3 bounds_center = glm::vec3(bounds.center_rad);
-		glm::vec3 dir = normalize(mainCam.eyeLoc - bounds_center);
-
-		float angle = glm::angle(dir, mainCam.eyeDir);
-
-		glm::vec3 bmin = bounds_center - glm::vec3(bounds.extent);
-		glm::vec3 bmax = bounds_center + glm::vec3(bounds.extent);
-
-		bVisible = mainCam.camfrustum.IsBoxVisible(bmin, bmax);
-
-		if (bVisible) {
+		if (IsVisible(bounds, mainCam)) {
 			DrawUnitEncoder newDrawUnit;
 
 			VkBuffer index = mesh.indexBuffer.buffer;
@@ -126,23 +130,18 @@ void VulkanEngine::RenderMainPass_Other(const vk::CommandBuffer& cmd)
 	unmapBuffer(mainpass_indirect_buffers[currentFrameIndex]);
 
 
-	//for(const DrawUnit& unit : drawables)
 	{
 		const DrawUnitEncoder& unit = drawables[0];
-		const bool bShouldBindPipeline = true;
 
-		auto pass = render_graph.get_pass("GBuffer");
-		
-		
+		auto pass = render_graph.get_pass("GBuffer");		
 
 		const PipelineResource& pipeline = render_registry.get<PipelineResource>(entt::entity{ unit.pipeline });
 
 
 		DescriptorSetBuilder setBuilder{ pipeline.effect,&descriptorMegapool };
 
-		vk::DescriptorBufferInfo camBufferInfo;
+		VkDescriptorBufferInfo camBufferInfo;
 		if (config_parameters.ShadowView)
-			//if(globalFrameNumber % 2)
 		{
 			camBufferInfo.buffer = shadowDataBuffers[currentFrameIndex].buffer;
 		}
@@ -171,7 +170,7 @@ void VulkanEngine::RenderMainPass_Other(const vk::CommandBuffer& cmd)
 		noiseImage.imageView = bluenoise.imageView;
 		noiseImage.sampler = bluenoise.textureSampler;
 
-		setBuilder.bind_image_array(0, 10, texCache->all_images.data(), texCache->all_images.size());//all_images.data(),all_images.size());
+		setBuilder.bind_image_array(0, 10, texCache->all_images.data(), texCache->all_images.size());
 
 		setBuilder.bind_image("ssaoMap", render_graph.get_image_descriptor("ssao_post"));
 		setBuilder.bind_image("samplerBRDFLUT", get_image_resource("brdf"));
@@ -219,166 +218,15 @@ void VulkanEngine::RenderMainPass_Other(const vk::CommandBuffer& cmd)
 
 void VulkanEngine::RenderMainPass(const vk::CommandBuffer& cmd)
 {
-	tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(cmd);
-	TracyVkZoneC(profilercontext, VkCommandBuffer(cmd), "Forward Pass", tracy::Color::Red);
-	TextureResource bluenoise = getResource<TextureResource>(bluenoiseTexture);
-
-	ZoneScopedNC("Main Pass", tracy::Color::BlueViolet);
-	EntityID LastMesh = entt::null;
-
-	VkPipeline last_pipeline;
-	VkPipelineLayout piplayout;
-	VkBuffer last_vertex_buffer;
-	VkBuffer last_index_buffer;
-	bool first_render = true;
-
-	static std::vector<DrawUnit> drawables;
-
-	drawables.clear();
-	drawables.reserve(render_registry.view<RenderMeshComponent>().size());
-
-	render_registry.group<RenderMeshComponent, TransformComponent, ObjectBounds>().each([&](RenderMeshComponent& renderable, TransformComponent& tf, ObjectBounds& bounds) {
-		const MeshResource& mesh = render_registry.get<MeshResource>(renderable.mesh_resource_entity);
-		const PipelineResource& pipeline = render_registry.get<PipelineResource>(renderable.pass_pipelines[(size_t)MeshPasIndex::MainPass]);
-		const DescriptorResource& descriptor = render_registry.get<DescriptorResource>(renderable.pass_descriptors[(size_t)MeshPasIndex::MainPass]);
-
-		bool bVisible = false;
-
-		glm::vec3 bounds_center = glm::vec3(bounds.center_rad);
-		glm::vec3 dir = normalize(mainCam.eyeLoc - bounds_center);
-
-		float angle = glm::angle(dir, mainCam.eyeDir);
-
-		glm::vec3 bmin = bounds_center - glm::vec3(bounds.extent);
-		glm::vec3 bmax = bounds_center + glm::vec3(bounds.extent);
-
-		bVisible = mainCam.camfrustum.IsBoxVisible(bmin, bmax);
-
-		if (bVisible) {
-			DrawUnit newDrawUnit;
-			newDrawUnit.indexBuffer = mesh.indexBuffer.buffer;
-			newDrawUnit.vertexBuffer = mesh.vertexBuffer.buffer;
-			newDrawUnit.index_count = mesh.indices.size();
-			newDrawUnit.material_set = descriptor.materialSet;
-			newDrawUnit.object_idx = renderable.object_idx;
-			newDrawUnit.pipeline = pipeline.pipeline;
-			newDrawUnit.effect = pipeline.effect;
-			newDrawUnit.index_offset = mesh.index_offset;
-			drawables.push_back(newDrawUnit);
-		}
-	});
-
-	std::sort(drawables.begin(), drawables.end(), [](const DrawUnit& a, const DrawUnit& b) {
-		return a.vertexBuffer < b.vertexBuffer;
-		});
-
-	//convert to indirect
-	void* indirect = mapBuffer(mainpass_indirect_buffers[currentFrameIndex]);
-	{
-		ZoneScopedN("Indirect Upload")
-			VkDrawIndexedIndirectCommand* commands = (VkDrawIndexedIndirectCommand*)indirect;
-
-		for (int i = 0; i < drawables.size(); i++) {
-
-			auto draw = drawables[i];
-			commands[i].indexCount = draw.index_count;
-			commands[i].instanceCount = 1;
-			commands[i].firstIndex = draw.index_offset;
-			commands[i].vertexOffset = 0;
-			commands[i].firstInstance = draw.object_idx;
-
-			//commands[i]. = drawUnits[i].object_idx;
-		}
-	}
-	unmapBuffer(mainpass_indirect_buffers[currentFrameIndex]);
-
-
-	//for(const DrawUnit& unit : drawables)
-	{
-		const DrawUnit& unit = drawables[0];
-		const bool bShouldBindPipeline = true;//unit.pipeline != last_pipeline;
-
-		if (bShouldBindPipeline) {
-			cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, unit.pipeline);
-
-
-			auto pass = render_graph.get_pass("GBuffer");
-
-			set_pipeline_state_depth(pass->render_width, pass->render_height, cmd, false);
-			piplayout = unit.effect->build_pipeline_layout(device);
-			last_pipeline = unit.pipeline;
-
-			DescriptorSetBuilder setBuilder{ unit.effect,&descriptorMegapool };
-
-			vk::DescriptorBufferInfo camBufferInfo;
-			if (config_parameters.ShadowView)
-				//if(globalFrameNumber % 2)
-			{
-				camBufferInfo.buffer = shadowDataBuffers[currentFrameIndex].buffer;
-			}
-			else
-			{
-				camBufferInfo.buffer = cameraDataBuffers[currentFrameIndex].buffer;
-			}
-
-			camBufferInfo.offset = 0;
-			camBufferInfo.range = sizeof(UniformBufferObject);
-
-
-			VkDescriptorBufferInfo shadowBufferInfo = make_buffer_info<UniformBufferObject>(shadowDataBuffers[currentFrameIndex]);
-			
-			VkDescriptorBufferInfo sceneBufferInfo = make_buffer_info<GPUSceneParams>(sceneParamBuffers[currentFrameIndex]);
-			
-			VkDescriptorBufferInfo transformBufferInfo = make_buffer_info(object_buffers[currentFrameIndex].buffer, sizeof(GpuObjectData) * 10000);
-
-			VkDescriptorImageInfo shadowInfo = {};
-			shadowInfo.imageLayout = +vkf::ImageLayout::eDepthStencilReadOnlyOptimal;
-			shadowInfo.imageView = shadowPass.depth.view;
-			shadowInfo.sampler = bluenoise.textureSampler;
-
-			VkDescriptorImageInfo noiseImage = {};
-			noiseImage.imageLayout = +vkf::ImageLayout::eShaderReadOnlyOptimal;
-			noiseImage.imageView = bluenoise.imageView;
-			noiseImage.sampler = bluenoise.textureSampler;
-
-			setBuilder.bind_image_array(0, 10, texCache->all_images.data(), texCache->all_images.size());//all_images.data(),all_images.size());
-
-			setBuilder.bind_image("ssaoMap", render_graph.get_image_descriptor("ssao_post"));
-			setBuilder.bind_image("samplerBRDFLUT", get_image_resource("brdf"));
-			setBuilder.bind_image("blueNoise", noiseImage);
-			setBuilder.bind_image("shadowMap", shadowInfo);
-			setBuilder.bind_image("ambientCubemap", get_image_resource("irradiance_map"));
-			setBuilder.bind_image("reflectionCubemap", get_image_resource("reflection_map"));
-			setBuilder.bind_buffer("ubo", camBufferInfo);
-			setBuilder.bind_buffer("shadowUbo", shadowBufferInfo);
-			setBuilder.bind_buffer("sceneParams", sceneBufferInfo);
-			setBuilder.bind_buffer("MainObjectBuffer", transformBufferInfo);
-
-			std::array<VkDescriptorSet, 2> descriptors;
-			descriptors[0] = setBuilder.build_descriptor(0, DescriptorLifetime::PerFrame);
-			descriptors[1] = setBuilder.build_descriptor(1, DescriptorLifetime::PerFrame);
-
-			vkCmdBindDescriptorSets(cmd,+vkf::PipelineBindPoint::eGraphics,piplayout, 0, 2, &descriptors[0], 0, nullptr);
-		}
-
-		if (last_index_buffer != unit.indexBuffer) {
-
-			cmd.bindIndexBuffer(unit.indexBuffer, 0, vk::IndexType::eUint32);
-
-			last_index_buffer = unit.indexBuffer;
-		}
-
-		cmd.drawIndexedIndirect(mainpass_indirect_buffers[currentFrameIndex].buffer, vk::DeviceSize(0), (uint32_t)drawables.size(), sizeof(VkDrawIndexedIndirectCommand));
-
 	
-		eng_stats.drawcalls++;
-
-		first_render = false;
-	}
 }
+
+
 
 void VulkanEngine::RenderGBufferPass(const vk::CommandBuffer& cmd)
 {
+	static CommandEncoder* encoder{ nullptr };
+	if (encoder == nullptr) { encoder = new CommandEncoder(); };
 
 	tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(cmd);
 	TracyVkZoneC(profilercontext, VkCommandBuffer(cmd), "Gbuffer pass", tracy::Color::Grey);
@@ -386,13 +234,7 @@ void VulkanEngine::RenderGBufferPass(const vk::CommandBuffer& cmd)
 	ZoneScopedNC("GBuffer Pass", tracy::Color::BlueViolet);
 	EntityID LastMesh = entt::null;
 
-	vk::Pipeline last_pipeline;
-	vk::PipelineLayout piplayout;
-	vk::Buffer last_vertex_buffer;
-	vk::Buffer last_index_buffer;
-	bool first_render = true;
-
-	static std::vector<DrawUnit> drawables;
+	static std::vector<DrawUnitEncoder> drawables;
 
 	drawables.clear();
 	drawables.reserve(render_registry.view<RenderMeshComponent>().size());
@@ -400,38 +242,34 @@ void VulkanEngine::RenderGBufferPass(const vk::CommandBuffer& cmd)
 	ShaderEffect* effect = getResource<ShaderEffectHandle>("basicgbuf").handle;
 	render_registry.group<RenderMeshComponent, TransformComponent, ObjectBounds>().each([&](RenderMeshComponent& renderable, TransformComponent& tf, ObjectBounds& bounds) {
 		const MeshResource& mesh = render_registry.get<MeshResource>(renderable.mesh_resource_entity);
-		//const PipelineResource& pipeline = render_registry.get<PipelineResource>(renderable.pass_pipelines[(size_t)MeshPasIndex::MainPass]);
+		
 		const DescriptorResource& descriptor = render_registry.get<DescriptorResource>(renderable.pass_descriptors[(size_t)MeshPasIndex::MainPass]);
 
 		bool bVisible = false;
 
-		glm::vec3 bounds_center = glm::vec3(bounds.center_rad);
-		glm::vec3 dir = normalize(mainCam.eyeLoc - bounds_center);
+		bVisible = IsVisible(bounds, mainCam);
 
-		float angle = glm::angle(dir, mainCam.eyeDir);
+		if (IsVisible(bounds, mainCam)) {
+			DrawUnitEncoder newDrawUnit;
 
-		glm::vec3 bmin = bounds_center - glm::vec3(bounds.extent);
-		glm::vec3 bmax = bounds_center + glm::vec3(bounds.extent);
+			VkBuffer index = mesh.indexBuffer.buffer;
+			VkDescriptorSet matset = descriptor.materialSet;
 
-		bVisible = mainCam.camfrustum.IsBoxVisible(bmin, bmax); //glm::degrees(angle) < 90.f;
-
-		if (bVisible) {
-			DrawUnit newDrawUnit;
-			newDrawUnit.indexBuffer = mesh.indexBuffer.buffer;
-			newDrawUnit.vertexBuffer = mesh.vertexBuffer.buffer;
+			newDrawUnit.indexBuffer = reinterpret_cast<uint64_t>(index);
+			newDrawUnit.vertexBuffer = 0;
 			newDrawUnit.index_count = mesh.indices.size();
-			//newDrawUnit.material_set = descriptor.materialSet;
+			newDrawUnit.material_set = 0;
 			newDrawUnit.object_idx = renderable.object_idx;
-			newDrawUnit.pipeline = gbufferPipeline;//pipeline.pipeline;
-			newDrawUnit.effect = effect;
+
+			newDrawUnit.pipeline = 0;
 			newDrawUnit.index_offset = mesh.index_offset;
 			drawables.push_back(newDrawUnit);
 		}
-		});
+	});
 
-	std::sort(drawables.begin(), drawables.end(), [](const DrawUnit& a, const DrawUnit& b) {
-		return a.vertexBuffer < b.vertexBuffer;
-		});
+	//std::sort(drawables.begin(), drawables.end(), [](const DrawUnitEncoder& a, const DrawUnitEncoder& b) {
+	//	return a.vertexBuffer < b.vertexBuffer;
+	//});
 
 
 	//convert to indirect
@@ -447,38 +285,29 @@ void VulkanEngine::RenderGBufferPass(const vk::CommandBuffer& cmd)
 			commands[i].instanceCount = 1;
 			commands[i].firstIndex = draw.index_offset;
 			commands[i].vertexOffset = 0;
-			commands[i].firstInstance = draw.object_idx;
-
-			//commands[i]. = drawUnits[i].object_idx;
+			commands[i].firstInstance = draw.object_idx;					
 		}
 	}
 	unmapBuffer(gbuffer_indirect_buffers[currentFrameIndex]);
 
-	//eng_stats.drawcalls++;
-	//eng_stats.shadow_drawcalls++;
-
 
 
 	eng_stats.gbuffer_drawcalls = 0;
-	//for (const DrawUnit& unit : drawables) {
-	//
-	//	const bool bShouldBindPipeline = unit.pipeline != last_pipeline;
 
-	if (true)//bShouldBindPipeline) 
-	{
-		const DrawUnit& unit = drawables[0];
-		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, unit.pipeline);
+		const DrawUnitEncoder& unit = drawables[0];
 
 		auto pass = render_graph.get_pass("GBuffer");
+		uint64_t pipid = (uint32_t)GbufferPipelineID;
+		encoder->bind_pipeline(pipid);
 
-		set_pipeline_state_depth(pass->render_width, pass->render_height, cmd, false);
-		//set_pipeline_state_depth(swapChainExtent.width, swapChainExtent.height, cmd, false);
-		piplayout = (vk::PipelineLayout)unit.effect->build_pipeline_layout(device);
-		last_pipeline = unit.pipeline;
+		encoder->set_depthbias(0, 0, 0);
+		encoder->set_scissor(0, 0, pass->render_width, pass->render_height);
+		encoder->set_viewport(0, 0, pass->render_width, pass->render_height, 0, 1);
 
-		DescriptorSetBuilder setBuilder{ unit.effect,&descriptorMegapool };
+		const PipelineResource& pipeline = render_registry.get<PipelineResource>(GbufferPipelineID);
+		DescriptorSetBuilder setBuilder{ pipeline.effect,&descriptorMegapool };
 
-		vk::DescriptorBufferInfo camBufferInfo;
+		VkDescriptorBufferInfo camBufferInfo;
 		if (config_parameters.ShadowView)
 			//if (globalFrameNumber % 2)
 		{
@@ -492,7 +321,7 @@ void VulkanEngine::RenderGBufferPass(const vk::CommandBuffer& cmd)
 		camBufferInfo.offset = 0;
 		camBufferInfo.range = sizeof(UniformBufferObject);
 
-		vk::DescriptorBufferInfo transformBufferInfo;
+		VkDescriptorBufferInfo transformBufferInfo;
 		transformBufferInfo.buffer = object_buffers[currentFrameIndex].buffer;
 		transformBufferInfo.offset = 0;
 		transformBufferInfo.range = sizeof(GpuObjectData) * 10000;
@@ -500,25 +329,29 @@ void VulkanEngine::RenderGBufferPass(const vk::CommandBuffer& cmd)
 		setBuilder.bind_buffer("ubo", camBufferInfo);
 		setBuilder.bind_buffer("MainObjectBuffer", transformBufferInfo);
 
-		build_and_bind_descriptors(setBuilder, 0, cmd);
-	}
+		//build_and_bind_descriptors(setBuilder, 0, cmd);
 
-	//if (last_index_buffer != unit.indexBuffer) {
+
+	
+
+	VkDescriptorSet descriptor = setBuilder.build_descriptor(0, DescriptorLifetime::PerFrame);
+
+	encoder->bind_descriptor_set(0, reinterpret_cast<uint64_t>(descriptor));
+
+	encoder->bind_index_buffer(0, unit.indexBuffer);
+
+	VkBuffer indirectBuffer = gbuffer_indirect_buffers[currentFrameIndex].buffer;
+
+	encoder->draw_indexed_indirect(reinterpret_cast<uint64_t>(indirectBuffer), drawables.size(), 0);
+
 	{
-		cmd.bindIndexBuffer(megabuffer.buffer, 0, vk::IndexType::eUint32);
-		//	cmd.bindIndexBuffer(unit.indexBuffer, 0, vk::IndexType::eUint32);
+		tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(cmd);
+		TracyVkZoneC(profilercontext, VkCommandBuffer(cmd), "GBuffer Pass", tracy::Color::Red);
 
-		//	last_index_buffer = unit.indexBuffer;
+		ZoneScopedN("Command decoding")
+
+		DecodeCommands(cmd, encoder);
 	}
-
-	cmd.drawIndexedIndirect(gbuffer_indirect_buffers[currentFrameIndex].buffer, vk::DeviceSize(0), (uint32_t)drawables.size(), sizeof(VkDrawIndexedIndirectCommand));
-
-
-	//cmd.drawIndexed(static_cast<uint32_t>(unit.index_count), 1, unit.index_offset, 0, unit.object_idx);
-	eng_stats.drawcalls++;
-	eng_stats.gbuffer_drawcalls++;
-	first_render = false;
-	//}
 }
 
 
@@ -537,7 +370,7 @@ void VulkanEngine::render_shadow_pass(const vk::CommandBuffer& cmd, int height, 
 		uint32_t instance_count;
 		uint32_t index_count;
 		uint32_t index_offset;
-		vk::Buffer index_buffer;
+		VkBuffer index_buffer;
 	};
 	eng_stats.shadow_drawcalls = 0;
 	static std::vector<ShadowDrawUnit> drawUnits;
@@ -549,22 +382,22 @@ void VulkanEngine::render_shadow_pass(const vk::CommandBuffer& cmd, int height, 
 	TracyVkZoneC(profilercontext, VkCommandBuffer(cmd), "Shadow pass", tracy::Color::Blue);
 
 	ShaderEffect* effect = getResource<ShaderEffectHandle>("shadowpipeline").handle;
-	vk::Pipeline last_pipeline = shadowPipeline;
-	vk::PipelineLayout piplayout;
+	VkPipeline last_pipeline = shadowPipeline;
+	VkPipelineLayout piplayout;
 
 	cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, shadowPipeline);
 
 	set_pipeline_state_depth(width, height, cmd);
 
-	piplayout = (vk::PipelineLayout)effect->build_pipeline_layout(device);
+	piplayout = effect->build_pipeline_layout(device);
 	last_pipeline = shadowPipeline;
 
 	DescriptorSetBuilder setBuilder{ effect,&descriptorMegapool };
 
-	vk::DescriptorBufferInfo shadowBufferInfo = make_buffer_info<UniformBufferObject>(shadowDataBuffers[currentFrameIndex]);
+	VkDescriptorBufferInfo shadowBufferInfo = make_buffer_info<UniformBufferObject>(shadowDataBuffers[currentFrameIndex]);
 
-	vk::DescriptorBufferInfo transformBufferInfo = make_buffer_info(object_buffers[currentFrameIndex].buffer, sizeof(GpuObjectData) * 10000);
-	vk::DescriptorBufferInfo instanceBufferInfo = make_buffer_info(shadow_instance_buffers[currentFrameIndex].buffer, sizeof(uint32_t) * 10000);
+	VkDescriptorBufferInfo transformBufferInfo = make_buffer_info(object_buffers[currentFrameIndex].buffer, sizeof(GpuObjectData) * 10000);
+	VkDescriptorBufferInfo instanceBufferInfo = make_buffer_info(shadow_instance_buffers[currentFrameIndex].buffer, sizeof(uint32_t) * 10000);
 
 	setBuilder.bind_buffer("ubo", shadowBufferInfo);
 	setBuilder.bind_buffer("MainObjectBuffer", transformBufferInfo);
@@ -578,7 +411,7 @@ void VulkanEngine::render_shadow_pass(const vk::CommandBuffer& cmd, int height, 
 
 
 	ZoneScopedNC("Shadow Pass", tracy::Color::BlueViolet);
-	vk::Buffer LastIndex{};
+	VkBuffer LastIndex{};
 
 
 	render_registry.view<RenderMeshComponent>().each([&](RenderMeshComponent& renderable) {

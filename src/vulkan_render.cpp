@@ -1484,6 +1484,13 @@ void VulkanEngine::create_gbuffer_pipeline()
 	};
 
 	gbufferPipeline = gbufferPipelineBuilder->build_pipeline(device, gbuffPass.renderPass, 0, pipelineEffect);
+
+	PipelineResource pipeline;
+	pipeline.pipeline = gbufferPipeline;
+	pipeline.effect = pipelineEffect;
+	pipeline.pipelineBuilder = gbufferPipelineBuilder;
+	pipeline.renderPassName = "GBuffer";
+	GbufferPipelineID = createResource("pipeline_gbuffer", pipeline);
 }
 
 
