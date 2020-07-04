@@ -319,10 +319,13 @@ public:
 	void render_ssao_flip(const vk::CommandBuffer& cmd, int height, int width);
 	void render_ssao_blur_compute(const vk::CommandBuffer& cmd, const char* image_source,const char *image_target, glm::vec2 blur_direction);
 
-	vk::DescriptorImageInfo get_image_resource(const char* name);
+	VkDescriptorImageInfo get_image_resource(const char* name);
+	void RenderMainPass_Other(const vk::CommandBuffer& cmd);
 	void RenderMainPass(const vk::CommandBuffer& cmd);
 	void RenderGBufferPass(const vk::CommandBuffer& cmd);
 	void update_uniform_buffer(uint32_t currentImage);
+
+	void DecodeCommands(VkCommandBuffer cmd, struct CommandEncoder* encoder);
 
 	void clear_vulkan();
 	void pick_physical_device();

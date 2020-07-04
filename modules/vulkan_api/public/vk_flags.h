@@ -247,6 +247,9 @@ inline VkAccessFlagBits operator+(const vkf::AccessFlagBits l) {
 };
 inline VkPipelineStageFlagBits operator+(const vkf::PipelineStageFlagBits l) {
 	return static_cast<VkPipelineStageFlagBits>(l);
+}
+inline VkPipelineBindPoint operator+(const vkf::PipelineBindPoint l) {
+	return static_cast<VkPipelineBindPoint>(l);
 };
 inline VkImageUsageFlagBits operator+(const vkf::ImageUsageFlagBits l) {
 	return static_cast<VkImageUsageFlagBits>(l);

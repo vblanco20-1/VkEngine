@@ -11,7 +11,7 @@ add_compile_definitions(ASSET_PATH="${PROJECT_SOURCE_DIR}/assets/")
 set(SOURCE_FILES ${PROJ_SOURCES} ${PROJ_HEADERS})
 
  
-  
+ add_compile_options("/await")
  
 add_executable(vkEngine ${SOURCE_FILES}) 
 

@@ -88,5 +88,16 @@ struct DescriptorMegaPool {
 };
 
 
+inline VkDescriptorBufferInfo make_buffer_info(VkBuffer buffer, size_t size, uint32_t offset = 0) {
+	VkDescriptorBufferInfo info{};
+	info.buffer = buffer;
+	info.offset = offset;
+	info.range = size;
+	return info;
+}
+template<typename T>
+VkDescriptorBufferInfo make_buffer_info(const AllocatedBuffer& allocbuffer, uint32_t offset = 0) {
+	return make_buffer_info(allocbuffer.buffer, sizeof(T), offset);
+}
 
 
