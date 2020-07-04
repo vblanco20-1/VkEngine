@@ -67,10 +67,8 @@ void Decode_BindIndexBuffer(CommandDecodeState* state, ICommand* command) {
 	state->wantsIndex.offset = cmd->offset;
 }
 
-void Decode_DrawIndexedIndirect(CommandDecodeState* state, ICommand* command) {
-
-	CMD_DrawIndexedIndirect* cmd = static_cast<CMD_DrawIndexedIndirect*>(command);
-	
+void RefreshPipeline(CommandDecodeState* state)
+{
 	VulkanEngine* eng = state->engine;
 	VkCommandBuffer vkCmd = state->cmd;
 	if (state->wantsPipeline != state->boundPipeline) {
@@ -79,20 +77,24 @@ void Decode_DrawIndexedIndirect(CommandDecodeState* state, ICommand* command) {
 		const PipelineResource& pipeline = eng->render_registry.get<PipelineResource>(entt::entity{ state->wantsPipeline });
 
 		state->boundLayout = pipeline.effect->build_pipeline_layout(eng->device);
-		vkCmdBindPipeline(vkCmd,VK_PIPELINE_BIND_POINT_GRAPHICS , pipeline.pipeline);
+		vkCmdBindPipeline(vkCmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.pipeline);
 
 		//rebind constants
 		vkCmdSetViewport(vkCmd, 0, 1, &state->viewport);
-	
+
 		vkCmdSetScissor(vkCmd, 0, 1, &state->scissorRect);
-		
+
 		vkCmdSetDepthBias(vkCmd, state->depthBiasConstantFactor, state->depthBiasClamp, state->depthBiasSlopeFactor);
 
 		state->boundPipeline = state->wantsPipeline;
-		
-	}	
 
-	//check descriptor sets
+	}
+}
+void RefreshDescriptors(CommandDecodeState* state)
+{
+	VulkanEngine* eng = state->engine;
+	VkCommandBuffer vkCmd = state->cmd;
+
 	for (int i = 0; i < 4; i++) {
 
 		if (state->boundDescriptors[i] != state->wantsDescriptors[i] && state->wantsDescriptors[i].valid()) {
@@ -103,16 +105,37 @@ void Decode_DrawIndexedIndirect(CommandDecodeState* state, ICommand* command) {
 			state->boundDescriptors[i] = state->wantsDescriptors[i];
 		}
 	}
+}
+void RefreshIndexBuffer(CommandDecodeState* state)
+{
+	VulkanEngine* eng = state->engine;
+	VkCommandBuffer vkCmd = state->cmd;
+
+	VkBuffer buffer = reinterpret_cast<VkBuffer>(state->wantsIndex.indexBuffer);
+
+	vkCmdBindIndexBuffer(vkCmd, buffer, VkDeviceSize{ state->wantsIndex.offset }, VK_INDEX_TYPE_UINT32);
+
+	state->boundIndex.indexBuffer = state->wantsIndex.indexBuffer;
+	state->boundIndex.offset = state->wantsIndex.offset;
+}
+void Decode_DrawIndexedIndirect(CommandDecodeState* state, ICommand* command) {
+
+	CMD_DrawIndexedIndirect* cmd = static_cast<CMD_DrawIndexedIndirect*>(command);
+
+	VulkanEngine* eng = state->engine;
+	VkCommandBuffer vkCmd = state->cmd;
+	if (state->wantsPipeline != state->boundPipeline) {
+		RefreshPipeline(state);
+	}
+
+
+	//check descriptor sets
+	RefreshDescriptors(state);
 
 	//check index buffer
 	if(state->boundIndex != state->wantsIndex) {
 
-		VkBuffer buffer = reinterpret_cast<VkBuffer>(state->wantsIndex.indexBuffer);
-
-		vkCmdBindIndexBuffer(vkCmd, buffer, VkDeviceSize{ state->wantsIndex.offset }, VK_INDEX_TYPE_UINT32);
-
-		state->boundIndex.indexBuffer = state->wantsIndex.indexBuffer;
-		state->boundIndex.offset = state->wantsIndex.offset;
+		RefreshIndexBuffer(state);
 	}
 
 
@@ -122,7 +145,28 @@ void Decode_DrawIndexedIndirect(CommandDecodeState* state, ICommand* command) {
 
 	eng->eng_stats.drawcalls++;
 }
+void Decode_DrawIndexed(CommandDecodeState* state, ICommand* command) {
 
+	CMD_DrawIndexed* cmd = static_cast<CMD_DrawIndexed*>(command);
+
+	VulkanEngine* eng = state->engine;
+	VkCommandBuffer vkCmd = state->cmd;
+	if (state->wantsPipeline != state->boundPipeline) {
+		RefreshPipeline(state);
+	}
+
+	//check descriptor sets
+	RefreshDescriptors(state);
+
+	//check index buffer
+	if (state->boundIndex != state->wantsIndex) {
+
+		RefreshIndexBuffer(state);
+	}
+
+	vkCmdDrawIndexed(vkCmd, cmd->indexCount, cmd->instanceCount, cmd->firstIndex, cmd->vertexOffset, cmd->firstInstance);
+	eng->eng_stats.drawcalls++;
+}
 void Decode_SetViewport(CommandDecodeState* state, ICommand* command) {
 
 	CMD_SetViewport* cmd = static_cast<CMD_SetViewport*>(command);
@@ -172,6 +216,9 @@ void DecodeCommand(CommandDecodeState* state, ICommand* command) {
 		break;
 	case CommandType::DrawIndexedIndirect:
 		Decode_DrawIndexedIndirect(state, command);
+		break;
+	case CommandType::DrawIndexed:
+		Decode_DrawIndexed(state, command);
 		break;
 	case CommandType::SetViewport:
 		Decode_SetViewport(state, command);

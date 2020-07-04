@@ -52,6 +52,17 @@ void CommandEncoder::draw_indexed_indirect(uint64_t indirectBuffer, uint32_t cou
 
 
 
+void CommandEncoder::draw_indexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance)
+{
+	CMD_DrawIndexed* cmd = encode<CMD_DrawIndexed>(encode_buffer);
+
+	cmd->indexCount = indexCount;
+	cmd->instanceCount=instanceCount;
+	cmd->firstIndex=firstIndex;
+	cmd->vertexOffset=vertexOffset;
+	cmd->firstInstance=firstInstance;
+}
+
 void CommandEncoder::set_viewport(float x,
 float y,
 float w,
@@ -133,5 +144,6 @@ cppcoro::generator<ICommand*> CommandEncoder::command_generator()
 			cursor += cmd->size;
 		}		
 		chunk = chunk->next;
+		cursor = 0;
 	}
 }

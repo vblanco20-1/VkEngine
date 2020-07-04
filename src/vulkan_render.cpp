@@ -928,6 +928,13 @@ void VulkanEngine::create_shadow_pipeline()
 	};
 
 	shadowPipeline = shadowPipelineBuilder.build_pipeline(device, shadowPass.renderPass, 0, pipelineEffect);
+
+	PipelineResource pipelineBlur_Comp;
+	pipelineBlur_Comp.pipeline = shadowPipeline;
+	pipelineBlur_Comp.effect = pipelineEffect;
+	pipelineBlur_Comp.pipelineBuilder = nullptr;//shadowPipelineBuilder;
+	pipelineBlur_Comp.renderPassName = "shadow";
+	ShadowPipelineID = createResource("shadow_pipeline", pipelineBlur_Comp);
 }
 float lerp(float a, float b, float f)
 {

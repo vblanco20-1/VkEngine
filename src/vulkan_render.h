@@ -117,6 +117,7 @@ public:
 	IndexBufferCache indexCache;
 
 	EntityID GbufferPipelineID;
+	EntityID ShadowPipelineID;
 
 	vk::PipelineLayout pipelineLayout;
 	vk::Pipeline gbufferPipeline;

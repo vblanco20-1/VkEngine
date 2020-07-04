@@ -7,6 +7,7 @@ enum class CommandType : uint8_t {
 	BindDescriptorSet,
 	BindIndexBuffer,
 	DrawIndexedIndirect,
+	DrawIndexed,
 	SetViewport,
 	SetScissor,
 	SetDepthBias
@@ -88,6 +89,20 @@ struct alignas(8) CMD_DrawIndexedIndirect : public ICommand {
 	constexpr static CommandType cmd_type = CommandType::DrawIndexedIndirect;
 };
 
+
+struct alignas(8) CMD_DrawIndexed : public ICommand {
+
+	uint32_t indexCount;
+	uint32_t instanceCount; 
+	uint32_t firstIndex; 
+	int32_t vertexOffset; 
+	uint32_t firstInstance;
+
+	constexpr static CommandType cmd_type = CommandType::DrawIndexed;
+};
+
+
+
 struct CommandEncoder {
 
 	void bind_descriptor_set(uint8_t setNumber, uint64_t descriptorSet);
@@ -95,7 +110,7 @@ struct CommandEncoder {
 	void bind_index_buffer(uint64_t offset, uint64_t indexBuffer);
 
 	void draw_indexed_indirect(uint64_t indirectBuffer, uint32_t count, uint32_t offset);
-
+	void draw_indexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance);
 
 	void set_viewport(float x, float y, float w, float h, float depthMin, float depthMax);
 	void set_scissor(float x, float y, float w, float h);

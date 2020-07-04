@@ -41,6 +41,7 @@ struct DrawUnitEncoder {
 	uint32_t index_count;
 	uint32_t object_idx;
 	uint32_t index_offset;
+	float distance;
 
 	uint64_t pipeline;
 	uint64_t material_set;
@@ -96,6 +97,9 @@ void VulkanEngine::RenderMainPass_Other(const vk::CommandBuffer& cmd)
 			newDrawUnit.index_count = mesh.indices.size();
 			newDrawUnit.material_set = reinterpret_cast<uint64_t>(matset);
 			newDrawUnit.object_idx = renderable.object_idx;
+
+			glm::vec3 bounds_center = glm::vec3(bounds.center_rad);			
+			newDrawUnit.distance = (mainCam.eyeLoc - bounds_center).length();
 			EntityID pipelineID = renderable.pass_pipelines[(size_t)MeshPasIndex::MainPass];
 			
 			newDrawUnit.pipeline = uint32_t(pipelineID);//pipeline.pipeline;
@@ -105,9 +109,9 @@ void VulkanEngine::RenderMainPass_Other(const vk::CommandBuffer& cmd)
 		}
 	});
 
-	//std::sort(drawables.begin(), drawables.end(), [](const DrawUnit& a, const DrawUnit& b) {
-	//	return a.vertexBuffer < b.vertexBuffer;
-	//	});
+	std::sort(drawables.begin(), drawables.end(), [](const DrawUnitEncoder& a, const DrawUnitEncoder& b) {
+		return a.distance < b.distance;//a.vertexBuffer < b.vertexBuffer;
+	});
 
 	//convert to indirect
 	void* indirect = mapBuffer(mainpass_indirect_buffers[currentFrameIndex]);
@@ -260,7 +264,8 @@ void VulkanEngine::RenderGBufferPass(const vk::CommandBuffer& cmd)
 			newDrawUnit.index_count = mesh.indices.size();
 			newDrawUnit.material_set = 0;
 			newDrawUnit.object_idx = renderable.object_idx;
-
+			glm::vec3 bounds_center = glm::vec3(bounds.center_rad);
+			newDrawUnit.distance = (mainCam.eyeLoc - bounds_center).length();
 			newDrawUnit.pipeline = 0;
 			newDrawUnit.index_offset = mesh.index_offset;
 			drawables.push_back(newDrawUnit);
@@ -270,7 +275,9 @@ void VulkanEngine::RenderGBufferPass(const vk::CommandBuffer& cmd)
 	//std::sort(drawables.begin(), drawables.end(), [](const DrawUnitEncoder& a, const DrawUnitEncoder& b) {
 	//	return a.vertexBuffer < b.vertexBuffer;
 	//});
-
+	std::sort(drawables.begin(), drawables.end(), [](const DrawUnitEncoder& a, const DrawUnitEncoder& b) {
+		return a.distance > b.distance;//a.vertexBuffer < b.vertexBuffer;
+		});
 
 	//convert to indirect
 	void* indirect = mapBuffer(gbuffer_indirect_buffers[currentFrameIndex]);
@@ -378,19 +385,24 @@ void VulkanEngine::render_shadow_pass(const vk::CommandBuffer& cmd, int height, 
 	static std::vector<InstancedDraw> instancedDraws;
 	instancedDraws.clear();
 
-	tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(cmd);
-	TracyVkZoneC(profilercontext, VkCommandBuffer(cmd), "Shadow pass", tracy::Color::Blue);
 
-	ShaderEffect* effect = getResource<ShaderEffectHandle>("shadowpipeline").handle;
-	VkPipeline last_pipeline = shadowPipeline;
-	VkPipelineLayout piplayout;
+	static CommandEncoder* encoder{ nullptr };
+	if (encoder == nullptr) { encoder = new CommandEncoder(); };
 
-	cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, shadowPipeline);
+	const PipelineResource& pipeline = render_registry.get<PipelineResource>(ShadowPipelineID);
 
-	set_pipeline_state_depth(width, height, cmd);
+	ShaderEffect* effect = pipeline.effect;
 
-	piplayout = effect->build_pipeline_layout(device);
-	last_pipeline = shadowPipeline;
+	
+	uint64_t pipid = (uint32_t)ShadowPipelineID;
+	encoder->bind_pipeline(pipid);
+
+	encoder->set_depthbias(0, 0, 0);
+	encoder->set_scissor(0, 0, width, height);
+	encoder->set_viewport(0, 0, width, height, 0, 1);
+
+	VkPipelineLayout piplayout = effect->build_pipeline_layout(device);
+	
 
 	DescriptorSetBuilder setBuilder{ effect,&descriptorMegapool };
 
@@ -403,10 +415,10 @@ void VulkanEngine::render_shadow_pass(const vk::CommandBuffer& cmd, int height, 
 	setBuilder.bind_buffer("MainObjectBuffer", transformBufferInfo);
 	setBuilder.bind_buffer("InstanceIDBuffer", instanceBufferInfo);
 
-	std::array<vk::DescriptorSet, 2> descriptors;
+	std::array<VkDescriptorSet, 2> descriptors;
 	descriptors[0] = setBuilder.build_descriptor(0, DescriptorLifetime::PerFrame);
 
-	cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, piplayout, 0, 1, &descriptors[0], 0, nullptr);
+	encoder->bind_descriptor_set(0, reinterpret_cast<uint64_t>( descriptors[0]));
 
 
 
@@ -436,7 +448,7 @@ void VulkanEngine::render_shadow_pass(const vk::CommandBuffer& cmd, int height, 
 
 			return a.indexBuffer->buffer < b.indexBuffer->buffer;
 		}
-		});
+	});
 
 
 
@@ -475,13 +487,9 @@ void VulkanEngine::render_shadow_pass(const vk::CommandBuffer& cmd, int height, 
 	}
 	instancedDraws.push_back(pendingDraw);
 
-
-
 	int binds = 0;
-	int draw_idx = 0;
-#if 1
-	cmd.bindIndexBuffer(megabuffer.buffer, 0, vk::IndexType::eUint32);
-
+	int draw_idx = 0;	
+	
 	//convert to indirect
 	void* indirect = mapBuffer(shadow_indirect_buffers[currentFrameIndex]);
 	{
@@ -497,117 +505,37 @@ void VulkanEngine::render_shadow_pass(const vk::CommandBuffer& cmd, int height, 
 			commands[i].firstIndex = draw.index_offset;
 			commands[i].vertexOffset = 0;
 			commands[i].firstInstance = draw.first_index;
-
-			//commands[i]. = drawUnits[i].object_idx;
 		}
 	}
 	unmapBuffer(shadow_indirect_buffers[currentFrameIndex]);
 
 	eng_stats.drawcalls++;
 	eng_stats.shadow_drawcalls++;
-	cmd.drawIndexedIndirect(shadow_indirect_buffers[currentFrameIndex].buffer, vk::DeviceSize(0), (uint32_t)instancedDraws.size(), sizeof(VkDrawIndexedIndirectCommand));
-	//for (auto& draw : instancedDraws) {		
-	//
-	//
-	//	//cmd.setCheckpointNV("Draw Shadow", extensionDispatcher);
-	//	cmd.drawIndexed(draw.index_count, draw.instance_count, draw.index_offset, 0, draw.first_index);
-	//	eng_stats.drawcalls++;
-	//	eng_stats.shadow_drawcalls++;
-	//}
-#else 
-	for (auto& unit : drawUnits)
+	//cmd.drawIndexedIndirect(shadow_indirect_buffers[currentFrameIndex].buffer, vk::DeviceSize(0), (uint32_t)instancedDraws.size(), sizeof(VkDrawIndexedIndirectCommand));
 	{
-		if (LastIndex != unit.indexBuffer->buffer) {
 
-			vk::DeviceSize offsets[] = { 0 };
+		ZoneScopedN("Command encoding")
 
-			cmd.bindIndexBuffer(unit.indexBuffer->buffer, 0, vk::IndexType::eUint32);
+		encoder->set_depthbias(0, 0, 0);
+		encoder->set_scissor(0, 0, width, height);
+		encoder->set_viewport(0, 0, width, height, 0, 1);
 
-			LastIndex = unit.indexBuffer->buffer;
-			binds++;
+		encoder->bind_pipeline(pipid);
+
+		for (auto& draw : instancedDraws) {
+
+			encoder->bind_index_buffer(0, reinterpret_cast<uint64_t>(draw.index_buffer));
+			encoder->draw_indexed(draw.index_count, draw.instance_count, draw.index_offset, 0, draw.first_index);
 		}
-
-		cmd.drawIndexed(unit.index_count, 1, 0, 0, draw_idx);//unit.object_idx);
-		eng_stats.drawcalls++;
-		eng_stats.shadow_drawcalls++;
-		draw_idx++;
 	}
-#endif
+	{
+		tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(cmd);
+		TracyVkZoneC(profilercontext, VkCommandBuffer(cmd), "Shadow Pass", tracy::Color::Red);
+
+		ZoneScopedN("Command decoding")
+
+		DecodeCommands(cmd, encoder);
+	}
 	return;
-#if 0
-	render_registry.view<RenderMeshComponent>().each([&](RenderMeshComponent& renderable) {
 
-		const MeshResource& mesh = render_registry.get<MeshResource>(renderable.mesh_resource_entity);
-
-		bool bShouldBindPipeline = first_render;// ? true : pipeline.pipeline != last_pipeline;
-
-		if (bShouldBindPipeline) {
-			cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, shadowPipeline);
-
-			set_pipeline_state_depth(width, height, cmd);
-
-			piplayout = (vk::PipelineLayout)effect->build_pipeline_layout(device);
-			last_pipeline = shadowPipeline;
-
-			DescriptorSetBuilder setBuilder{ effect,&descriptorMegapool };
-
-			vk::DescriptorBufferInfo shadowBufferInfo = make_buffer_info<UniformBufferObject>(shadowDataBuffers[currentFrameIndex]);
-
-			vk::DescriptorBufferInfo transformBufferInfo = make_buffer_info(object_buffers[currentFrameIndex].buffer, sizeof(GpuObjectData) * 10000);
-
-			setBuilder.bind_buffer("ubo", shadowBufferInfo);
-			setBuilder.bind_buffer("MainObjectBuffer", transformBufferInfo);
-
-			std::array<vk::DescriptorSet, 2> descriptors;
-			descriptors[0] = setBuilder.build_descriptor(0, DescriptorLifetime::PerFrame);
-
-			cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, piplayout, 0, 1, &descriptors[0], 0, nullptr);
-		}
-
-		if (LastMesh != renderable.mesh_resource_entity) {
-			vk::Buffer meshbuffers[] = { mesh.vertexBuffer.buffer };
-			vk::DeviceSize offsets[] = { 0 };
-			//cmd.bindVertexBuffers(0, 1, meshbuffers, offsets);
-
-			cmd.bindIndexBuffer(mesh.indexBuffer.buffer, 0, vk::IndexType::eUint32);
-
-			LastMesh = renderable.mesh_resource_entity;
-		}
-
-		cmd.drawIndexed(static_cast<uint32_t>(mesh.indices.size()), 1, 0, 0, renderable.object_idx);
-		eng_stats.drawcalls++;
-
-		first_render = false;
-		});
-
-#endif
-
-#if 0
-	int copyidx = 0;
-	std::vector<GpuObjectData> object_matrices;
-
-	object_matrices.resize(render_registry.capacity<RenderMeshComponent>());
-
-	render_registry.group<RenderMeshComponent, TransformComponent, ObjectBounds>().each([&](EntityID id, RenderMeshComponent& renderable, const TransformComponent& transform, ObjectBounds& bounds) {
-
-		object_matrices[copyidx].model_matrix = transform.model;
-
-
-		const MeshResource& mesh = render_registry.get<MeshResource>(renderable.mesh_resource_entity);
-		object_matrices[copyidx].vertex_buffer_adress = mesh.vertexBuffer.address;//get_buffer_adress(mesh.vertexBuffer);
-
-
-		renderable.object_idx = copyidx;
-		copyidx++;
-		});
-
-	if (copyidx > 0) {
-		ZoneScopedN("Uniform copy");
-
-		void* matdata = mapBuffer(object_buffers[currentImage]);
-		memcpy(matdata, object_matrices.data(), object_matrices.size() * sizeof(GpuObjectData));
-
-		unmapBuffer(object_buffers[currentImage]);
-	}
-#endif
 }
