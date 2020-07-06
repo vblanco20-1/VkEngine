@@ -2,7 +2,7 @@
 #include <vulkan_render.h>
 #include "vulkan_types.h"
 #include <shader_processor.h>
-
+#include <TracyVulkan.hpp>
 
 struct DescriptorBindState {
 	uint64_t descriptor{ (uint64_t)-1 };
@@ -26,7 +26,7 @@ struct IndexBindState {
 struct CommandDecodeState {
 	VkCommandBuffer cmd;
 	VulkanEngine* engine;
-
+	tracy::VkCtxManualScope* tracyScope{nullptr};
 	VkViewport viewport;
 	VkRect2D scissorRect;
 	float depthBiasConstantFactor;
@@ -232,6 +232,22 @@ void Decode_SetDepthBias(CommandDecodeState* state, ICommand* command) {
 }
 
 
+void Decode_BeginTrace(CommandDecodeState* state, ICommand* command)
+{
+	CMD_BeginTrace* cmd = static_cast<CMD_BeginTrace*>(command);
+	const tracy::SourceLocationData* sourceloc = (const tracy::SourceLocationData*)cmd->profilerSourceLocation;
+
+	if (state->tracyScope == nullptr) {
+		tracy::VkCtx* ctx = (tracy::VkCtx*)state->engine->get_profiler_context(state->cmd);
+		state->tracyScope = new tracy::VkCtxManualScope(ctx, sourceloc, state->cmd, true);
+		state->tracyScope->Start(state->cmd);
+	}
+	else {
+		state->tracyScope->End();
+		state->tracyScope->m_srcloc = sourceloc;
+	}
+}
+
 void DecodeCommand(CommandDecodeState* state, ICommand* command) {
 
 	switch (command->type) {
@@ -264,6 +280,9 @@ void DecodeCommand(CommandDecodeState* state, ICommand* command) {
 	case CommandType::SetDepthBias:
 		Decode_SetDepthBias(state, command);
 		break;
+	case CommandType::BeginTrace :
+		Decode_BeginTrace(state, command);
+		break;
 	}
 }
 
@@ -274,7 +293,8 @@ void VulkanEngine::DecodeCommands(VkCommandBuffer cmd, struct CommandEncoder* en
 {
 	ZoneScopedN("Command decoding")
 	
-
+	tracy::VkCtx* pctx = (tracy::VkCtx*)get_profiler_context(cmd);
+	TracyVkZone(pctx, cmd, "Command Decoding");
 	auto gn = encoder->command_generator();
 
 	CommandDecodeState state;
@@ -283,6 +303,9 @@ void VulkanEngine::DecodeCommands(VkCommandBuffer cmd, struct CommandEncoder* en
 
 	for (ICommand* command : gn) {
 		DecodeCommand(&state, command);
+	}
+	if (state.tracyScope) {
+		state.tracyScope->End();
 	}
 
 	encoder->clear_encoder();

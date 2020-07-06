@@ -20,6 +20,13 @@ void CommandEncoder::custom_command(uint64_t id, void* data)
 
 
 
+void CommandEncoder::begin_trace(void* profilerSourceLocation)
+{
+	CMD_BeginTrace *cmd = encode<CMD_BeginTrace>(encode_buffer);
+
+	cmd->profilerSourceLocation = profilerSourceLocation;
+}
+
 void CommandEncoder::bind_pipeline(uint64_t pipeline)
 {
 	CMD_BindPipeline* cmd = encode<CMD_BindPipeline>(encode_buffer);

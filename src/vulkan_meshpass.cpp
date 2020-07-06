@@ -386,6 +386,12 @@ void VulkanEngine::render_shadow_pass(RenderPassCommands* cmd, int height, int w
 	instancedDraws.clear();
 
 	CommandEncoder* encoder = cmd->commandEncoder;
+
+
+	TracySourceLocation(shadowloc, "Shadow Pass", tracy::Color::Grey);
+
+	encoder->begin_trace((void*)&shadowloc);
+
 	//static CommandEncoder* encoder{ nullptr };
 	//if (encoder == nullptr) { encoder = new CommandEncoder(); };
 

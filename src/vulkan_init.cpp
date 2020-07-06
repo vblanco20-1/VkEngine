@@ -151,12 +151,12 @@ void findQueueFamilies(vk::PhysicalDevice& physicalDevice, vk::SurfaceKHR& surfa
 	bool transferFound = false;
 	families.transferFamily = 0;
 	for (auto& queueFamily : queueFamilyProperties) {
-		if (queueFamily.queueCount > 0 && queueFamily.queueFlags & vk::QueueFlagBits::eTransfer) {
+		if (queueFamily.queueCount > 0 && queueFamily.queueFlags & vk::QueueFlagBits::eCompute) {
 			
 			bool isGraphics = (queueFamily.queueFlags & vk::QueueFlagBits::eGraphics).operator bool();
 			bool isCompute = (queueFamily.queueFlags & vk::QueueFlagBits::eCompute).operator bool();
 
-			if(!(isGraphics) && !(isCompute))
+			if(!(isGraphics))// && !(isCompute))
 			{
 				families.transferFamily = i;
 				queueFamily.queueCount--;
@@ -470,7 +470,7 @@ void VulkanEngine::create_command_pool()
 
 	vk::CommandPoolCreateInfo transferPoolInfo;
 	transferPoolInfo.queueFamilyIndex = families.transferFamily;
-	transferPoolInfo.flags = vk::CommandPoolCreateFlagBits::eTransient;
+	transferPoolInfo.flags = vk::CommandPoolCreateFlagBits::eTransient | vk::CommandPoolCreateFlagBits::eResetCommandBuffer;
 
 	transferCommandPool = device.createCommandPool(transferPoolInfo);	
 }

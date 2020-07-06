@@ -61,15 +61,18 @@ void VulkanEngine::create_engine_graph()
 
 	graph.swapchainSize = swapChainSize;
 
+	
 
 	auto gbuffer_pass = graph.add_pass("GBuffer", [&](RenderPassCommands* commands) {
-
+		tracy::VkCtx* pctx = (tracy::VkCtx*)commands->profilerContext;
+		TracyVkZone(pctx, commands->commandBuffer, "GBuffer");
 		RenderGBufferPass(commands->commandBuffer);
 		}, PassType::Graphics, true);
 
 	//order is very important
 	auto shadow_pass = graph.add_pass("ShadowPass", [&](RenderPassCommands* commands) {
-		
+		tracy::VkCtx* pctx = (tracy::VkCtx*)commands->profilerContext;
+		TracyVkZone(pctx, commands->commandBuffer, "ShadowPass");
 		this->render_shadow_pass(commands, commands->renderPass->render_height, commands->renderPass->render_width);
 		}, PassType::Graphics, true);
 
@@ -82,24 +85,28 @@ void VulkanEngine::create_engine_graph()
 	//}, PassType::Graphics, false);
 
 	auto ssao1_pass = graph.add_pass("SSAO-pre-comp", [&](RenderPassCommands* commands) {
-
+		tracy::VkCtx* pctx = (tracy::VkCtx*)commands->profilerContext;
+		TracyVkZone(pctx, commands->commandBuffer, "SSAO-pre-comp");
 		render_ssao_compute(commands->commandBuffer);
 		}, PassType::Compute, false);
 
 
 #if 1
 	auto blurx_pass = graph.add_pass("SSAO-blurx", [&](RenderPassCommands* commands) {
-
+		tracy::VkCtx* pctx = (tracy::VkCtx*)commands->profilerContext;
+		TracyVkZone(pctx, commands->commandBuffer, "SSAO-blurx");
 		render_ssao_blurx(commands->commandBuffer, commands->renderPass->render_height, commands->renderPass->render_width);
 		}, PassType::Graphics);
 
 	auto ssao_taa_pass = graph.add_pass("SSAO-taa", [&](RenderPassCommands* commands) {
-
+		tracy::VkCtx* pctx = (tracy::VkCtx*)commands->profilerContext;
+		TracyVkZone(pctx, commands->commandBuffer, "SSAO-taa");
 		render_ssao_taa(commands->commandBuffer, commands->renderPass->render_height, commands->renderPass->render_width);
 		}, PassType::Graphics);
 
 	auto ssao_taa_flip = graph.add_pass("SSAO-flip", [&](RenderPassCommands* commands) {
-
+		tracy::VkCtx* pctx = (tracy::VkCtx*)commands->profilerContext;
+		TracyVkZone(pctx, commands->commandBuffer, "SSAO-flip");
 		render_ssao_flip(commands->commandBuffer, commands->renderPass->render_height, commands->renderPass->render_width);
 		}, PassType::Graphics);
 	//auto blury_pass = graph.add_pass("SSAO-blury", [&](vk::CommandBuffer cmd, RenderPass* pass) {
@@ -133,6 +140,8 @@ void VulkanEngine::create_engine_graph()
 		//	VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,    // destination stage
 		//	);
 		//RenderMainPass(cmd);
+		tracy::VkCtx* pctx = (tracy::VkCtx*)commands->profilerContext;
+		TracyVkZone(pctx, commands->commandBuffer, "MainPass");
 		RenderMainPass_Other(commands->commandBuffer);
 	}, PassType::Graphics,false);
 	
@@ -448,6 +457,8 @@ void VulkanEngine::init_vulkan()
 	
 	
 	tex_loader = TextureLoader::create_new_loader(this);
+	tex_loader->flush_requests();
+
 
 	blankTexture = load_texture(MAKE_ASSET_PATH("sprites/blank.png"), "blank");
 	blackTexture = load_texture(MAKE_ASSET_PATH("sprites/black.png"), "black");
@@ -1796,10 +1807,12 @@ void VulkanEngine::draw_frame()
 	ZoneNamedNC(Framemark1, "Draw Frame 0", tracy::Color::Blue1, currentFrameIndex == 0);
 	ZoneNamedNC(Framemark2, "Draw Frame 1", tracy::Color::Blue2, currentFrameIndex == 1);
 	ZoneNamedNC(Framemark3, "Draw Frame 2 ", tracy::Color::Blue3, currentFrameIndex == 2);
+
 	{
 		ZoneScopedNC("Texture Loads", tracy::Color::Orange);
 		tex_loader->update_background_loads();
 	}
+	
 	{
 		ZoneScopedNC("Real Fence", tracy::Color::Yellow);
 		device.waitForFences(1, &inFlightFences[currentFrameIndex], VK_TRUE, 100000000);
@@ -1856,11 +1869,12 @@ void VulkanEngine::draw_frame()
 	eng_stats.drawcalls = 0;
 
 	vk::CommandBuffer cmd = commandBuffers.get(globalFrameNumber);
-
+	VkCommandBuffer commandbuffer = VkCommandBuffer(cmd);
 	begin_frame_command_buffer(cmd);
 	tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(cmd);
-
+	//TracyVkZone(profilercontext, commandbuffer, "All Frame");
 	{
+		//TracyVkZone(profilercontext, commandbuffer, "Rendergraph");
 		ZoneScopedNC("Rendergraph", tracy::Color::Yellow);
 		render_graph.execute(cmd);
 	}
@@ -1872,8 +1886,8 @@ void VulkanEngine::draw_frame()
 	}
 
 	{
-		VkCommandBuffer commandbuffer = VkCommandBuffer(cmd);
-		TracyVkZone(profilercontext, commandbuffer, "All Frame");
+		
+		
 		{
 			ZoneScopedNC("Final blit", tracy::Color::Grey);
 			PipelineResource* blit = GetBlitPipeline();

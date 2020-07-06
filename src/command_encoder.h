@@ -11,7 +11,8 @@ enum class CommandType : uint8_t {
 	DrawIndexedCompound,
 	SetViewport,
 	SetScissor,
-	SetDepthBias
+	SetDepthBias,
+	BeginTrace
 };
 
 struct ICommand {
@@ -130,6 +131,11 @@ struct alignas(8) CMD_DrawIndexedCompound : public  Command< CommandType::DrawIn
 };
 
 
+struct alignas(8) CMD_BeginTrace : public  Command< CommandType::BeginTrace> {
+
+	void* profilerSourceLocation;	
+};
+
 
 struct CommandEncoder {
 
@@ -147,6 +153,8 @@ struct CommandEncoder {
 	void set_depthbias(float biasConstantFactor, float biasClamp, float biasSlopeFactor);
 	
 	void custom_command(uint64_t id, void* data);
+
+	void begin_trace(void* profilerSourceLocation);
 
 	void clear_encoder();
 	cppcoro::generator<ICommand*> command_generator();

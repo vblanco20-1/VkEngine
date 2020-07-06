@@ -44,6 +44,7 @@ struct RenderPassCommands {
 	VkCommandBuffer commandBuffer;
 	class RenderPass* renderPass;
 	struct CommandEncoder* commandEncoder;
+	void* profilerContext;
 };
 class RenderPass
 {

@@ -632,6 +632,7 @@ public:
 	void add_load_from_db(EntityID e, SceneLoader* loader, DbTexture& texture);
 
 
+
 	sp::SceneLoader* preloaded_db;
 
 	vk::CommandBuffer get_upload_command_buffer() {
@@ -652,6 +653,8 @@ public:
 	}
 
 	void submit_command_buffer(vk::CommandBuffer cmd, bool withFence = false) {
+		TracyVkCollect(get_transfer_context(), cmd);
+		
 		cmd.end();
 
 		vk::SubmitInfo submitInfo;
@@ -695,8 +698,24 @@ public:
 		wait_queue_idle();
 	}
 
-	
+	tracy::VkCtx* get_transfer_context() {
+		if (!transferTracyContext)
+		{
+			vk::CommandBufferAllocateInfo allocInfo;
+			allocInfo.level = vk::CommandBufferLevel::ePrimary;
+			allocInfo.commandPool = owner->transferCommandPool;
+			allocInfo.commandBufferCount = 1;
 
+			auto cmd = owner->device.allocateCommandBuffers(allocInfo)[0];
+
+			//auto cmd = get_upload_command_buffer();
+
+			transferTracyContext = TracyVkContext(owner->physicalDevice, owner->device, owner->transferQueue, cmd);
+		}
+		return transferTracyContext;
+	}
+
+	tracy::VkCtx* transferTracyContext{nullptr};
 
 	VulkanEngine* owner;
 
@@ -822,6 +841,9 @@ vk::Format get_image_format_from_stbi(int channels) {
 
 void RealTextureLoader::flush_requests()
 {
+
+	auto ctx = get_transfer_context();
+
 	const int max_images_per_batch = 30;
 
 
@@ -918,7 +940,7 @@ void RealTextureLoader::upload_pending_images()
 	
 		vk::CommandBuffer cmd = get_upload_command_buffer();
 		auto upload_view = load_registry.view<LoadStagingBuffer, LoadImageAlloc>();
-		tracy::VkCtx* profilercontext = (tracy::VkCtx*)owner->get_profiler_context(cmd);
+		//tracy::VkCtx* profilercontext = (tracy::VkCtx*)owner->get_profiler_context(cmd);
 		
 
 		ZoneScopedN("Copying images to GPU");
@@ -932,7 +954,7 @@ void RealTextureLoader::upload_pending_images()
 				EntityID e = *view_iterator;
 				view_iterator++;
 
-				TracyVkZone(profilercontext, VkCommandBuffer(cmd), "Upload Image");
+				TracyVkZone(get_transfer_context(), VkCommandBuffer(cmd), "Upload Image");
 				const LoadStagingBuffer& staging = upload_view.get<LoadStagingBuffer>(e);
 				const LoadImageAlloc& texresource = upload_view.get<LoadImageAlloc>(e);
 
@@ -942,17 +964,21 @@ void RealTextureLoader::upload_pending_images()
 			}
 			{
 				ZoneScopedNC("Texture batch queue upload", tracy::Color::Red);
+				
 				submit_command_buffer(cmd);
 				cmd = get_upload_command_buffer();
 			}
-			profilercontext = (tracy::VkCtx*)owner->get_profiler_context(cmd);
+			//profilercontext = (tracy::VkCtx*)owner->get_profiler_context(cmd);
 		}
 		end:
 
 		{
 			ZoneScopedNC("Texture batch wait load queue", tracy::Color::Red);
-
+			
 			submit_command_buffer(cmd);
+
+			
+
 			wait_queue_idle();
 			//finish_upload_command_buffer();
 			
@@ -1238,7 +1264,7 @@ void RealTextureLoader::load_all_textures(SceneLoader* loader, const std::string
 	
 			vk::Image target_image = texresource.image.image; 
 			{
-			TracyVkZone(profilercontext, VkCommandBuffer(cmd), "Upload Image");
+			TracyVkZone(get_transfer_context(), VkCommandBuffer(cmd), "Upload Image");
 			uploadImage(cmd, target_image, texresource.format, staging, texresource);
 			}
 	
@@ -1347,7 +1373,7 @@ void RealTextureLoader::load_all_textures_coroutines(SceneLoader* loader, const 
 
 					vk::Image target_image = texresource.image.image;
 					{
-						TracyVkZone(profilercontext, VkCommandBuffer(cmd), "Upload Image");
+						TracyVkZone(get_transfer_context(), VkCommandBuffer(cmd), "Upload Image");
 						uploadImage(cmd, target_image, texresource.format, staging, texresource);
 					}
 
@@ -1437,7 +1463,7 @@ void RealTextureLoader::update_background_loads()
 				vk::Image target_image = texresource.image.image;
 
 				{
-					TracyVkZone(profilercontext, VkCommandBuffer(cmd), "Upload Image");
+					TracyVkZone(get_transfer_context(), VkCommandBuffer(cmd), "Upload Image");
 					uploadImage(cmd, target_image, texresource.format, staging, texresource);
 				}
 			}

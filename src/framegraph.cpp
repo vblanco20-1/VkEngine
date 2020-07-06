@@ -691,7 +691,12 @@ void FrameGraph::execute(VkCommandBuffer _cmd)
 
 	vkBeginCommandBuffer(cmd, &beginInfo);
 
-	int current_submission_id = 0;
+	tracy::VkCtx* profilercontext = (tracy::VkCtx*)owner->get_profiler_context(cmd);
+	//TracyVkZone(profilercontext, cmd, "Rendergraph");
+
+	TracyVkNamedManualZone(profilercontext, frameZone, cmd, "Framegraph", true);
+	frameZone.Start(cmd);
+	int current_submission_id = 0; 
 	for (auto pass : passes) {
 
 		if (pass->draw_callback)
@@ -716,6 +721,7 @@ void FrameGraph::execute(VkCommandBuffer _cmd)
 				commands.commandBuffer = cmd;
 				commands.renderPass = pass;
 				commands.commandEncoder = &encoder;
+				commands.profilerContext = profilercontext;
 				pass->draw_callback(&commands);
 
 				owner->DecodeCommands(cmd, &encoder);
@@ -724,16 +730,19 @@ void FrameGraph::execute(VkCommandBuffer _cmd)
 				//cmd.endRenderPass();
 
 				if (pass->perform_submit) {
-				
+					frameZone.End();
+					TracyVkCollect(profilercontext, cmd);
 					vkEndCommandBuffer(cmd);
 					//cmd.end();
 				
+					
 					submit_commands(cmd, current_submission_id, current_submission_id + 1);
 					current_submission_id++;
 				
 					cmd = create_graphics_buffer(0);
-
+					
 					vkBeginCommandBuffer(cmd, &beginInfo);
+					frameZone.Start(cmd);
 					//cmd.begin(beginInfo);
 				}
 			}
@@ -749,6 +758,7 @@ void FrameGraph::execute(VkCommandBuffer _cmd)
 				commands.commandBuffer = cmd;
 				commands.renderPass = pass;
 				commands.commandEncoder = &encoder;
+				commands.profilerContext = profilercontext;
 				pass->draw_callback(&commands);
 				owner->DecodeCommands(cmd, &encoder);
 
@@ -756,16 +766,18 @@ void FrameGraph::execute(VkCommandBuffer _cmd)
 				transform_images_to_read(pass, image_barriers, cmd);
 
 				if (true){//pass->perform_submit) {
-
+					TracyVkCollect(profilercontext, cmd);
+					frameZone.End();
 					vkEndCommandBuffer(cmd);
 					//cmd.end();
-
+					
 					submit_commands(cmd, current_submission_id, current_submission_id + 1);
 					current_submission_id++;
 
 					cmd = create_graphics_buffer(0);
-
 					vkBeginCommandBuffer(cmd, &beginInfo);
+
+					frameZone.Start(cmd);
 					//cmd.begin(beginInfo);
 				}
 			}
@@ -774,11 +786,14 @@ void FrameGraph::execute(VkCommandBuffer _cmd)
 				commands.commandBuffer = cmd;
 				commands.renderPass = pass;
 				commands.commandEncoder = &encoder;
+				commands.profilerContext = profilercontext;
 				pass->draw_callback(&commands);
 				owner->DecodeCommands(cmd, &encoder);
 			}			
 		}
 	}
+	frameZone.End();
+	TracyVkCollect(profilercontext, cmd);
 	vkEndCommandBuffer(cmd);
 	//cmd.end();
 	submit_commands(cmd, current_submission_id, 98);
@@ -805,6 +820,7 @@ void FrameGraph::transform_images_to_write(RenderPass* pass, std::vector<VkImage
 
 void FrameGraph::submit_commands(VkCommandBuffer cmd, int wait_pass_index, int signal_pass_index)
 {
+	
 	VkSemaphore signalSemaphores[] = { owner->frameTimelineSemaphore };
 	{
 		uint64_t waitValue3[3];
