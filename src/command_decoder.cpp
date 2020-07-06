@@ -167,6 +167,37 @@ void Decode_DrawIndexed(CommandDecodeState* state, ICommand* command) {
 	vkCmdDrawIndexed(vkCmd, cmd->indexCount, cmd->instanceCount, cmd->firstIndex, cmd->vertexOffset, cmd->firstInstance);
 	eng->eng_stats.drawcalls++;
 }
+
+void Decode_DrawIndexedCompound(CommandDecodeState* state, ICommand* command)
+{
+	CMD_DrawIndexedCompound* cmd = static_cast<CMD_DrawIndexedCompound*>(command);
+
+	VulkanEngine* eng = state->engine;
+	VkCommandBuffer vkCmd = state->cmd;
+	if (cmd->draw.pipeline != state->boundPipeline) {
+		state->wantsPipeline = cmd->draw.pipeline;
+		RefreshPipeline(state);
+	}
+
+	for (int i = 0; i < 4; i++) {
+		state->wantsDescriptors[i].descriptor = (cmd->draw.descriptors[i]);
+	}
+	
+	//check descriptor sets
+	RefreshDescriptors(state);
+
+	state->wantsIndex.indexBuffer = cmd->draw.indexBuffer;
+	state->wantsIndex.offset = cmd->draw.indexOffset;
+	//check index buffer
+	if (state->boundIndex != state->wantsIndex) {
+
+		RefreshIndexBuffer(state);
+	}
+
+	vkCmdDrawIndexed(vkCmd, cmd->draw.indexCount, cmd->draw.instanceCount, cmd->draw.firstIndex, cmd->draw.vertexOffset, cmd->draw.firstInstance);
+	eng->eng_stats.drawcalls++;
+}
+
 void Decode_SetViewport(CommandDecodeState* state, ICommand* command) {
 
 	CMD_SetViewport* cmd = static_cast<CMD_SetViewport*>(command);
@@ -200,6 +231,7 @@ void Decode_SetDepthBias(CommandDecodeState* state, ICommand* command) {
 	state->depthBiasSlopeFactor = cmd->biasSlopeFactor;
 }
 
+
 void DecodeCommand(CommandDecodeState* state, ICommand* command) {
 
 	switch (command->type) {
@@ -216,6 +248,9 @@ void DecodeCommand(CommandDecodeState* state, ICommand* command) {
 		break;
 	case CommandType::DrawIndexedIndirect:
 		Decode_DrawIndexedIndirect(state, command);
+		break;
+	case CommandType::DrawIndexedCompound:
+		Decode_DrawIndexedCompound(state, command);
 		break;
 	case CommandType::DrawIndexed:
 		Decode_DrawIndexed(state, command);
@@ -237,6 +272,9 @@ void DecodeCommand(CommandDecodeState* state, ICommand* command) {
 
 void VulkanEngine::DecodeCommands(VkCommandBuffer cmd, struct CommandEncoder* encoder)
 {
+	ZoneScopedN("Command decoding")
+	
+
 	auto gn = encoder->command_generator();
 
 	CommandDecodeState state;
@@ -248,4 +286,5 @@ void VulkanEngine::DecodeCommands(VkCommandBuffer cmd, struct CommandEncoder* en
 	}
 
 	encoder->clear_encoder();
+	
 }

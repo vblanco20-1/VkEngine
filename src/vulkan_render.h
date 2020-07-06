@@ -19,7 +19,7 @@
 
 //#define RTX_ON
 
-constexpr int MAX_FRAMES_IN_FLIGHT =1;
+constexpr int MAX_FRAMES_IN_FLIGHT =2;
 constexpr int MAX_UNIFORM_BUFFER = 5000;
 constexpr int SHADOWMAP_DIM = 2048;
 
@@ -94,6 +94,8 @@ public:
 	vk::Device device;
 	vk::Queue graphicsQueue;
 	vk::Queue presentQueue;
+	VkQueue transferQueue;
+
 	vk::SurfaceKHR surface;
 
 	vk::SwapchainKHR swapChain;
@@ -310,7 +312,7 @@ public:
 	uint64_t last_frame_timeline_value();
 	uint64_t current_frame_timeline_value(int pass_id = 0);
 
-	void render_shadow_pass(const vk::CommandBuffer& cmd, int height, int width);
+	void render_shadow_pass(RenderPassCommands* cmd, int height, int width);
 	void render_ssao_pass(const vk::CommandBuffer& cmd, int height, int width);
 	void render_ssao_compute(const vk::CommandBuffer& cmd);
 	void render_ssao_blurx(const vk::CommandBuffer& cmd, int height, int width);

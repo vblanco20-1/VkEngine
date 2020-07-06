@@ -62,15 +62,15 @@ void VulkanEngine::create_engine_graph()
 	graph.swapchainSize = swapChainSize;
 
 
-	auto gbuffer_pass = graph.add_pass("GBuffer", [&](vk::CommandBuffer cmd, RenderPass* pass) {
+	auto gbuffer_pass = graph.add_pass("GBuffer", [&](RenderPassCommands* commands) {
 
-		RenderGBufferPass(cmd);
+		RenderGBufferPass(commands->commandBuffer);
 		}, PassType::Graphics, true);
 
 	//order is very important
-	auto shadow_pass = graph.add_pass("ShadowPass", [&](vk::CommandBuffer cmd, RenderPass* pass) {
+	auto shadow_pass = graph.add_pass("ShadowPass", [&](RenderPassCommands* commands) {
 		
-		this->render_shadow_pass(cmd, pass->render_height, pass->render_width);
+		this->render_shadow_pass(commands, commands->renderPass->render_height, commands->renderPass->render_width);
 		}, PassType::Graphics, true);
 
 
@@ -81,26 +81,26 @@ void VulkanEngine::create_engine_graph()
 	//	render_ssao_pass(cmd, pass->render_height, pass->render_width);
 	//}, PassType::Graphics, false);
 
-	auto ssao1_pass = graph.add_pass("SSAO-pre-comp", [&](vk::CommandBuffer cmd, RenderPass* pass) {
+	auto ssao1_pass = graph.add_pass("SSAO-pre-comp", [&](RenderPassCommands* commands) {
 
-		render_ssao_compute(cmd);
+		render_ssao_compute(commands->commandBuffer);
 		}, PassType::Compute, false);
 
 
 #if 1
-	auto blurx_pass = graph.add_pass("SSAO-blurx", [&](vk::CommandBuffer cmd, RenderPass* pass) {	
+	auto blurx_pass = graph.add_pass("SSAO-blurx", [&](RenderPassCommands* commands) {
 
-		render_ssao_blurx(cmd, pass->render_height, pass->render_width);
+		render_ssao_blurx(commands->commandBuffer, commands->renderPass->render_height, commands->renderPass->render_width);
 		}, PassType::Graphics);
 
-	auto ssao_taa_pass = graph.add_pass("SSAO-taa", [&](vk::CommandBuffer cmd, RenderPass* pass) {
+	auto ssao_taa_pass = graph.add_pass("SSAO-taa", [&](RenderPassCommands* commands) {
 
-		render_ssao_taa(cmd, pass->render_height, pass->render_width);
+		render_ssao_taa(commands->commandBuffer, commands->renderPass->render_height, commands->renderPass->render_width);
 		}, PassType::Graphics);
 
-	auto ssao_taa_flip = graph.add_pass("SSAO-flip", [&](vk::CommandBuffer cmd, RenderPass* pass) {
+	auto ssao_taa_flip = graph.add_pass("SSAO-flip", [&](RenderPassCommands* commands) {
 
-		render_ssao_flip(cmd, pass->render_height, pass->render_width);
+		render_ssao_flip(commands->commandBuffer, commands->renderPass->render_height, commands->renderPass->render_width);
 		}, PassType::Graphics);
 	//auto blury_pass = graph.add_pass("SSAO-blury", [&](vk::CommandBuffer cmd, RenderPass* pass) {
 	//
@@ -126,14 +126,14 @@ void VulkanEngine::create_engine_graph()
 
 		}, PassType::Compute);
 #endif
-	auto forward_pass = graph.add_pass("MainPass", [&](vk::CommandBuffer cmd, RenderPass* pass) {
+	auto forward_pass = graph.add_pass("MainPass", [&](RenderPassCommands* commands) {
 		//vkCmdPipelineBarrier(
 		//	cmd,
 		//	VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, // source stage
 		//	VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,    // destination stage
 		//	);
 		//RenderMainPass(cmd);
-		RenderMainPass_Other(cmd);
+		RenderMainPass_Other(commands->commandBuffer);
 	}, PassType::Graphics,false);
 	
 	//auto test_pass = graph.add_pass("test", [&](vk::CommandBuffer cmd, RenderPass* pass) {
@@ -143,7 +143,7 @@ void VulkanEngine::create_engine_graph()
 	//	}
 	//	}, PassType::CPU);
 
-	auto display_pass = graph.add_pass("DisplayPass", [](vk::CommandBuffer cmd, RenderPass* pass) {}, PassType::Graphics);
+	auto display_pass = graph.add_pass("DisplayPass", [](RenderPassCommands* commands) {}, PassType::Graphics);
 
 	RenderAttachmentInfo shadowbuffer;
 	shadowbuffer.format = VK_FORMAT_D16_UNORM;
@@ -1800,11 +1800,7 @@ void VulkanEngine::draw_frame()
 		ZoneScopedNC("Texture Loads", tracy::Color::Orange);
 		tex_loader->update_background_loads();
 	}
-	//("Draw Frame", color);
 	{
-
-
-
 		ZoneScopedNC("Real Fence", tracy::Color::Yellow);
 		device.waitForFences(1, &inFlightFences[currentFrameIndex], VK_TRUE, 100000000);
 		device.resetFences(1, &inFlightFences[currentFrameIndex]);
@@ -1828,28 +1824,13 @@ void VulkanEngine::draw_frame()
 		waitInfo.semaphoreCount = 1;
 		waitInfo.pSemaphores = &frameTimelineSemaphore;
 		waitInfo.pValues = &waitValue;
-		//std::cout << "cpu pre pass: " << globalFrameNumber << " - " << device.getSemaphoreCounterValueKHR(frameTimelineSemaphore, extensionDispatcher) << std::endl;
 
-		//try
 		{
 			device.waitSemaphoresKHR(waitInfo, 300000000, extensionDispatcher);
 		}
-		//catch (vk::SystemError &e)
-		//{
-		//	std::cout << e.what() << std::endl;
-		//}
-		
-		
-		//std::cout << "cpu frame pass: " << globalFrameNumber << " - " << device.getSemaphoreCounterValueKHR(frameTimelineSemaphore, extensionDispatcher) << std::endl;
 
-		//vkWaitSemaphoresKHR(device, (VkSemaphoreWaitInfoKHR*)&waitInfo, UINT64_MAX);
 	}
-	//{
-	//	ZoneScopedNC("Real Fence", tracy::Color::Yellow);
-	//	device.waitForFences(1, &inFlightFences[currentFrameIndex], VK_TRUE, 30000000);
-	//	device.resetFences(1, &inFlightFences[currentFrameIndex]);
-	//	
-	//}
+
 	{
 		ZoneScopedNC("Reset descriptor pool", tracy::Color::Orange);
 		descriptorMegapool.set_frame(currentFrameIndex);
@@ -1878,13 +1859,6 @@ void VulkanEngine::draw_frame()
 
 	begin_frame_command_buffer(cmd);
 	tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(cmd);
-
-	{
-		ZoneScopedNC("RenderSort", tracy::Color::Violet);
-		//render_registry.sort<RenderMeshComponent>([](const RenderMeshComponent& A, const RenderMeshComponent& B) {
-		//	return A.mesh_resource_entity < B.mesh_resource_entity;
-		//	}, entt::std_sort{});
-	}
 
 	{
 		ZoneScopedNC("Rendergraph", tracy::Color::Yellow);

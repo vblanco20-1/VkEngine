@@ -111,32 +111,79 @@ void VulkanEngine::pick_physical_device()
 }
 
 
-void findQueueFamilies(vk::PhysicalDevice& physicalDevice, vk::SurfaceKHR& surface, int& graphicsFamilyIndex, int& presentFamilyIndex) {
+struct QueueFamilies {
+	int graphicsFamily;
+	int presentFamily;
+	int transferFamily;
+};
+
+void findQueueFamilies(vk::PhysicalDevice& physicalDevice, vk::SurfaceKHR& surface, QueueFamilies& families){
+	//int& graphicsFamilyIndex, int& presentFamilyIndex) {
 	//--- QUEUE FAMILY
 	std::vector<vk::QueueFamilyProperties> queueFamilyProperties = physicalDevice.getQueueFamilyProperties();
-	graphicsFamilyIndex = 0;
+	families.graphicsFamily = 0;
 
 	int i = 0;
-	for (const auto& queueFamily : queueFamilyProperties) {
+	for (auto& queueFamily : queueFamilyProperties) {
 		if (queueFamily.queueCount > 0 && queueFamily.queueFlags & vk::QueueFlagBits::eGraphics) {
-			graphicsFamilyIndex = i;
+			families.graphicsFamily = i;
+			queueFamily.queueCount--;
 			break;
 		}
 		i++;
 	}
-	presentFamilyIndex = 0;
+	families.presentFamily = 0;
 	i = 0;
-	for (const auto& queueFamily : queueFamilyProperties) {
+	for (auto& queueFamily : queueFamilyProperties) {
 		if (queueFamily.queueCount > 0 && queueFamily.queueFlags & vk::QueueFlagBits::eGraphics) {
 			VkBool32 presentSupport = false;
 			if (physicalDevice.getSurfaceSupportKHR(i, surface))
 			{
-				presentFamilyIndex = i;
+				families.presentFamily = i;
+				queueFamily.queueCount--;
 				break;
 			}
 		}
 		i++;
 	}
+
+	//try to find a dedicated transfer queue
+	bool transferFound = false;
+	families.transferFamily = 0;
+	for (auto& queueFamily : queueFamilyProperties) {
+		if (queueFamily.queueCount > 0 && queueFamily.queueFlags & vk::QueueFlagBits::eTransfer) {
+			
+			bool isGraphics = (queueFamily.queueFlags & vk::QueueFlagBits::eGraphics).operator bool();
+			bool isCompute = (queueFamily.queueFlags & vk::QueueFlagBits::eCompute).operator bool();
+
+			if(!(isGraphics) && !(isCompute))
+			{
+				families.transferFamily = i;
+				queueFamily.queueCount--;
+				transferFound = true;
+				break;
+			}
+		}
+		i++;
+	}
+
+	if (!transferFound) {
+		for (auto& queueFamily : queueFamilyProperties) {
+			if (queueFamily.queueCount > 0 && queueFamily.queueFlags & vk::QueueFlagBits::eTransfer) {
+
+				//if (!(queueFamily.queueFlags & vk::QueueFlagBits::eGraphics) && !(queueFamily.queueFlags & vk::QueueFlagBits::eCompute))
+				{
+					families.transferFamily = i;
+					queueFamily.queueCount--;
+					transferFound = true;
+					break;
+				}
+			}
+			i++;
+		}
+	}
+
+
 }
 
 
@@ -147,12 +194,15 @@ void VulkanEngine::create_device()
 	//--- QUEUE FAMILY
 	int graphicsFamilyIndex = 0;
 	int presentFamilyIndex = 0;
-	findQueueFamilies(physicalDevice, surface, graphicsFamilyIndex, presentFamilyIndex);
+
+	QueueFamilies families;
+
+	findQueueFamilies(physicalDevice, surface, families);
 
 	//--- QUEUE CREATE INFO
 
 	vk::DeviceQueueCreateInfo queueCreateInfo;
-	queueCreateInfo.queueFamilyIndex = graphicsFamilyIndex;
+	queueCreateInfo.queueFamilyIndex = families.graphicsFamily;
 	queueCreateInfo.queueCount = 1;
 	float fprio = 1.0f;
 	queueCreateInfo.pQueuePriorities = &fprio;
@@ -168,9 +218,16 @@ void VulkanEngine::create_device()
 	//diagnosticsConfig.setFlags(aftermathFlags);
 
 	vk::DeviceQueueCreateInfo presentQueueCreateInfo;
-	presentQueueCreateInfo.queueFamilyIndex = presentFamilyIndex;
+	presentQueueCreateInfo.queueFamilyIndex = families.presentFamily;
 	presentQueueCreateInfo.queueCount = 1;
 	presentQueueCreateInfo.pQueuePriorities = &fprio;
+
+	vk::DeviceQueueCreateInfo transferQueueCreateInfo;
+	presentQueueCreateInfo.queueFamilyIndex = families.transferFamily;
+	presentQueueCreateInfo.queueCount = 1;
+	float lowprio = 0.1f;
+	presentQueueCreateInfo.pQueuePriorities = &lowprio;
+
 
 	//--- DEVICE FEATURES
 	vk::PhysicalDeviceFeatures deviceFeatures;
@@ -237,21 +294,22 @@ void VulkanEngine::create_device()
 
 	//auto extensions = get_extensions();
 
-	if (queueCreateInfo.queueFamilyIndex == presentQueueCreateInfo.queueFamilyIndex) {
-		std::array<vk::DeviceQueueCreateInfo, 2> queues{ queueCreateInfo,presentQueueCreateInfo };
+	//if (queueCreateInfo.queueFamilyIndex == presentQueueCreateInfo.queueFamilyIndex) {
+	//	std::array<vk::DeviceQueueCreateInfo, 2> queues{ queueCreateInfo,presentQueueCreateInfo };
+	//	createInfo.pQueueCreateInfos = queues.data();
+	//	createInfo.queueCreateInfoCount = 1;
+	//	createInfo.pEnabledFeatures = &deviceFeatures;
+	//	createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
+	//	createInfo.ppEnabledExtensionNames = deviceExtensions.data();
+	//	createInfo.pNext = &features2;
+	//
+	//	device = physicalDevice.createDevice(createInfo);
+	//}
+	//else 
+	{
+		std::array<vk::DeviceQueueCreateInfo, 3> queues{ queueCreateInfo,presentQueueCreateInfo,transferQueueCreateInfo };
 		createInfo.pQueueCreateInfos = queues.data();
-		createInfo.queueCreateInfoCount = 1;
-		createInfo.pEnabledFeatures = &deviceFeatures;
-		createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
-		createInfo.ppEnabledExtensionNames = deviceExtensions.data();
-		createInfo.pNext = &features2;
-
-		device = physicalDevice.createDevice(createInfo);
-	}
-	else {
-		std::array<vk::DeviceQueueCreateInfo, 2> queues{ queueCreateInfo,presentQueueCreateInfo };
-		createInfo.pQueueCreateInfos = queues.data();
-		createInfo.queueCreateInfoCount = 2;
+		createInfo.queueCreateInfoCount = 3;
 		createInfo.pEnabledFeatures = &deviceFeatures;
 		createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
 		createInfo.ppEnabledExtensionNames = deviceExtensions.data();
@@ -263,9 +321,9 @@ void VulkanEngine::create_device()
 	char d;
 	//std::cin >> d;
 
-	graphicsQueue = device.getQueue(graphicsFamilyIndex, 0);
-	presentQueue = device.getQueue(presentFamilyIndex, 0);
-
+	graphicsQueue = device.getQueue(families.graphicsFamily, 0);
+	presentQueue = device.getQueue(families.presentFamily, 0);
+	transferQueue =device.getQueue(families.transferFamily, 0);
 	// This dispatch class will fetch function pointers for the passed device if possible, else for the passed instance
 	extensionDispatcher.init(instance, device);// = vk::DispatchLoaderDynamic{ instance, device };
 }
@@ -355,8 +413,11 @@ void VulkanEngine::createSwapChain()
 
 	int graphicsFamilyIndex = 0;
 	int presentFamilyIndex = 0;
-	findQueueFamilies(physicalDevice, surface, graphicsFamilyIndex, presentFamilyIndex);
+	QueueFamilies families;
+	findQueueFamilies(physicalDevice, surface, families);
 
+	graphicsFamilyIndex = families.graphicsFamily;
+	presentFamilyIndex = families.presentFamily;
 	uint32_t queueFamilyIndices[] = { graphicsFamilyIndex, presentFamilyIndex };
 
 	if (graphicsFamilyIndex != presentFamilyIndex) {
@@ -398,15 +459,17 @@ void VulkanEngine::create_command_pool()
 	ZoneScoped;
 	int graphicsFamilyIndex = 0;
 	int presentFamilyIndex = 0;
-	findQueueFamilies(physicalDevice, surface, graphicsFamilyIndex, presentFamilyIndex);
-
+	QueueFamilies families;
+	findQueueFamilies(physicalDevice, surface, families);
+	graphicsFamilyIndex = families.graphicsFamily;
+	presentFamilyIndex = families.presentFamily;
 	vk::CommandPoolCreateInfo poolInfo;
 	poolInfo.queueFamilyIndex = graphicsFamilyIndex;
 	poolInfo.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer;
 	commandPool = device.createCommandPool(poolInfo);
 
 	vk::CommandPoolCreateInfo transferPoolInfo;
-	transferPoolInfo.queueFamilyIndex = graphicsFamilyIndex;
+	transferPoolInfo.queueFamilyIndex = families.transferFamily;
 	transferPoolInfo.flags = vk::CommandPoolCreateFlagBits::eTransient;
 
 	transferCommandPool = device.createCommandPool(transferPoolInfo);	

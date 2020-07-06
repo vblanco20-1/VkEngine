@@ -63,6 +63,13 @@ void CommandEncoder::draw_indexed(uint32_t indexCount, uint32_t instanceCount, u
 	cmd->firstInstance=firstInstance;
 }
 
+void CommandEncoder::draw_indexed(const IndexedDraw& draw)
+{
+	CMD_DrawIndexedCompound* cmd = encode<CMD_DrawIndexedCompound>(encode_buffer);
+
+	cmd->draw = draw;
+}
+
 void CommandEncoder::set_viewport(float x,
 float y,
 float w,

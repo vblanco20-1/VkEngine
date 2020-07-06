@@ -40,7 +40,11 @@ struct RenderAttachmentInfo
 	void set_clear_color(std::array<float, 4> col);
 	void set_clear_depth(float depth, uint32_t stencil);
 };
-
+struct RenderPassCommands {
+	VkCommandBuffer commandBuffer;
+	class RenderPass* renderPass;
+	struct CommandEncoder* commandEncoder;
+};
 class RenderPass
 {
 public:
@@ -69,7 +73,7 @@ public:
 	VkRenderPass built_pass;
 	VkFramebuffer framebuffer;
 
-	std::function<void(VkCommandBuffer, RenderPass*)> draw_callback;
+	std::function<void(RenderPassCommands*)> draw_callback;
 
 	int render_width = 0;
 	int render_height = 0;
@@ -89,6 +93,9 @@ public:
 	void set_depth_attachment(std::string name, const RenderAttachmentInfo& info);
 };
 class VulkanEngine;
+
+
+
 class FrameGraph {
 public:
 	struct GraphAttachmentUsages {
@@ -119,7 +126,7 @@ public:
 
 	bool build(VulkanEngine* engine);
 
-	RenderPass* add_pass(std::string pass_name, std::function<void(VkCommandBuffer, RenderPass*)> execution, PassType type, bool bPerformSubmit = false);
+	RenderPass* add_pass(std::string pass_name, std::function<void(RenderPassCommands*)> execution, PassType type, bool bPerformSubmit = false);
 	RenderPass* get_pass(std::string name);
 	VkDescriptorImageInfo get_image_descriptor(std::string name);
 	GraphAttachment* get_attachment(std::string name);

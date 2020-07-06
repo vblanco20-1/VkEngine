@@ -4,6 +4,7 @@
 #include "vulkan_render.h"
 #include <vk_flags.h>
 #include <vk_initializers.h>
+#include "command_encoder.h"
 
 std::array < VkSubpassDependency, 2> build_basic_subpass_dependencies()
 {
@@ -594,7 +595,7 @@ bool FrameGraph::build( VulkanEngine* engine)
 	return true;
 }
 
-RenderPass* FrameGraph::add_pass(std::string pass_name, std::function<void(VkCommandBuffer, RenderPass*)> execution, PassType type, bool bPerformSubmit /*= false*/)
+RenderPass* FrameGraph::add_pass(std::string pass_name, std::function<void(RenderPassCommands*)> execution, PassType type, bool bPerformSubmit /*= false*/)
 {
 	pass_definitions[pass_name] = RenderPass();
 
@@ -662,6 +663,8 @@ VkCommandBuffer FrameGraph::create_graphics_buffer(int threadID)
 
 void FrameGraph::execute(VkCommandBuffer _cmd)
 {
+	CommandEncoder encoder;
+
 	int frameid = owner->globalFrameNumber;
 
 	auto pool = commandPools.get(frameid)[0];
@@ -707,7 +710,15 @@ void FrameGraph::execute(VkCommandBuffer _cmd)
 
 				//cmd.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
 				vkCmdBeginRenderPass(cmd, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-				pass->draw_callback(cmd, pass);
+
+				
+				RenderPassCommands commands;
+				commands.commandBuffer = cmd;
+				commands.renderPass = pass;
+				commands.commandEncoder = &encoder;
+				pass->draw_callback(&commands);
+
+				owner->DecodeCommands(cmd, &encoder);
 
 				vkCmdEndRenderPass(cmd);
 				//cmd.endRenderPass();
@@ -733,7 +744,13 @@ void FrameGraph::execute(VkCommandBuffer _cmd)
 				image_barriers.clear();
 				transform_images_to_write(pass, image_barriers, cmd);
 
-				pass->draw_callback(cmd, pass);
+				
+				RenderPassCommands commands;
+				commands.commandBuffer = cmd;
+				commands.renderPass = pass;
+				commands.commandEncoder = &encoder;
+				pass->draw_callback(&commands);
+				owner->DecodeCommands(cmd, &encoder);
 
 				image_barriers.clear();
 				transform_images_to_read(pass, image_barriers, cmd);
@@ -753,7 +770,12 @@ void FrameGraph::execute(VkCommandBuffer _cmd)
 				}
 			}
 			else {
-				pass->draw_callback(cmd, pass);
+				RenderPassCommands commands;
+				commands.commandBuffer = cmd;
+				commands.renderPass = pass;
+				commands.commandEncoder = &encoder;
+				pass->draw_callback(&commands);
+				owner->DecodeCommands(cmd, &encoder);
 			}			
 		}
 	}

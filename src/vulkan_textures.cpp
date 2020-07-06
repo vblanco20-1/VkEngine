@@ -667,11 +667,12 @@ public:
 				uploadFence = owner->device.createFence(info);
 			}
 
-
-			owner->graphicsQueue.submit(submitInfo, uploadFence);
+			vkQueueSubmit(owner->transferQueue, 1, (VkSubmitInfo*)&submitInfo, uploadFence);
+			//owner->graphicsQueue.submit(submitInfo, uploadFence);
 		}
 		else {
-			owner->graphicsQueue.submit(submitInfo, nullptr);
+			vkQueueSubmit(owner->transferQueue, 1, (VkSubmitInfo*)&submitInfo, VK_NULL_HANDLE);
+			//owner->graphicsQueue.submit(submitInfo, nullptr);
 		}
 	}
 	void wait_queue_idle() {
@@ -821,7 +822,7 @@ vk::Format get_image_format_from_stbi(int channels) {
 
 void RealTextureLoader::flush_requests()
 {
-	const int max_images_per_batch = 20;
+	const int max_images_per_batch = 30;
 
 
 
@@ -924,7 +925,7 @@ void RealTextureLoader::upload_pending_images()
 		auto view_iterator = upload_view.begin();
 		while (true) {
 			//submit buffers every 10 textures;
-			for (int i = 0; i < 10; i++) {
+			for (int i = 0; i < 30; i++) {
 				if (view_iterator == upload_view.end()) {
 					goto end;
 				}

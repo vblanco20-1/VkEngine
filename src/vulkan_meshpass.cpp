@@ -362,7 +362,7 @@ void VulkanEngine::RenderGBufferPass(const vk::CommandBuffer& cmd)
 }
 
 
-void VulkanEngine::render_shadow_pass(const vk::CommandBuffer& cmd, int height, int width)
+void VulkanEngine::render_shadow_pass(RenderPassCommands* cmd, int height, int width)
 {
 	struct ShadowDrawUnit {
 		//vk::Pipeline pipeline;
@@ -385,9 +385,9 @@ void VulkanEngine::render_shadow_pass(const vk::CommandBuffer& cmd, int height, 
 	static std::vector<InstancedDraw> instancedDraws;
 	instancedDraws.clear();
 
-
-	static CommandEncoder* encoder{ nullptr };
-	if (encoder == nullptr) { encoder = new CommandEncoder(); };
+	CommandEncoder* encoder = cmd->commandEncoder;
+	//static CommandEncoder* encoder{ nullptr };
+	//if (encoder == nullptr) { encoder = new CommandEncoder(); };
 
 	const PipelineResource& pipeline = render_registry.get<PipelineResource>(ShadowPipelineID);
 
@@ -395,7 +395,7 @@ void VulkanEngine::render_shadow_pass(const vk::CommandBuffer& cmd, int height, 
 
 	
 	uint64_t pipid = (uint32_t)ShadowPipelineID;
-	encoder->bind_pipeline(pipid);
+	//encoder->bind_pipeline(pipid);
 
 	encoder->set_depthbias(0, 0, 0);
 	encoder->set_scissor(0, 0, width, height);
@@ -463,33 +463,51 @@ void VulkanEngine::render_shadow_pass(const vk::CommandBuffer& cmd, int height, 
 	}
 	unmapBuffer(shadow_instance_buffers[currentFrameIndex]);
 
-	int idx_ofs = -1;
-	InstancedDraw pendingDraw;
-	for (int i = 0; i < drawUnits.size(); i++)
 	{
-		auto& unit = drawUnits[i];
-		if (LastIndex != unit.indexBuffer->buffer || idx_ofs != unit.index_offset) {
-			if (i != 0) {
-				instancedDraws.push_back(pendingDraw);
+		ZoneScopedN("Command encoding")
+
+		int idx_ofs = -1;
+		InstancedDraw pendingDraw;
+		for (int i = 0; i < drawUnits.size(); i++)
+		{
+			auto& unit = drawUnits[i];
+			if (LastIndex != unit.indexBuffer->buffer || idx_ofs != unit.index_offset) {
+				if (i != 0) {
+					//instancedDraws.push_back(pendingDraw);
+
+					IndexedDraw newDraw{};
+					newDraw.pipeline = pipid;
+					newDraw.descriptors[0] = reinterpret_cast<uint64_t>(descriptors[0]);
+					newDraw.indexBuffer = reinterpret_cast<uint64_t>(pendingDraw.index_buffer);
+					newDraw.indexOffset = 0;
+					newDraw.firstInstance = pendingDraw.first_index;
+					newDraw.firstIndex = pendingDraw.index_offset;
+					newDraw.indexCount = pendingDraw.index_count;
+					newDraw.instanceCount = pendingDraw.instance_count;
+					newDraw.vertexOffset = 0;
+
+					encoder->draw_indexed(newDraw);
+				}
+
+				pendingDraw.first_index = i;
+				pendingDraw.index_buffer = unit.indexBuffer->buffer;
+				pendingDraw.index_count = unit.index_count;
+				pendingDraw.instance_count = 1;
+				pendingDraw.index_offset = unit.index_offset;
+				LastIndex = unit.indexBuffer->buffer;
+				idx_ofs = unit.index_offset;
 			}
-
-			pendingDraw.first_index = i;
-			pendingDraw.index_buffer = unit.indexBuffer->buffer;
-			pendingDraw.index_count = unit.index_count;
-			pendingDraw.instance_count = 1;
-			pendingDraw.index_offset = unit.index_offset;
-			LastIndex = unit.indexBuffer->buffer;
-			idx_ofs = unit.index_offset;
+			else {
+				pendingDraw.instance_count++;
+			}
 		}
-		else {
-			pendingDraw.instance_count++;
-		}
-	}
+	
 	instancedDraws.push_back(pendingDraw);
-
+	}
 	int binds = 0;
 	int draw_idx = 0;	
 	
+#if 1
 	//convert to indirect
 	void* indirect = mapBuffer(shadow_indirect_buffers[currentFrameIndex]);
 	{
@@ -516,9 +534,7 @@ void VulkanEngine::render_shadow_pass(const vk::CommandBuffer& cmd, int height, 
 
 		ZoneScopedN("Command encoding")
 
-		encoder->set_depthbias(0, 0, 0);
-		encoder->set_scissor(0, 0, width, height);
-		encoder->set_viewport(0, 0, width, height, 0, 1);
+		
 
 		encoder->bind_pipeline(pipid);
 
@@ -528,14 +544,8 @@ void VulkanEngine::render_shadow_pass(const vk::CommandBuffer& cmd, int height, 
 			encoder->draw_indexed(draw.index_count, draw.instance_count, draw.index_offset, 0, draw.first_index);
 		}
 	}
-	{
-		tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(cmd);
-		TracyVkZoneC(profilercontext, VkCommandBuffer(cmd), "Shadow Pass", tracy::Color::Red);
 
-		ZoneScopedN("Command decoding")
-
-		DecodeCommands(cmd, encoder);
-	}
+#endif
 	return;
 
 }
