@@ -67,14 +67,14 @@ void VulkanEngine::create_engine_graph()
 		tracy::VkCtx* pctx = (tracy::VkCtx*)commands->profilerContext;
 		TracyVkZone(pctx, commands->commandBuffer, "GBuffer");
 		RenderGBufferPass(commands->commandBuffer);
-		}, PassType::Graphics, true);
+		}, PassType::Graphics, false);
 
 	//order is very important
 	auto shadow_pass = graph.add_pass("ShadowPass", [&](RenderPassCommands* commands) {
 		tracy::VkCtx* pctx = (tracy::VkCtx*)commands->profilerContext;
 		TracyVkZone(pctx, commands->commandBuffer, "ShadowPass");
 		this->render_shadow_pass(commands, commands->renderPass->render_height, commands->renderPass->render_width);
-		}, PassType::Graphics, true);
+		}, PassType::Graphics, false);
 
 
 	
@@ -665,7 +665,7 @@ void VulkanEngine::create_depth_resources()
 {
 	FrameGraph::GraphAttachment* norm_attachment = render_graph.get_attachment("depth_prepass");
 	depthImageView = norm_attachment->descriptor.imageView;
-	depthImage.image  =(vk::Image) norm_attachment->image;
+	depthImage.image  =(vk::Image) norm_attachment->get_image(&render_graph);
 }
 
 
@@ -1804,6 +1804,9 @@ void VulkanEngine::end_frame_command_buffer(vk::CommandBuffer cmd)
 
 void VulkanEngine::draw_frame()
 {
+	
+	render_graph.build(this);
+
 	ZoneNamedNC(Framemark1, "Draw Frame 0", tracy::Color::Blue1, currentFrameIndex == 0);
 	ZoneNamedNC(Framemark2, "Draw Frame 1", tracy::Color::Blue2, currentFrameIndex == 1);
 	ZoneNamedNC(Framemark3, "Draw Frame 2 ", tracy::Color::Blue3, currentFrameIndex == 2);
@@ -2652,7 +2655,7 @@ void VulkanEngine::create_shadow_framebuffer()
 	FrameGraph::GraphAttachment* shadowAttachment = render_graph.get_attachment("shadow_buffer_1");//&graph.attachments["shadow_buffer_1"];
 	RenderPass* pass = render_graph.get_pass("ShadowPass"); //&graph.pass_definitions["ShadowPass"];
 
-	shadowPass.depth.image = shadowAttachment->image;
+	shadowPass.depth.image = shadowAttachment->get_image(&render_graph);
 	shadowPass.depth.view = shadowAttachment->descriptor.imageView;
 	shadowPass.depthSampler = shadowAttachment->descriptor.sampler;
 	shadowPass.frameBuffer = pass->framebuffer;
@@ -2670,8 +2673,8 @@ void VulkanEngine::create_gbuffer_framebuffer(int width, int height)
 	RenderPass* pass = render_graph.get_pass("GBuffer");
 
 	gbuffPass.normal.view = norm_attachment->descriptor.imageView;
-	gbuffPass.posdepth.image = pos_attachment->image;
-	gbuffPass.normal.image = norm_attachment->image;
+	gbuffPass.posdepth.image = pos_attachment->get_image(&render_graph);
+	gbuffPass.normal.image = norm_attachment->get_image(&render_graph);
 	gbuffPass.posdepth.view = pos_attachment->descriptor.imageView;
 	gbuffPass.normalSampler = norm_attachment->descriptor.sampler;
 	gbuffPass.posdepthSampler = pos_attachment->descriptor.sampler;

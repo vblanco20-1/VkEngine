@@ -3,6 +3,7 @@
 #include <functional>
 #include <array>
 #include "frame_resource.h"
+#include <vulkan_types.h>
 enum class RenderGraphResourceLifetime {
 	PerFrame,
 	Persistent
@@ -27,6 +28,25 @@ enum class PassType : uint8_t {
 	Compute,
 	CPU
 };
+
+struct CachedImageView {
+	VkImageViewCreateInfo createInfo;
+	VkImageView imageView;
+};
+
+struct CachedImage {
+	AllocatedImage image;
+	VkImageCreateInfo createInfo;
+	std::vector<CachedImageView> imageViews;
+};
+struct FrameGraphCache {
+	std::unordered_map<uint64_t, CachedImage> cachedImages;
+
+	std::vector<uint64_t> reusableImages;
+
+	uint64_t last_index{1};
+};
+
 struct RenderAttachmentInfo
 {
 	SizeClass size_class{ SizeClass::SwapchainRelative };
@@ -71,7 +91,7 @@ public:
 
 	PassAttachment depth_attachment;
 
-	VkRenderPass built_pass;
+	VkRenderPass built_pass{ VK_NULL_HANDLE };
 	VkFramebuffer framebuffer;
 
 	std::function<void(RenderPassCommands*)> draw_callback;
@@ -112,11 +132,14 @@ public:
 		int real_width;
 		VkImageUsageFlags usageFlags;
 		VkDescriptorImageInfo descriptor;
-		VmaAllocation imageAlloc;
-		VkImage image;
-		VkDeviceMemory mem;
+		uint64_t image_id{0};
+		//VmaAllocation imageAlloc;
+		//VkImage image;
+		//VkDeviceMemory mem;
 
 		GraphAttachmentUsages uses;
+		
+		VkImage get_image(FrameGraph* ownerGraph);
 		
 	};
 
@@ -124,6 +147,11 @@ public:
 	 
 	void build_render_pass(RenderPass* pass, VulkanEngine* eng);
 	void build_compute_barriers(RenderPass* pass, VulkanEngine* eng);
+
+	void return_image(uint64_t image_ID);
+	uint64_t request_image(VkImageCreateInfo* createInfo);
+	VkImageView request_image_view(uint64_t image_ID, VkImageViewCreateInfo* createInfo);
+	
 
 	bool build(VulkanEngine* engine);
 
@@ -154,6 +182,9 @@ public:
 	FrameResource < std::array<VkCommandPool,4> , 3 > commandPools;
 	FrameResource< std::array<std::vector<VkCommandBuffer>, 4>, 3>  usableCommands;
 	FrameResource< std::array<std::vector<VkCommandBuffer>, 4>, 3>  pendingCommands;
+	VkSampler mainSampler{VK_NULL_HANDLE};
+
+	FrameGraphCache cache;
 
 	VkExtent2D swapchainSize;
 	std::vector<const char*> attachmentNames;

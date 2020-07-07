@@ -98,7 +98,7 @@ void RenderPass::set_depth_attachment(std::string name, const RenderAttachmentIn
 
 
 
-vk::AttachmentDescription make_color_attachment(const RenderAttachmentInfo* info, bool bFirstWrite, bool bReadAfter) {
+VkAttachmentDescription make_color_attachment(const RenderAttachmentInfo* info, bool bFirstWrite, bool bReadAfter) {
 
 	VkAttachmentDescription attachment = {};
 	attachment.format = info->format;
@@ -117,13 +117,13 @@ vk::AttachmentDescription make_color_attachment(const RenderAttachmentInfo* info
 
 
 	if (bFirstWrite) {
-		attachment.initialLayout = (VkImageLayout)vkf::ImageLayout::eUndefined;
+		attachment.initialLayout = +vkf::ImageLayout::eUndefined;
 	}
 	else {
-		attachment.initialLayout = (VkImageLayout)vkf::ImageLayout::eShaderReadOnlyOptimal;
+		attachment.initialLayout = +vkf::ImageLayout::eShaderReadOnlyOptimal;
 	}
 
-	attachment.finalLayout = bReadAfter ? (VkImageLayout)vkf::ImageLayout::eShaderReadOnlyOptimal : (VkImageLayout)vkf::ImageLayout::eColorAttachmentOptimal;
+	attachment.finalLayout = bReadAfter ? +vkf::ImageLayout::eShaderReadOnlyOptimal : +vkf::ImageLayout::eColorAttachmentOptimal;
 
 	return attachment;
 }
@@ -134,7 +134,7 @@ VkAttachmentDescription make_depth_attachment(const RenderAttachmentInfo* info, 
 	VkAttachmentDescription attachment = {};
 	
 	attachment.format = info->format;
-	attachment.samples = (VkSampleCountFlagBits)vkf::SampleCountFlagBits::e1;
+	attachment.samples = +vkf::SampleCountFlagBits::e1;
 
 	if (bFirstWrite) {
 		attachment.loadOp = info->bClear ? (VkAttachmentLoadOp)vkf::AttachmentLoadOp::eClear : (VkAttachmentLoadOp)vkf::AttachmentLoadOp::eDontCare;
@@ -175,8 +175,36 @@ int FrameGraph::find_attachment_user(const FrameGraph::GraphAttachmentUsages&usa
 	return-1;
 }
 
+
+void create_render_pass(int color_attachments, VkAttachmentReference* references, int depth_attachments, VkAttachmentDescription* attachments, RenderPass* pass, VulkanEngine* eng)
+{
+	VkSubpassDescription subpass = {};
+
+	subpass.pipelineBindPoint = (VkPipelineBindPoint)vkf::PipelineBindPoint::eGraphics;
+	subpass.colorAttachmentCount = color_attachments;
+
+	subpass.pColorAttachments = (color_attachments) ? references : nullptr;
+
+	subpass.pDepthStencilAttachment = (depth_attachments) ? (references + color_attachments) : nullptr;;
+
+	VkRenderPassCreateInfo renderPassInfo = {};
+	renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+	renderPassInfo.attachmentCount = color_attachments + depth_attachments;
+	renderPassInfo.pAttachments = attachments;
+	renderPassInfo.subpassCount = 1;
+	renderPassInfo.pSubpasses = &subpass;
+
+	std::array < VkSubpassDependency, 2> pass_dependencies = build_basic_subpass_dependencies();
+	renderPassInfo.dependencyCount = static_cast<uint32_t>(pass_dependencies.size());
+	renderPassInfo.pDependencies = pass_dependencies.data();
+
+	pass->built_pass = eng->device.createRenderPass(renderPassInfo);
+}
+
 void FrameGraph::build_render_pass(RenderPass* pass, VulkanEngine* eng)
 {
+	if (pass->built_pass != VK_NULL_HANDLE) return;
+
 	int attachmentIndex = 0;
 	for (const auto& ath : pass->color_attachments) {
 
@@ -266,34 +294,15 @@ void FrameGraph::build_render_pass(RenderPass* pass, VulkanEngine* eng)
 		references.push_back(athref);
 	}
 
-
-	VkSubpassDescription subpass = {};
-
-	subpass.pipelineBindPoint = (VkPipelineBindPoint)vkf::PipelineBindPoint::eGraphics;
-	subpass.colorAttachmentCount = color_attachments;
-
-	subpass.pColorAttachments = (color_attachments) ? references.data() : nullptr;
-
-	subpass.pDepthStencilAttachment = (depth_attachments) ? (references.data() + color_attachments) : nullptr;;
-
-	VkRenderPassCreateInfo renderPassInfo = {};
-	renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-	renderPassInfo.attachmentCount = attachments.size();
-	renderPassInfo.pAttachments = attachments.data();
-	renderPassInfo.subpassCount = 1;
-	renderPassInfo.pSubpasses = &subpass;
-
-	std::array < VkSubpassDependency, 2> pass_dependencies = build_basic_subpass_dependencies();
-	renderPassInfo.dependencyCount = static_cast<uint32_t>(pass_dependencies.size());
-	renderPassInfo.pDependencies = pass_dependencies.data();
-
-	pass->built_pass = eng->device.createRenderPass(renderPassInfo);
-
+	create_render_pass(color_attachments, references.data(), depth_attachments, attachments.data(), pass, eng);
+	
 	//framebuffers
 	std::vector<VkImageView> FBAttachments;
 
 	uint32_t width = 0;
 	uint32_t height = 0;
+
+	std::vector<VkFramebufferAttachmentImageInfo> FBImageinfos;
 
 	for (auto attachment : pass->physical_attachments) {
 
@@ -301,18 +310,45 @@ void FrameGraph::build_render_pass(RenderPass* pass, VulkanEngine* eng)
 
 		width = graph_attachments[attachment.name].real_width;
 		height = graph_attachments[attachment.name].real_height;
+
+		VkFramebufferAttachmentImageInfo ainfo{};
+		ainfo.pNext = nullptr;
+		ainfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_ATTACHMENT_IMAGE_INFO_KHR;
+		ainfo.height = height;
+		ainfo.width = width;
+		ainfo.layerCount = 1;
+		ainfo.usage = graph_attachments[attachment.name].usageFlags;
+		ainfo.pViewFormats = &graph_attachments[attachment.name].info.format;
+		ainfo.viewFormatCount = 1;
+		
+		FBImageinfos.push_back(ainfo);
+
+
 	}
 
 	pass->render_height = height;
 	pass->render_width = width;
 
+
+
+
+	VkFramebufferAttachmentsCreateInfoKHR fbufAttachmentInfo = {};
+	fbufAttachmentInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_ATTACHMENTS_CREATE_INFO;
+	fbufAttachmentInfo.pNext = nullptr;
+
+	fbufAttachmentInfo.pAttachmentImageInfos = FBImageinfos.data();
+	fbufAttachmentInfo.attachmentImageInfoCount = FBImageinfos.size();
+
+
 	VkFramebufferCreateInfo fbufCreateInfo = vkinit::framebuffer_create_info(pass->built_pass, {width,height});	
 
-	fbufCreateInfo.attachmentCount = FBAttachments.size();
-	fbufCreateInfo.pAttachments = FBAttachments.data();
+	fbufCreateInfo.pNext = &fbufAttachmentInfo;
+	fbufCreateInfo.attachmentCount =FBImageinfos.size();//FBAttachments.size();
+	fbufCreateInfo.pAttachments = nullptr;//FBAttachments.data();
 	fbufCreateInfo.width = width;
 	fbufCreateInfo.height = height;
 	fbufCreateInfo.layers = 1;
+	fbufCreateInfo.flags = VK_FRAMEBUFFER_CREATE_IMAGELESS_BIT;
 
 	std::cout << "building framebuffer for" << pass->name << std::endl;
 	pass->framebuffer = eng->device.createFramebuffer(fbufCreateInfo);
@@ -320,6 +356,8 @@ void FrameGraph::build_render_pass(RenderPass* pass, VulkanEngine* eng)
 
 void FrameGraph::build_compute_barriers(RenderPass* pass, VulkanEngine* eng)
 {
+	pass->startBarriers.clear();
+	pass->endBarriers.clear();
 	for (const auto& ath : pass->color_attachments) {
 		GraphAttachment* graphAth = &graph_attachments[ath.name];
 
@@ -336,8 +374,6 @@ void FrameGraph::build_compute_barriers(RenderPass* pass, VulkanEngine* eng)
 		bool bFirstUse = useridx == 0;
 
 		VkImageLayout current_layout = +vkf::ImageLayout::eGeneral;
-	
-		
 
 		//we only add barrier when using the image for the first time, barriers are handled in the other cases
 		if (bFirstUse) {
@@ -351,7 +387,7 @@ void FrameGraph::build_compute_barriers(RenderPass* pass, VulkanEngine* eng)
 			startbarrier.dstAccessMask = +vkf::AccessFlagBits::eShaderWrite;
 			startbarrier.srcAccessMask = +vkf::AccessFlagBits{};
 
-			startbarrier.image = graphAth->image;
+			startbarrier.image = graphAth->get_image(this);
 			startbarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 			startbarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 
@@ -393,7 +429,7 @@ void FrameGraph::build_compute_barriers(RenderPass* pass, VulkanEngine* eng)
 			endbarrier.dstAccessMask = +vkf::AccessFlagBits::eShaderRead;
 			endbarrier.srcAccessMask = +vkf::AccessFlagBits::eShaderWrite;
 
-			endbarrier.image = graphAth->image;
+			endbarrier.image = graphAth->get_image(this);
 			endbarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 			endbarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 
@@ -404,193 +440,290 @@ void FrameGraph::build_compute_barriers(RenderPass* pass, VulkanEngine* eng)
 	}
 }
 
+void FrameGraph::return_image(uint64_t image_ID)
+{
+	cache.reusableImages.push_back(image_ID);
+}
+
+uint64_t FrameGraph::request_image(VkImageCreateInfo* createInfo) {
+
+	//search for a reusable image with the same image-create-info
+	for (int i = 0; i <cache.reusableImages.size(); i++) {
+		auto id = cache.reusableImages[i];
+		auto cached_image = cache.cachedImages[id];
+
+		bool bIsSame = memcmp(&cached_image.createInfo, createInfo, sizeof(VkImageCreateInfo)) == 0;
+		if(bIsSame)
+		{
+			//remove the index from the reusable list
+			cache.reusableImages[i] = cache.reusableImages.back();
+			cache.reusableImages.pop_back();
+
+			//reuse
+			return id;
+		}
+	}
+
+	//allocate a new image
+
+	VmaAllocationCreateInfo vmaallocInfo = {};
+	vmaallocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+	vmaallocInfo.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+	//V//kImageCreateInfo imnfo1 = imageCreateInfo;
+
+	VkImage image;
+	VmaAllocation imageAlloc;
+	vmaCreateImage(owner->allocator, createInfo, &vmaallocInfo, &image, &imageAlloc, nullptr);
+
+	CachedImage newCached;
+	newCached.createInfo = *createInfo;
+	newCached.image.image = image;
+	newCached.image.allocation = imageAlloc;
+
+	uint64_t new_id = cache.last_index++;
+	cache.cachedImages[new_id] = newCached;
+
+	return new_id;
+}
+
+VkImageView FrameGraph::request_image_view(uint64_t image_ID, VkImageViewCreateInfo* createInfo)
+{
+	//set the target image of the imageview to be the cached image
+	CachedImage& image = cache.cachedImages[image_ID];
+
+	createInfo->image = image.image.image;
+
+	//search to check if the image already had that image view created
+	
+	for (auto v : image.imageViews) {
+
+		bool bIsSame = memcmp(&v.createInfo, createInfo, sizeof(VkImageViewCreateInfo)) == 0;
+		if (bIsSame) {
+			return v.imageView;
+		}
+	}
+
+	VkImageView view;
+
+	vkCreateImageView(owner->device, createInfo, nullptr, &view);
+	
+	CachedImageView cachedView;
+	cachedView.imageView = view;
+	cachedView.createInfo = *createInfo;
+	image.imageViews.push_back(cachedView);
+
+	return view;
+}
+
 bool FrameGraph::build( VulkanEngine* engine)
 {
+	ZoneScopedNC("Rendergraph build", tracy::Color::Blue);
+
 	owner = engine;
 
-	for (auto pass : passes) {
-		for (const auto& coloratch : pass->color_attachments) {
-			if (graph_attachments.find(coloratch.name) == graph_attachments.end())
-			{
-				GraphAttachment attachment;
-				attachment.info = coloratch.info;
-				attachment.name = coloratch.name;
-				
-				graph_attachments[coloratch.name] = attachment;
-			}
-		}
-		auto& dp = pass->depth_attachment;
-		if (dp.name != "") {
-			if (graph_attachments.find(dp.name) == graph_attachments.end())
-			{	
-				GraphAttachment attachment;
-				attachment.info = dp.info;
-				attachment.name = dp.name;
-				
-				graph_attachments[dp.name] = attachment;
+
+	{
+		ZoneScopedNC("Rendergraph return images", tracy::Color::Blue1);
+		//clear all render targets and return to caches
+		for (auto& [name, attachment] : graph_attachments) {
+			if (attachment.image_id != 0) {
+				return_image(attachment.image_id);
 			}
 		}
 	}
 
-	//grab all render targets
-	for (auto &[name,attachment] : graph_attachments) {
-		
-		std::cout << "----------------------------" << std::endl;
-		for (int i = 0; i < passes.size(); i++) {
-			RenderPass* pass = passes[i];
-			RenderGraphImageAccess access;
-			if (pass->find_image_access(name, access))
-			{
-				attachment.uses.usages.push_back(access);
-				attachment.uses.users.push_back(i);
+	graph_attachments.clear();
 
-				std::cout << "attachment: " << name << " used by " << pass->name << " as ";
-				switch (access) {
-				case RenderGraphImageAccess::Write:
-					std::cout << "write";
-					break;
-				case RenderGraphImageAccess::Read:
-					std::cout << "read";
-					break;
-				case RenderGraphImageAccess::RenderTargetColor:
-					std::cout << "render target";
-					break;
-				case RenderGraphImageAccess::RenderTargetDepth:
-					std::cout << "depth target";
-					break;								
+	{
+		ZoneScopedNC("Rendergraph grab attachments", tracy::Color::Blue1);
+		for (auto pass : passes) {
+			for (const auto& coloratch : pass->color_attachments) {
+				if (graph_attachments.find(coloratch.name) == graph_attachments.end())
+				{
+					GraphAttachment attachment;
+					attachment.info = coloratch.info;
+					attachment.name = coloratch.name;
+
+					graph_attachments[coloratch.name] = attachment;
 				}
-				std::cout << std::endl;
+			}
+			auto& dp = pass->depth_attachment;
+			if (dp.name != "") {
+				if (graph_attachments.find(dp.name) == graph_attachments.end())
+				{
+					GraphAttachment attachment;
+					attachment.info = dp.info;
+					attachment.name = dp.name;
+
+					graph_attachments[dp.name] = attachment;
+				}
 			}
 		}
-		std::cout << std::endl;
-	}
-	for (auto [name, attachment] : graph_attachments) {
-		std::cout << (is_used_as_depth(&attachment) ? " Depth Attachment: " : " Color Attachment: ") << name << " -- Reads " << get_reads(&attachment) << " Writes " << get_writes(&attachment) << std::endl;
-	}
-
-	//calculate usage flags
-	for (auto &[name, attachment] : graph_attachments) {
-		VkImageUsageFlags flags{0};
-		
-
-		for (int i = 0; i < attachment.uses.usages.size(); i++) {
-			RenderGraphImageAccess usage = attachment.uses.usages[i];
-			RenderPass* pass = passes[attachment.uses.users[i]];
-			
-			switch (usage) {
-			case RenderGraphImageAccess::Write:
-				if (pass->type == PassType::Compute) {
-					flags |= +vkf::ImageUsageFlagBits::eStorage;
-				}
-				break;
-			case RenderGraphImageAccess::Read:
-				flags |= +vkf::ImageUsageFlagBits::eSampled;
-				break;
-			case RenderGraphImageAccess::RenderTargetColor:
-				flags |= +vkf::ImageUsageFlagBits::eColorAttachment;
-				break;
-			case RenderGraphImageAccess::RenderTargetDepth:
-				flags |= +vkf::ImageUsageFlagBits::eDepthStencilAttachment;
-				break;				
-			}			
-		}
-
-		attachment.usageFlags = flags;
 	}
 	
-	//one sampler to rule them all
-	VkSamplerCreateInfo sampler = vkinit::sampler_create_info(+vkf::Filter::eLinear);
-	sampler.magFilter = +vkf::Filter::eLinear;
-	sampler.minFilter = +vkf::Filter::eLinear;
-	sampler.mipmapMode = +vkf::SamplerMipmapMode::eLinear;
-	//sampler.magFilter = vk::Filter::eNearest;
-	//sampler.minFilter = vk::Filter::eNearest;
-	//sampler.mipmapMode = vk::SamplerMipmapMode::eNearest;
-	sampler.addressModeU = +vkf::SamplerAddressMode::eMirroredRepeat;
-	sampler.addressModeV = sampler.addressModeU;
-	sampler.addressModeW = sampler.addressModeU;
-	sampler.mipLodBias = 0.0f;
-	sampler.maxAnisotropy = 1.0f;
-	sampler.minLod = 0.0f;
-	sampler.maxLod = 1.0f;
-	sampler.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;//vk::BorderColor::eFloatOpaqueWhite;
-
-	VkSamplerCreateInfo samplerInfo = sampler;
-	VkSampler mainSampler;// = engine->device.createSampler(sampler);
-	vkCreateSampler(engine->device, &samplerInfo, nullptr, &mainSampler);
-	//build images
-	for (auto [n, atch] : graph_attachments)
 	{
-		GraphAttachment& v = graph_attachments[n];
-		VkImageCreateInfo imageCreateInfo = vkinit::image_create_info(v.info.format, v.usageFlags,VkExtent3D{0,0,0});
-		imageCreateInfo.imageType = VK_IMAGE_TYPE_2D;//+vkf::ImageType::e2D;
+		ZoneScopedNC("Rendergraph gather usages", tracy::Color::Blue1);
+		//grab all render targets
+		for (auto& [name, attachment] : graph_attachments) {
 
-		if (v.info.size_class == SizeClass::SwapchainRelative) {
-			imageCreateInfo.extent.width = v.info.size_x * this->swapchainSize.width;
-			imageCreateInfo.extent.height = v.info.size_y * this->swapchainSize.height;
+			//std::cout << "----------------------------" << std::endl;
+			for (int i = 0; i < passes.size(); i++) {
+				RenderPass* pass = passes[i];
+				RenderGraphImageAccess access;
+				if (pass->find_image_access(name, access))
+				{
+					attachment.uses.usages.push_back(access);
+					attachment.uses.users.push_back(i);
+
+					//std::cout << "attachment: " << name << " used by " << pass->name << " as ";
+					//switch (access) {
+					//case RenderGraphImageAccess::Write:
+					//	std::cout << "write";
+					//	break;
+					//case RenderGraphImageAccess::Read:
+					//	std::cout << "read";
+					//	break;
+					//case RenderGraphImageAccess::RenderTargetColor:
+					//	std::cout << "render target";
+					//	break;
+					//case RenderGraphImageAccess::RenderTargetDepth:
+					//	std::cout << "depth target";
+					//	break;
+					//}
+					//std::cout << std::endl;
+				}
+			}
+			//std::cout << std::endl;
 		}
-		else {
-			imageCreateInfo.extent.width = v.info.size_x;
-			imageCreateInfo.extent.height = v.info.size_y;
-		}
-		v.real_height = imageCreateInfo.extent.height;
-		v.real_width = imageCreateInfo.extent.width;
-
-		imageCreateInfo.extent.depth = 1;
-		imageCreateInfo.mipLevels = 1;
-		imageCreateInfo.arrayLayers = 1;
-		imageCreateInfo.samples = +vkf::SampleCountFlagBits::e1;
-		imageCreateInfo.tiling = VK_IMAGE_TILING_OPTIMAL;//+vkf::ImageTiling::eOptimal;
-		imageCreateInfo.format = v.info.format;
-		imageCreateInfo.usage = v.usageFlags;
-
-		VmaAllocationCreateInfo vmaallocInfo = {};
-		vmaallocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-		vmaallocInfo.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-		VkImageCreateInfo imnfo1 = imageCreateInfo;
-
-		VkImage image;
-
-		vmaCreateImage(engine->allocator, &imnfo1, &vmaallocInfo, &image, &v.imageAlloc, nullptr);
-
-		v.image = image;
-
-		VkImageViewCreateInfo imageViewInfo = vkinit::image_view_create_info(v.info.format,image);
-		imageViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;//vk::ImageViewType::e2D;
-		imageViewInfo.format = v.info.format;
-		imageViewInfo.subresourceRange = VkImageSubresourceRange{};
-		imageViewInfo.subresourceRange.aspectMask = is_used_as_depth(&v) ? +vkf::ImageAspectFlagBits::eDepth : +vkf::ImageAspectFlagBits::eColor;
-		imageViewInfo.subresourceRange.baseMipLevel = 0;
-		imageViewInfo.subresourceRange.levelCount = 1;
-		imageViewInfo.subresourceRange.baseArrayLayer = 0;
-		imageViewInfo.subresourceRange.layerCount = 1;
-		imageViewInfo.image = image;
-
-		v.descriptor.imageView = engine->device.createImageView(imageViewInfo);
-		v.descriptor.imageLayout = is_used_as_depth(&v)  ? +vkf::ImageLayout::eDepthStencilReadOnlyOptimal : +vkf::ImageLayout::eShaderReadOnlyOptimal;
-		v.descriptor.sampler = mainSampler;
+		//for (auto [name, attachment] : graph_attachments) {
+		//	std::cout << (is_used_as_depth(&attachment) ? " Depth Attachment: " : " Color Attachment: ") << name << " -- Reads " << get_reads(&attachment) << " Writes " << get_writes(&attachment) << std::endl;
+		//}
 	}
-
-	//make render passes
-	for (int i = 0; i < passes.size(); i++) {
-		RenderPass* pass = passes[i];
-		if (pass->type == PassType::Graphics) {
-			build_render_pass(pass, engine);
-		}
-		else if (pass->type == PassType::Compute) {
-			build_compute_barriers(pass, engine);
-		}
-	}
-
-	std::cout << "framegraph built";
-
-	for (auto [n, atch] : graph_attachments)
 	{
-		//leaks
-		std::string* alloc = new std::string(n);
-		attachmentNames.push_back(alloc->c_str());
+		ZoneScopedNC("Rendergraph build image flags", tracy::Color::Blue1);
+		//calculate usage flags
+		for (auto& [name, attachment] : graph_attachments) {
+			VkImageUsageFlags flags{ 0 };
+
+
+			for (int i = 0; i < attachment.uses.usages.size(); i++) {
+				RenderGraphImageAccess usage = attachment.uses.usages[i];
+				RenderPass* pass = passes[attachment.uses.users[i]];
+
+				switch (usage) {
+				case RenderGraphImageAccess::Write:
+					if (pass->type == PassType::Compute) {
+						flags |= +vkf::ImageUsageFlagBits::eStorage;
+					}
+					break;
+				case RenderGraphImageAccess::Read:
+					flags |= +vkf::ImageUsageFlagBits::eSampled;
+					break;
+				case RenderGraphImageAccess::RenderTargetColor:
+					flags |= +vkf::ImageUsageFlagBits::eColorAttachment;
+					break;
+				case RenderGraphImageAccess::RenderTargetDepth:
+					flags |= +vkf::ImageUsageFlagBits::eDepthStencilAttachment;
+					break;
+				}
+			}
+
+			attachment.usageFlags = flags;
+		}
+
 	}
+	if (mainSampler == VK_NULL_HANDLE) {
+		//one sampler to rule them all
+		VkSamplerCreateInfo sampler = vkinit::sampler_create_info(+vkf::Filter::eLinear);
+		sampler.magFilter = +vkf::Filter::eLinear;
+		sampler.minFilter = +vkf::Filter::eLinear;
+		sampler.mipmapMode = +vkf::SamplerMipmapMode::eLinear;
+		//sampler.magFilter = vk::Filter::eNearest;
+		//sampler.minFilter = vk::Filter::eNearest;
+		//sampler.mipmapMode = vk::SamplerMipmapMode::eNearest;
+		sampler.addressModeU = +vkf::SamplerAddressMode::eMirroredRepeat;
+		sampler.addressModeV = sampler.addressModeU;
+		sampler.addressModeW = sampler.addressModeU;
+		sampler.mipLodBias = 0.0f;
+		sampler.maxAnisotropy = 1.0f;
+		sampler.minLod = 0.0f;
+		sampler.maxLod = 1.0f;
+		sampler.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;//vk::BorderColor::eFloatOpaqueWhite;
+
+		VkSamplerCreateInfo samplerInfo = sampler;
+		// = engine->device.createSampler(sampler);
+		vkCreateSampler(engine->device, &samplerInfo, nullptr, &mainSampler);
+	}
+	{
+		ZoneScopedNC("Rendergraph build images", tracy::Color::Blue1);
+		//build images
+		for (auto [n, atch] : graph_attachments)
+		{
+			GraphAttachment& v = graph_attachments[n];
+			VkImageCreateInfo imageCreateInfo = vkinit::image_create_info(v.info.format, v.usageFlags, VkExtent3D{ 0,0,0 });
+			imageCreateInfo.imageType = VK_IMAGE_TYPE_2D;//+vkf::ImageType::e2D;
+
+			if (v.info.size_class == SizeClass::SwapchainRelative) {
+				imageCreateInfo.extent.width = v.info.size_x * this->swapchainSize.width;
+				imageCreateInfo.extent.height = v.info.size_y * this->swapchainSize.height;
+			}
+			else {
+				imageCreateInfo.extent.width = v.info.size_x;
+				imageCreateInfo.extent.height = v.info.size_y;
+			}
+			v.real_height = imageCreateInfo.extent.height;
+			v.real_width = imageCreateInfo.extent.width;
+
+			imageCreateInfo.extent.depth = 1;
+			imageCreateInfo.mipLevels = 1;
+			imageCreateInfo.arrayLayers = 1;
+			imageCreateInfo.samples = +vkf::SampleCountFlagBits::e1;
+			imageCreateInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+			imageCreateInfo.format = v.info.format;
+			imageCreateInfo.usage = v.usageFlags;
+
+			v.image_id = request_image(&imageCreateInfo);
+
+			VkImageViewCreateInfo imageViewInfo = vkinit::image_view_create_info(v.info.format, VK_NULL_HANDLE);
+			imageViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+			imageViewInfo.format = v.info.format;
+			imageViewInfo.subresourceRange = VkImageSubresourceRange{};
+			imageViewInfo.subresourceRange.aspectMask = is_used_as_depth(&v) ? +vkf::ImageAspectFlagBits::eDepth : +vkf::ImageAspectFlagBits::eColor;
+			imageViewInfo.subresourceRange.baseMipLevel = 0;
+			imageViewInfo.subresourceRange.levelCount = 1;
+			imageViewInfo.subresourceRange.baseArrayLayer = 0;
+			imageViewInfo.subresourceRange.layerCount = 1;
+
+			v.descriptor.imageView = request_image_view(v.image_id, &imageViewInfo);
+			v.descriptor.imageLayout = is_used_as_depth(&v) ? +vkf::ImageLayout::eDepthStencilReadOnlyOptimal : +vkf::ImageLayout::eShaderReadOnlyOptimal;
+			v.descriptor.sampler = mainSampler;
+		}
+	}
+	{
+		ZoneScopedNC("Rendergraph build passes", tracy::Color::Blue2);
+		//make render passes
+		for (int i = 0; i < passes.size(); i++) {
+			RenderPass* pass = passes[i];
+			if (pass->type == PassType::Graphics) {
+				build_render_pass(pass, engine);
+			}
+			else if (pass->type == PassType::Compute) {
+				build_compute_barriers(pass, engine);
+			}
+		}
+	}
+	
+
+	//std::cout << "framegraph built";
+
+	//attachmentNames.clear();
+	//for (auto [n, atch] : graph_attachments)
+	//{
+	//	//leaks
+	//	std::string* alloc = new std::string(n);
+	//	attachmentNames.push_back(alloc->c_str());
+	//}
 
 	return true;
 }
@@ -708,8 +841,29 @@ void FrameGraph::execute(VkCommandBuffer _cmd)
 				renderArea.width = pass->render_width;
 				renderArea.height = pass->render_height;
 
+				VkRenderPassAttachmentBeginInfo attachmentInfo = {};
+				attachmentInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_ATTACHMENT_BEGIN_INFO;
+				attachmentInfo.pNext = nullptr;
+
+				//framebuffers
+				std::vector<VkImageView> FBAttachments;
+
+				uint32_t width = 0;
+				uint32_t height = 0;
+
+				for (auto attachment : pass->physical_attachments) {
+
+					FBAttachments.push_back(graph_attachments[attachment.name].descriptor.imageView);
+				}
+
+				attachmentInfo.attachmentCount = FBAttachments.size();
+				attachmentInfo.pAttachments = FBAttachments.data();
+				
+				
+
 				VkRenderPassBeginInfo renderPassInfo =  vkinit::renderpass_begin_info(pass->built_pass, renderArea,pass->framebuffer);					
 
+				renderPassInfo.pNext = &attachmentInfo;
 				renderPassInfo.clearValueCount = pass->clearValues.size();
 				renderPassInfo.pClearValues = pass->clearValues.data();
 
@@ -765,7 +919,7 @@ void FrameGraph::execute(VkCommandBuffer _cmd)
 				image_barriers.clear();
 				transform_images_to_read(pass, image_barriers, cmd);
 
-				if (true){//pass->perform_submit) {
+				if (pass->perform_submit) {
 					TracyVkCollect(profilercontext, cmd);
 					frameZone.End();
 					vkEndCommandBuffer(cmd);
@@ -940,4 +1094,9 @@ void RenderAttachmentInfo::set_clear_depth(float depth, uint32_t stencil)
 {
 	clearValue.depthStencil = { depth, stencil };
 	bClear = true;
+}
+
+VkImage FrameGraph::GraphAttachment::get_image(FrameGraph* ownerGraph)
+{
+	return ownerGraph->cache.cachedImages[image_id].image.image;
 }

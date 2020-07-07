@@ -291,7 +291,7 @@ void VulkanEngine::create_device()
 	//deviceFeatures.
 	//--- DEVICE CREATE
 	vk::DeviceCreateInfo createInfo;
-
+	
 	//auto extensions = get_extensions();
 
 	//if (queueCreateInfo.queueFamilyIndex == presentQueueCreateInfo.queueFamilyIndex) {
@@ -301,7 +301,7 @@ void VulkanEngine::create_device()
 	//	createInfo.pEnabledFeatures = &deviceFeatures;
 	//	createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
 	//	createInfo.ppEnabledExtensionNames = deviceExtensions.data();
-	//	createInfo.pNext = &features2;
+		createInfo.pNext = &features2;
 	//
 	//	device = physicalDevice.createDevice(createInfo);
 	//}
