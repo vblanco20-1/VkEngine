@@ -39,12 +39,56 @@ struct CachedImage {
 	VkImageCreateInfo createInfo;
 	std::vector<CachedImageView> imageViews;
 };
+
+
+
+//bundled up render pass create info. NOT COPYABLE, allways use by pointer
+struct RenderPassCreateInfo {
+	VkRenderPassCreateInfo topInfo;
+	VkSubpassDescription subpass;
+	std::array < VkSubpassDependency, 2> pass_dependencies;
+	std::array< VkAttachmentDescription, 6> attachments;
+	std::array< VkAttachmentReference, 6> attachment_refs;
+	int numAttachments;
+	int depthAttachments;
+
+	VkRenderPassCreateInfo makeInfo();
+
+	bool operator==(const RenderPassCreateInfo& other) const {
+		if (numAttachments != other.numAttachments) return false;
+		if (depthAttachments != other.depthAttachments) return false;
+		if (topInfo.attachmentCount != other.topInfo.attachmentCount) return false;
+		for (int i = 0; i < topInfo.attachmentCount;i++) {
+			bool bIsSame = memcmp(&attachments[i], &other.attachments[i], sizeof(VkAttachmentDescription)) == 0;
+			if (!bIsSame) return false;
+		}
+
+		return true;
+	}
+};
+
+struct CachedRenderPass {
+	std::unique_ptr<RenderPassCreateInfo> createinfo;
+	VkRenderPass pass;
+};
+
+std::unique_ptr<RenderPassCreateInfo> bundle_renderpass_info(VkRenderPassCreateInfo* info);
+
 struct FrameGraphCache {
 	std::unordered_map<uint64_t, CachedImage> cachedImages;
+
+	std::vector<CachedRenderPass> cachedRenderPasses;
 
 	std::vector<uint64_t> reusableImages;
 
 	uint64_t last_index{1};
+
+	VkRenderPass requestRenderPass(class VulkanEngine* eng, VkRenderPassCreateInfo* info);
+};
+
+struct RenderGraphImageInfo {
+	VkFormat format{ VK_FORMAT_UNDEFINED };
+	VkClearValue clearValue;
 };
 
 struct RenderAttachmentInfo
@@ -145,6 +189,7 @@ public:
 
 	int find_attachment_user(const FrameGraph::GraphAttachmentUsages& usages, std::string name);
 	 
+	void create_render_pass(int color_attachments, VkAttachmentReference* references, int depth_attachments, VkAttachmentDescription* attachments, RenderPass* pass, VulkanEngine* eng);
 	void build_render_pass(RenderPass* pass, VulkanEngine* eng);
 	void build_compute_barriers(RenderPass* pass, VulkanEngine* eng);
 
@@ -154,6 +199,10 @@ public:
 	
 
 	bool build(VulkanEngine* engine);
+
+	void return_images();
+
+	void reset(VulkanEngine* engine);
 
 	RenderPass* add_pass(std::string pass_name, std::function<void(RenderPassCommands*)> execution, PassType type, bool bPerformSubmit = false);
 	RenderPass* get_pass(std::string name);
@@ -191,6 +240,37 @@ public:
 	VulkanEngine* owner;
 	int current_submission_id = 0;
 	int end_render_id = 0;
+};
+
+
+struct PassBuilder {
+	class Rendergraph* render_graph;
+
+	
+	void set_pass_type(PassType type) {};
+	void set_sort_key(uint64_t key) {};
+
+	void request_image(std::string_view name, const RenderGraphImageInfo& default_info) {};
+	void request_buffer(std::string_view name, RenderGraphResourceAccess resource_access) {};
+
+	void add_color_attachment(std::string_view name, const RenderAttachmentInfo& info) {};
+	void set_depth_attachment(std::string_view name, const RenderAttachmentInfo& info) {};
+};
+
+struct RenderPassDefinition{
+	std::string name;
+
+	std::function<void(PassBuilder*)> setup;
+	std::function<void(RenderPassCommands*, void* passData)> execute;
+};
+
+
+class Rendergraph {
+
+	std::vector<std::unique_ptr<RenderPassDefinition>> passes;
+
+
+	void add_pass(RenderPassDefinition&& pass_definition) {};
 };
 
 std::array < VkSubpassDependency, 2> build_basic_subpass_dependencies();

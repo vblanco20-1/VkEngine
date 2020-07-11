@@ -6,6 +6,8 @@
 #include <vk_initializers.h>
 #include "command_encoder.h"
 
+
+
 std::array < VkSubpassDependency, 2> build_basic_subpass_dependencies()
 {
 	std::array < VkSubpassDependency, 2> dependencies;
@@ -176,7 +178,85 @@ int FrameGraph::find_attachment_user(const FrameGraph::GraphAttachmentUsages&usa
 }
 
 
-void create_render_pass(int color_attachments, VkAttachmentReference* references, int depth_attachments, VkAttachmentDescription* attachments, RenderPass* pass, VulkanEngine* eng)
+std::unique_ptr<RenderPassCreateInfo> bundle_renderpass_info(VkRenderPassCreateInfo* info)
+{
+	std::unique_ptr<RenderPassCreateInfo> newinfo = std::make_unique<RenderPassCreateInfo>();
+
+	newinfo->topInfo = *info;
+	newinfo->subpass = info->pSubpasses[0];
+
+	//copy attachment references from subpass 0
+	int i = 0;
+	for (i; i < info->pSubpasses[0].colorAttachmentCount;i++) {
+		newinfo->attachment_refs[i] = info->pSubpasses[0].pColorAttachments[i];
+	}
+	newinfo->depthAttachments = 0;
+	if (info->pSubpasses[0].pDepthStencilAttachment)
+	{
+		newinfo->attachment_refs[i] = info->pSubpasses[0].pDepthStencilAttachment[0];
+		newinfo->depthAttachments = 1;
+	}
+	
+	
+	//copy attachments
+	i = 0;
+	for (i; i < info->attachmentCount; i++) {
+		newinfo->attachments[i] = info->pAttachments[i];
+	}
+	newinfo->numAttachments = info->pSubpasses[0].colorAttachmentCount;
+
+	newinfo->pass_dependencies[0] = info->pDependencies[0];
+	newinfo->pass_dependencies[1] = info->pDependencies[1];
+	//int i = 0;
+	//while(i < info->)
+	//
+	//
+	//newinfo->subpasses[0] = info->pSubpasses[0];
+	return newinfo;
+}
+
+VkRenderPass FrameGraphCache::requestRenderPass(VulkanEngine* eng, VkRenderPassCreateInfo* info)
+{
+	auto newinfo = bundle_renderpass_info(info);
+
+	for (auto &nf : cachedRenderPasses)
+	{
+		if (*nf.createinfo == *newinfo)
+		{
+			return nf.pass;
+		}
+	}
+	CachedRenderPass newCached;
+	newCached.pass = eng->device.createRenderPass(newinfo->makeInfo());
+	newCached.createinfo = std::move(newinfo);
+	
+	cachedRenderPasses.push_back(std::move(newCached));
+	
+
+	return cachedRenderPasses.back().pass;
+}
+
+VkRenderPassCreateInfo RenderPassCreateInfo::makeInfo()
+{
+	subpass.pColorAttachments = &attachment_refs[0];
+
+	subpass.pDepthStencilAttachment = (depthAttachments == 0) ? nullptr :  &attachment_refs[this->numAttachments];
+
+	VkRenderPassCreateInfo renderPassInfo = {};
+	renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+	renderPassInfo.attachmentCount = numAttachments+depthAttachments;
+	renderPassInfo.pAttachments = attachments.data();
+	renderPassInfo.subpassCount = 1;
+	renderPassInfo.pSubpasses = &subpass;
+		
+	renderPassInfo.dependencyCount = 2;
+	renderPassInfo.pDependencies = pass_dependencies.data();
+
+	return renderPassInfo;
+}
+
+
+void FrameGraph::create_render_pass(int color_attachments, VkAttachmentReference* references, int depth_attachments, VkAttachmentDescription* attachments, RenderPass* pass, VulkanEngine* eng)
 {
 	VkSubpassDescription subpass = {};
 
@@ -198,7 +278,11 @@ void create_render_pass(int color_attachments, VkAttachmentReference* references
 	renderPassInfo.dependencyCount = static_cast<uint32_t>(pass_dependencies.size());
 	renderPassInfo.pDependencies = pass_dependencies.data();
 
-	pass->built_pass = eng->device.createRenderPass(renderPassInfo);
+	//auto info = bundle_renderpass_info(&renderPassInfo);
+
+	pass->built_pass = cache.requestRenderPass(eng, &renderPassInfo);
+
+	//pass->built_pass = eng->device.createRenderPass(info->makeInfo());
 }
 
 void FrameGraph::build_render_pass(RenderPass* pass, VulkanEngine* eng)
@@ -269,7 +353,7 @@ void FrameGraph::build_render_pass(RenderPass* pass, VulkanEngine* eng)
 		attachmentIndex++;
 	}
 
-	std::cout << "Pass Building : " << pass->name << "-----------------" << std::endl;
+	//std::cout << "Pass Building : " << pass->name << "-----------------" << std::endl;
 
 	std::vector<VkAttachmentReference> references;
 	std::vector<VkAttachmentDescription> attachments;
@@ -350,7 +434,7 @@ void FrameGraph::build_render_pass(RenderPass* pass, VulkanEngine* eng)
 	fbufCreateInfo.layers = 1;
 	fbufCreateInfo.flags = VK_FRAMEBUFFER_CREATE_IMAGELESS_BIT;
 
-	std::cout << "building framebuffer for" << pass->name << std::endl;
+	//std::cout << "building framebuffer for" << pass->name << std::endl;
 	pass->framebuffer = eng->device.createFramebuffer(fbufCreateInfo);
 }
 
@@ -523,17 +607,8 @@ bool FrameGraph::build( VulkanEngine* engine)
 	owner = engine;
 
 
-	{
-		ZoneScopedNC("Rendergraph return images", tracy::Color::Blue1);
-		//clear all render targets and return to caches
-		for (auto& [name, attachment] : graph_attachments) {
-			if (attachment.image_id != 0) {
-				return_image(attachment.image_id);
-			}
-		}
-	}
+	return_images();
 
-	graph_attachments.clear();
 
 	{
 		ZoneScopedNC("Rendergraph grab attachments", tracy::Color::Blue1);
@@ -726,6 +801,31 @@ bool FrameGraph::build( VulkanEngine* engine)
 	//}
 
 	return true;
+}
+
+void FrameGraph::return_images()
+{
+	{
+		ZoneScopedNC("Rendergraph return images", tracy::Color::Blue1);
+		//clear all render targets and return to caches
+		for (auto& [name, attachment] : graph_attachments) {
+			if (attachment.image_id != 0) {
+				return_image(attachment.image_id);
+			}
+		}
+	}
+
+	graph_attachments.clear();
+}
+
+void FrameGraph::reset(VulkanEngine* engine)
+{
+	return_images();
+
+	pass_definitions.clear();
+	passes.clear();
+	
+	attachmentNames.clear();
 }
 
 RenderPass* FrameGraph::add_pass(std::string pass_name, std::function<void(RenderPassCommands*)> execution, PassType type, bool bPerformSubmit /*= false*/)
@@ -1100,3 +1200,11 @@ VkImage FrameGraph::GraphAttachment::get_image(FrameGraph* ownerGraph)
 {
 	return ownerGraph->cache.cachedImages[image_id].image.image;
 }
+
+
+
+
+void build_rendergraph(VulkanEngine* engine, Rendergraph* graph) {
+}
+
+

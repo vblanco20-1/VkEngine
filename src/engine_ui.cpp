@@ -38,6 +38,9 @@ void UI::DrawEngineUI(VulkanEngine* engine)
 
 	ImGui::Checkbox("show shadow viewpoint", &engine->config_parameters.ShadowView);
 	
+
+	ImGui::Checkbox("run SSAO", &engine->config_parameters.DoSsao);
+
 	(ImGui::Checkbox("custom camera", &engine->config_parameters.PlayerCam));
 	
 

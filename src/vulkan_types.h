@@ -215,6 +215,7 @@ struct ConfigParams {
 	float fov;
 	bool ShadowView;
 	bool PlayerCam;
+	bool DoSsao;
 };
 
 struct EngineStats {

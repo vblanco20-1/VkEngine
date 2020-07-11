@@ -76,6 +76,9 @@ void VulkanEngine::RenderMainPass_Other(const vk::CommandBuffer& cmd)
 
 	if (encoder == nullptr) { encoder = new CommandEncoder(); };
 
+	int numRenderables = render_registry.view<RenderMeshComponent>().size();
+	if (numRenderables == 0) return;
+
 	drawables.clear();
 	drawables.reserve(render_registry.view<RenderMeshComponent>().size());
 
@@ -240,8 +243,10 @@ void VulkanEngine::RenderGBufferPass(const vk::CommandBuffer& cmd)
 
 	static std::vector<DrawUnitEncoder> drawables;
 
+	int numRenderables = render_registry.view<RenderMeshComponent>().size();
+	if (numRenderables == 0) return;
 	drawables.clear();
-	drawables.reserve(render_registry.view<RenderMeshComponent>().size());
+	drawables.reserve(numRenderables);
 
 	ShaderEffect* effect = getResource<ShaderEffectHandle>("basicgbuf").handle;
 	render_registry.group<RenderMeshComponent, TransformComponent, ObjectBounds>().each([&](RenderMeshComponent& renderable, TransformComponent& tf, ObjectBounds& bounds) {
@@ -384,6 +389,9 @@ void VulkanEngine::render_shadow_pass(RenderPassCommands* cmd, int height, int w
 	drawUnits.clear();
 	static std::vector<InstancedDraw> instancedDraws;
 	instancedDraws.clear();
+
+	int numRenderables = render_registry.view<RenderMeshComponent>().size();
+	if (numRenderables == 0) return;
 
 	CommandEncoder* encoder = cmd->commandEncoder;
 

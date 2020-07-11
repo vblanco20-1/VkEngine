@@ -50,6 +50,8 @@ static std::vector<char> readFile(const std::string& filename) {
 
 void VulkanEngine::create_engine_graph()
 {
+
+
 	ZoneScopedNC("Engine Graph", tracy::Color::Blue);
 	VulkanEngine* engine = this;
 	FrameGraph& graph = engine->render_graph;
@@ -61,98 +63,8 @@ void VulkanEngine::create_engine_graph()
 
 	graph.swapchainSize = swapChainSize;
 
-	
+	graph.reset(this);
 
-	auto gbuffer_pass = graph.add_pass("GBuffer", [&](RenderPassCommands* commands) {
-		tracy::VkCtx* pctx = (tracy::VkCtx*)commands->profilerContext;
-		TracyVkZone(pctx, commands->commandBuffer, "GBuffer");
-		RenderGBufferPass(commands->commandBuffer);
-		}, PassType::Graphics, false);
-
-	//order is very important
-	auto shadow_pass = graph.add_pass("ShadowPass", [&](RenderPassCommands* commands) {
-		tracy::VkCtx* pctx = (tracy::VkCtx*)commands->profilerContext;
-		TracyVkZone(pctx, commands->commandBuffer, "ShadowPass");
-		this->render_shadow_pass(commands, commands->renderPass->render_height, commands->renderPass->render_width);
-		}, PassType::Graphics, false);
-
-
-	
-
-	//auto ssao0_pass = graph.add_pass("SSAO-pre", [&](vk::CommandBuffer cmd, RenderPass* pass) {
-	//	
-	//	render_ssao_pass(cmd, pass->render_height, pass->render_width);
-	//}, PassType::Graphics, false);
-
-	auto ssao1_pass = graph.add_pass("SSAO-pre-comp", [&](RenderPassCommands* commands) {
-		tracy::VkCtx* pctx = (tracy::VkCtx*)commands->profilerContext;
-		TracyVkZone(pctx, commands->commandBuffer, "SSAO-pre-comp");
-		render_ssao_compute(commands->commandBuffer);
-		}, PassType::Compute, false);
-
-
-#if 1
-	auto blurx_pass = graph.add_pass("SSAO-blurx", [&](RenderPassCommands* commands) {
-		tracy::VkCtx* pctx = (tracy::VkCtx*)commands->profilerContext;
-		TracyVkZone(pctx, commands->commandBuffer, "SSAO-blurx");
-		render_ssao_blurx(commands->commandBuffer, commands->renderPass->render_height, commands->renderPass->render_width);
-		}, PassType::Graphics);
-
-	auto ssao_taa_pass = graph.add_pass("SSAO-taa", [&](RenderPassCommands* commands) {
-		tracy::VkCtx* pctx = (tracy::VkCtx*)commands->profilerContext;
-		TracyVkZone(pctx, commands->commandBuffer, "SSAO-taa");
-		render_ssao_taa(commands->commandBuffer, commands->renderPass->render_height, commands->renderPass->render_width);
-		}, PassType::Graphics);
-
-	auto ssao_taa_flip = graph.add_pass("SSAO-flip", [&](RenderPassCommands* commands) {
-		tracy::VkCtx* pctx = (tracy::VkCtx*)commands->profilerContext;
-		TracyVkZone(pctx, commands->commandBuffer, "SSAO-flip");
-		render_ssao_flip(commands->commandBuffer, commands->renderPass->render_height, commands->renderPass->render_width);
-		}, PassType::Graphics);
-	//auto blury_pass = graph.add_pass("SSAO-blury", [&](vk::CommandBuffer cmd, RenderPass* pass) {
-	//
-	//	render_ssao_blury(cmd, pass->render_height, pass->render_width);
-	//	}, PassType::Graphics);
-#else
-	auto blurx_pass = graph.add_pass("SSAO-blurx", [&](vk::CommandBuffer cmd, RenderPass* pass) {
-		glm::vec2 blur_dir;
-		blur_dir.x = 2.f;
-		blur_dir.y = 0;
-
-		render_ssao_blur_compute(cmd, "ssao_pre", "ssao_mid", blur_dir);
-		
-		}, PassType::Compute);
-
-	auto blury_pass = graph.add_pass("SSAO-blury", [&](vk::CommandBuffer cmd, RenderPass* pass) {
-
-		glm::vec2 blur_dir;		
-		blur_dir.x = 0; 
-		blur_dir.y = 2.f;
-
-		render_ssao_blur_compute(cmd, "ssao_mid", "ssao_post", blur_dir);
-
-		}, PassType::Compute);
-#endif
-	auto forward_pass = graph.add_pass("MainPass", [&](RenderPassCommands* commands) {
-		//vkCmdPipelineBarrier(
-		//	cmd,
-		//	VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, // source stage
-		//	VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,    // destination stage
-		//	);
-		//RenderMainPass(cmd);
-		tracy::VkCtx* pctx = (tracy::VkCtx*)commands->profilerContext;
-		TracyVkZone(pctx, commands->commandBuffer, "MainPass");
-		RenderMainPass_Other(commands->commandBuffer);
-	}, PassType::Graphics,false);
-	
-	//auto test_pass = graph.add_pass("test", [&](vk::CommandBuffer cmd, RenderPass* pass) {
-	//	if (engine->globalFrameNumber > 3)
-	//	{
-	//
-	//	}
-	//	}, PassType::CPU);
-
-	auto display_pass = graph.add_pass("DisplayPass", [](RenderPassCommands* commands) {}, PassType::Graphics);
 
 	RenderAttachmentInfo shadowbuffer;
 	shadowbuffer.format = VK_FORMAT_D16_UNORM;
@@ -164,6 +76,8 @@ void VulkanEngine::create_engine_graph()
 	RenderAttachmentInfo gbuffer_position;
 	gbuffer_position.format = VK_FORMAT_R32G32B32A32_SFLOAT;
 	gbuffer_position.set_clear_color({ 0.0f, 0.0f, 0.0f, 1.0f });
+
+
 
 	RenderAttachmentInfo ssao_accumulate;
 	ssao_accumulate.format = VK_FORMAT_R32G32B32A32_SFLOAT;
@@ -192,12 +106,123 @@ void VulkanEngine::create_engine_graph()
 	RenderAttachmentInfo ssao_midblur = gbuffer_position;
 	ssao_midblur.format = VK_FORMAT_R8_UNORM;
 
+	RenderAttachmentInfo ssao_dummy = gbuffer_position;
+	ssao_dummy.format = VK_FORMAT_R8_UNORM;
+	ssao_dummy.set_clear_color({ 1.0f, 1.0f, 1.0f, 1.0f });
 
 	RenderAttachmentInfo ssao_post = ssao_midblur;
 
 	RenderAttachmentInfo main_image = gbuffer_position;
 
 	RenderAttachmentInfo output_image = main_image;
+
+
+
+	auto gbuffer_pass = graph.add_pass("GBuffer", [&](RenderPassCommands* commands) {
+		tracy::VkCtx* pctx = (tracy::VkCtx*)commands->profilerContext;
+		TracyVkZone(pctx, commands->commandBuffer, "GBuffer");
+		RenderGBufferPass(commands->commandBuffer);
+		}, PassType::Graphics, false);
+
+	//order is very important
+	auto shadow_pass = graph.add_pass("ShadowPass", [&](RenderPassCommands* commands) {
+		tracy::VkCtx* pctx = (tracy::VkCtx*)commands->profilerContext;
+		TracyVkZone(pctx, commands->commandBuffer, "ShadowPass");
+		this->render_shadow_pass(commands, commands->renderPass->render_height, commands->renderPass->render_width);
+		}, PassType::Graphics, false);
+
+
+
+
+	//auto ssao0_pass = graph.add_pass("SSAO-pre", [&](vk::CommandBuffer cmd, RenderPass* pass) {
+	//	
+	//	render_ssao_pass(cmd, pass->render_height, pass->render_width);
+	//}, PassType::Graphics, false);
+
+
+	if (config_parameters.DoSsao)
+	{
+
+		auto ssao1_pass = graph.add_pass("SSAO-pre-comp", [&](RenderPassCommands* commands) {
+			tracy::VkCtx* pctx = (tracy::VkCtx*)commands->profilerContext;
+			TracyVkZone(pctx, commands->commandBuffer, "SSAO-pre-comp");
+			render_ssao_compute(commands->commandBuffer);
+			}, PassType::Compute, false);
+
+		ssao1_pass->add_image_dependency("gbuf_pos");
+		ssao1_pass->add_image_dependency("gbuf_normal");
+		ssao1_pass->add_color_attachment("ssao_pre", ssao_pre);
+
+#if 1
+		auto blurx_pass = graph.add_pass("SSAO-blurx", [&](RenderPassCommands* commands) {
+			tracy::VkCtx* pctx = (tracy::VkCtx*)commands->profilerContext;
+			TracyVkZone(pctx, commands->commandBuffer, "SSAO-blurx");
+			render_ssao_blurx(commands->commandBuffer, commands->renderPass->render_height, commands->renderPass->render_width);
+			}, PassType::Graphics);
+
+		blurx_pass->add_image_dependency("ssao_pre");
+		blurx_pass->add_image_dependency("gbuf_normal");
+		blurx_pass->add_color_attachment("ssao_mid", ssao_post);
+
+		auto ssao_taa_pass = graph.add_pass("SSAO-taa", [&](RenderPassCommands* commands) {
+			tracy::VkCtx* pctx = (tracy::VkCtx*)commands->profilerContext;
+			TracyVkZone(pctx, commands->commandBuffer, "SSAO-taa");
+			render_ssao_taa(commands->commandBuffer, commands->renderPass->render_height, commands->renderPass->render_width);
+			}, PassType::Graphics);
+
+		ssao_taa_pass->add_image_dependency("ssao_mid");
+		ssao_taa_pass->add_image_dependency("gbuf_pos");
+		ssao_taa_pass->add_image_dependency("ssao_accumulate");
+		ssao_taa_pass->add_image_dependency("motion_vectors");
+		ssao_taa_pass->add_color_attachment("ssao_post", ssao_post);
+
+		auto ssao_taa_flip = graph.add_pass("SSAO-flip", [&](RenderPassCommands* commands) {
+			tracy::VkCtx* pctx = (tracy::VkCtx*)commands->profilerContext;
+			TracyVkZone(pctx, commands->commandBuffer, "SSAO-flip");
+			render_ssao_flip(commands->commandBuffer, commands->renderPass->render_height, commands->renderPass->render_width);
+			}, PassType::Graphics);		
+
+		ssao_taa_flip->add_image_dependency("ssao_post");
+		ssao_taa_flip->add_image_dependency("gbuf_pos");
+		ssao_taa_flip->add_color_attachment("ssao_accumulate", ssao_accumulate);
+#else
+		auto blurx_pass = graph.add_pass("SSAO-blurx", [&](vk::CommandBuffer cmd, RenderPass* pass) {
+			glm::vec2 blur_dir;
+			blur_dir.x = 2.f;
+			blur_dir.y = 0;
+
+			render_ssao_blur_compute(cmd, "ssao_pre", "ssao_mid", blur_dir);
+
+			}, PassType::Compute);
+
+		auto blury_pass = graph.add_pass("SSAO-blury", [&](vk::CommandBuffer cmd, RenderPass* pass) {
+
+			glm::vec2 blur_dir;
+			blur_dir.x = 0;
+			blur_dir.y = 2.f;
+
+			render_ssao_blur_compute(cmd, "ssao_mid", "ssao_post", blur_dir);
+
+	}, PassType::Compute);
+#endif
+}
+	else {
+		auto ssao1_pass = graph.add_pass("SSAO-pre-comp", [&](RenderPassCommands* commands) {
+			
+			}, PassType::Compute, false);
+		
+		ssao1_pass->add_color_attachment("ssao_post", ssao_dummy);
+	}
+	auto forward_pass = graph.add_pass("MainPass", [&](RenderPassCommands* commands) {
+
+		tracy::VkCtx* pctx = (tracy::VkCtx*)commands->profilerContext;
+		TracyVkZone(pctx, commands->commandBuffer, "MainPass");
+		RenderMainPass_Other(commands->commandBuffer);
+	}, PassType::Graphics,false);
+	
+	auto display_pass = graph.add_pass("DisplayPass", [](RenderPassCommands* commands) {}, PassType::Graphics);
+
+
 
 
 	shadow_pass->set_depth_attachment("shadow_buffer_1", shadowbuffer);
@@ -212,10 +237,7 @@ void VulkanEngine::create_engine_graph()
 	//ssao0_pass->add_image_dependency("gbuf_normal");
 	//ssao0_pass->add_color_attachment("ssao_pre", ssao_pre);
 
-	ssao1_pass->add_image_dependency("gbuf_pos");
-	ssao1_pass->add_image_dependency("gbuf_normal");
-	//ssao1_pass->add_image_dependency("gbuf_normal");
-	ssao1_pass->add_color_attachment("ssao_pre", ssao_pre);
+	
 
 	//blurx_pass->add_image_dependency("ssao_pre");
 	//blurx_pass->add_color_attachment("ssao_mid", ssao_midblur);
@@ -223,19 +245,7 @@ void VulkanEngine::create_engine_graph()
 	//blury_pass->add_image_dependency("ssao_mid");
 	//blury_pass->add_color_attachment("ssao_post", ssao_post);
 
-	blurx_pass->add_image_dependency("ssao_pre");
-	blurx_pass->add_image_dependency("gbuf_normal");
-	blurx_pass->add_color_attachment("ssao_mid", ssao_post);
-
-	ssao_taa_pass->add_image_dependency("ssao_mid");
-	ssao_taa_pass->add_image_dependency("gbuf_pos");
-	ssao_taa_pass->add_image_dependency("ssao_accumulate");
-	ssao_taa_pass->add_image_dependency("motion_vectors");
-	ssao_taa_pass->add_color_attachment("ssao_post", ssao_post);
-
-	ssao_taa_flip->add_image_dependency("ssao_post");
-	ssao_taa_flip->add_image_dependency("gbuf_pos");
-	ssao_taa_flip->add_color_attachment("ssao_accumulate", ssao_accumulate);
+	
 
 
 	//blury_pass->add_image_dependency("ssao_mid");
@@ -279,6 +289,8 @@ void VulkanEngine::init_vulkan()
 	config_parameters.shadow_near = 1024.f;
 	config_parameters.shadow_far = 8096.f;
 	config_parameters.shadow_sides = 2048.f;
+
+	config_parameters.DoSsao = true;
 
 	eng_stats.frametime = 0.1;
 
@@ -1804,7 +1816,7 @@ void VulkanEngine::end_frame_command_buffer(vk::CommandBuffer cmd)
 
 void VulkanEngine::draw_frame()
 {
-	
+	create_engine_graph();
 	render_graph.build(this);
 
 	ZoneNamedNC(Framemark1, "Draw Frame 0", tracy::Color::Blue1, currentFrameIndex == 0);
