@@ -174,7 +174,7 @@ vk::Pipeline GraphicsPipelineBuilder::build_pipeline(vk::Device device, vk::Rend
 	pipelineInfo.renderPass = renderPass;
 	pipelineInfo.subpass = subpass;
 
-	vk::Pipeline pipeline = device.createGraphicsPipelines(nullptr, pipelineInfo)[0];
+	vk::Pipeline pipeline = device.createGraphicsPipelines(nullptr, pipelineInfo).value[0];
 	return pipeline;
 }
 
@@ -191,6 +191,6 @@ vk::Pipeline ComputePipelineBuilder::build_pipeline(vk::Device device, ShaderEff
 	pipelineInfo.layout = newLayout;
 	pipelineInfo.stage = shaderStages[0];
 
-	vk::Pipeline pipeline = device.createComputePipelines(nullptr, pipelineInfo)[0];
+	vk::Pipeline pipeline = device.createComputePipelines(nullptr, pipelineInfo).value[0];
 	return pipeline;	
 }

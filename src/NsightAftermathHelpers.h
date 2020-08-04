@@ -38,6 +38,7 @@
 // API types.
 //
 
+typedef unsigned int        UINT;
 namespace std
 {
     template<typename T>

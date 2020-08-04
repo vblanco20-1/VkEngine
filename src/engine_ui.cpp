@@ -4,6 +4,7 @@
 #include "engine_ui.h"
 #include "misc/cpp/imgui_stdlib.h"
 #include "shader_processor.h"
+#include "camera_saver.h"
 
  
 
@@ -98,6 +99,8 @@ void UI::DrawEngineUI(VulkanEngine* engine)
 			return findStringIC(str,search_string);
 		}
 	};
+
+	engine->camSaver->draw_editor_ui(engine->playerCam.view_matrix);
 
 	if(ImGui::TreeNode("Resources"))
 	{

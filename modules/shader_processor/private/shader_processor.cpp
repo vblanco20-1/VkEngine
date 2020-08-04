@@ -416,8 +416,8 @@ bool ShaderEffect::add_shader_from_file(const char* path)
         Shader.setStrings(&InputCString, 1);
 
         int ClientInputSemanticsVersion = 100; // maps to, say, #define VULKAN 100
-        glslang::EShTargetClientVersion VulkanClientVersion = glslang::EShTargetVulkan_1_0;
-        glslang::EShTargetLanguageVersion TargetVersion = glslang::EShTargetSpv_1_0;
+        glslang::EShTargetClientVersion VulkanClientVersion = glslang::EShTargetVulkan_1_2;
+        glslang::EShTargetLanguageVersion TargetVersion = glslang::EShTargetSpv_1_5;
 
         Shader.setEnvInput(glslang::EShSourceGlsl, ShaderType, glslang::EShClientVulkan, ClientInputSemanticsVersion);
         Shader.setEnvClient(glslang::EShClientVulkan, VulkanClientVersion);
@@ -427,7 +427,7 @@ bool ShaderEffect::add_shader_from_file(const char* path)
         Resources = DefaultTBuiltInResource;
         EShMessages messages = (EShMessages)(EShMsgSpvRules | EShMsgVulkanRules);
 
-        const int DefaultVersion = 100;
+        const int DefaultVersion = 460;
 
         DirStackFileIncluder Includer;
 
@@ -448,7 +448,7 @@ bool ShaderEffect::add_shader_from_file(const char* path)
         const char* PreprocessedCStr = PreprocessedGLSL.c_str();
         Shader.setStrings(&PreprocessedCStr, 1);
 
-        if (!Shader.parse(&Resources, 100, false, messages))
+        if (!Shader.parse(&Resources, 460, false, messages))
         {
             std::cout << "GLSL Parsing Failed for: " << path << std::endl;// << filename << std::endl;
             std::cout << Shader.getInfoLog() << std::endl;
@@ -727,20 +727,20 @@ bool ShaderEffect::build_effect(VkDevice device)
 			privData->reflectionData.DataBindings[comp.get_name(resource.id)] = newinfo;
         }
 
-		//for (const Resource& resource : res.acceleration_structures)
-		//{
-		//	BindInfo newinfo;
-		//	newinfo.set = comp.get_decoration(resource.id, spv::DecorationDescriptorSet);
-		//	newinfo.binding = comp.get_decoration(resource.id, spv::DecorationBinding);
-		//	newinfo.range = 0;
-		//	newinfo.type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
-        //
-		//	VkDescriptorSetLayoutBinding vkbind = createLayoutBinding(newinfo, ShaderTypeToVulkanFlag(ShaderMod.type));
-        //
-		//	add_binding(&privData->bindingSets[newinfo.set], vkbind);            		
-        //
-        //    privData->reflectionData.DataBindings[comp.get_name(resource.id)] = newinfo;
-		//}
+		for (const Resource& resource : res.acceleration_structures)
+		{
+			BindInfo newinfo;
+			newinfo.set = comp.get_decoration(resource.id, spv::DecorationDescriptorSet);
+			newinfo.binding = comp.get_decoration(resource.id, spv::DecorationBinding);
+			newinfo.range = 0;
+			newinfo.type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+
+			VkDescriptorSetLayoutBinding vkbind = createLayoutBinding(newinfo, ShaderTypeToVulkanFlag(ShaderMod.type));
+
+			add_binding(&privData->bindingSets[newinfo.set], vkbind);
+
+			privData->reflectionData.DataBindings[comp.get_name(resource.id)] = newinfo;
+		}
 
         VkShaderStageFlags stage_flags{};
 

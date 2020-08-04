@@ -28,6 +28,7 @@
 
 #include <murmurhash.h>
 #include <intrin.h>
+#include "camera_saver.h"
 static glm::mat4 mat_identity = glm::mat4( 1.0f,0.0f,0.0f,0.0f,
 0.0f,1.0f,0.0f,0.0f,
 0.0f,0.0f,1.0f,0.0f,
@@ -58,8 +59,8 @@ void VulkanEngine::create_engine_graph()
 	VkDevice device = (VkDevice)engine->device;
 	VmaAllocator allocator = engine->allocator;
 	VkExtent2D swapChainSize = engine->swapChainExtent;
-	swapChainSize.height *= 1;
-	swapChainSize.width *= 1;
+	swapChainSize.height *= 2;
+	swapChainSize.width *= 2;
 
 	graph.swapchainSize = swapChainSize;
 
@@ -77,7 +78,9 @@ void VulkanEngine::create_engine_graph()
 	gbuffer_position.format = VK_FORMAT_R32G32B32A32_SFLOAT;
 	gbuffer_position.set_clear_color({ 0.0f, 0.0f, 0.0f, 1.0f });
 
-
+	RenderAttachmentInfo gbuffer_motion;
+	gbuffer_motion.format = VK_FORMAT_R16G16B16A16_SFLOAT;
+	gbuffer_motion.set_clear_color({ 0.0f, 0.0f, 0.0f, 1.0f });
 
 	RenderAttachmentInfo ssao_accumulate;
 	ssao_accumulate.format = VK_FORMAT_R32G32B32A32_SFLOAT;
@@ -117,19 +120,31 @@ void VulkanEngine::create_engine_graph()
 	RenderAttachmentInfo output_image = main_image;
 
 
+	auto ready_pass = graph.add_pass("MeshPrepare", [&](RenderPassCommands* commands) {	
+		
+		PrepareMeshPasses();
+
+		}, PassType::CPU, false);
+
+	auto predepth_pass = graph.add_pass("Depth Prepass", [&](RenderPassCommands* commands) {
+		tracy::VkCtx* pctx = (tracy::VkCtx*)commands->profilerContext;
+		TracyVkZone(pctx, commands->commandBuffer, "ShadowPass");
+		RenderDepthPrePass(commands, commands->renderPass->render_height, commands->renderPass->render_width);
+		//PrepareMeshPasses();
+	}, PassType::Graphics, false);
 
 	auto gbuffer_pass = graph.add_pass("GBuffer", [&](RenderPassCommands* commands) {
 		tracy::VkCtx* pctx = (tracy::VkCtx*)commands->profilerContext;
 		TracyVkZone(pctx, commands->commandBuffer, "GBuffer");
 		RenderGBufferPass(commands->commandBuffer);
-		}, PassType::Graphics, false);
+		}, PassType::Graphics, true);
 
 	//order is very important
 	auto shadow_pass = graph.add_pass("ShadowPass", [&](RenderPassCommands* commands) {
 		tracy::VkCtx* pctx = (tracy::VkCtx*)commands->profilerContext;
 		TracyVkZone(pctx, commands->commandBuffer, "ShadowPass");
 		this->render_shadow_pass(commands, commands->renderPass->render_height, commands->renderPass->render_width);
-		}, PassType::Graphics, false);
+		}, PassType::Graphics, true);
 
 
 
@@ -227,10 +242,12 @@ void VulkanEngine::create_engine_graph()
 
 	shadow_pass->set_depth_attachment("shadow_buffer_1", shadowbuffer);
 
+
+	predepth_pass->set_depth_attachment("depth_prepass", gbuffer_depth);
 	
 	gbuffer_pass->add_color_attachment("gbuf_pos", gbuffer_position);
 	gbuffer_pass->add_color_attachment("gbuf_normal", gbuffer_normal);
-	gbuffer_pass->add_color_attachment("motion_vectors", gbuffer_position);
+	gbuffer_pass->add_color_attachment("motion_vectors", gbuffer_motion);
 	gbuffer_pass->set_depth_attachment("depth_prepass", gbuffer_depth);
 
 	//ssao0_pass->add_image_dependency("gbuf_pos");
@@ -270,6 +287,9 @@ void VulkanEngine::init_vulkan()
 {
 	ZoneScopedNC("Engine init", tracy::Color::Blue);
 	
+
+	camSaver = new CameraSaver();
+
 	vk::ApplicationInfo appInfo{ "VkEngine",VK_MAKE_VERSION(0,0,0),"VkEngine:Demo",VK_MAKE_VERSION(0,0,0),VK_API_VERSION_1_2 };
 
 	vk::InstanceCreateInfo createInfo;
@@ -533,17 +553,17 @@ void VulkanEngine::init_vulkan()
 	sp::SceneLoader* loader = sp::SceneLoader::Create();
 
 	sp::SceneProcessConfig loadConfig;
-	loadConfig.bLoadMeshes = false;//true;
+	loadConfig.bLoadMeshes = true;//true;
 	loadConfig.bLoadNodes = false;
 	//textures take a huge amount of time
-	loadConfig.bLoadTextures = true;
+	loadConfig.bLoadTextures = false;//true;
 	
 	//loadConfig.rootMatrix = &glm::rotate(glm::scale(glm::vec3(100.f)), glm::radians(90.f), glm::vec3(1, 0, 0))[0][0];
 	//loader->transform_scene(MAKE_ASSET_PATH("models/sponza/sponza_light.glb"),//glm::mat4(100.f));
 	//	loadConfig);
 
 	
-	loadConfig.bLoadMaterials = true;
+	loadConfig.bLoadMaterials = false;// true;
 	loadConfig.database_name = "bistro_ext.db";
 	loadConfig.rootMatrix =& glm::mat4(1.f)[0][0];//&glm::rotate(glm::scale(glm::vec3(100.f)), glm::radians(90.f), glm::vec3(1, 0, 0))[0][0];
 	//loader->transform_scene(MAKE_ASSET_PATH("models/Bistro_v4/Bistro_Exterior.fbx"),//glm::mat4(100.f));
@@ -1398,7 +1418,7 @@ void VulkanEngine::build_mesh_accel_structure(MeshResource& mesh)
 	Geo.flags = vk::GeometryFlagBitsKHR::eOpaque;
 	Geo.geometryType = vk::GeometryTypeKHR::eTriangles;
 	Geo.geometry.triangles.vertexData = get_buffer_adress(mesh.vertexBuffer);
-	Geo.geometry.triangles.indexData = get_buffer_adress(mesh.indexBuffer);
+	Geo.geometry.triangles.indexData = get_buffer_adress(mesh.indexBuffer) + mesh.index_offset * sizeof(uint32_t);
 	Geo.geometry.triangles.indexType = vk::IndexType::eUint32;
 	Geo.geometry.triangles.vertexFormat = vk::Format::eR32G32B32Sfloat;
 	Geo.geometry.triangles.vertexStride = sizeof(Vertex);
@@ -1433,13 +1453,22 @@ void VulkanEngine::build_mesh_accel_structure(MeshResource& mesh)
 
 	destroyBuffer(scratchBuffer);	
 }
-
+PFN_vkGetBufferDeviceAddressKHR vkGetBufferDeviceAddressFN = nullptr;
 vk::DeviceAddress VulkanEngine::get_buffer_adress(const AllocatedBuffer& buffer)
 {
 	vk::BufferDeviceAddressInfo bufferinfo;
 	bufferinfo.buffer = buffer.buffer;
 
-	return device.getBufferAddressKHR(bufferinfo, extensionDispatcher);
+	if (vkGetBufferDeviceAddressFN == nullptr)
+	{
+		vkGetBufferDeviceAddressFN = (PFN_vkGetBufferDeviceAddressKHR)vkGetInstanceProcAddr(instance, "vkGetBufferDeviceAddressKHR");
+	}
+	//static PFN_vkGetBufferDeviceAddressKHR fn = [&]() { return ;  }();
+
+	
+	return	vkGetBufferDeviceAddress(device, (VkBufferDeviceAddressInfo*)&bufferinfo);//vkGetBufferDeviceAddressFN(device, (VkBufferDeviceAddressInfo*)&bufferinfo);
+
+	//return device.getBufferAddressKHR(bufferinfo, extensionDispatcher);
 }
 
 ShaderEffect* VulkanEngine::build_shader_effect(std::vector<const char*> shader_paths, const char* effect_name)
@@ -1642,7 +1671,7 @@ void VulkanEngine::createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage,
 	VmaAllocationCreateInfo vmaallocInfo = {};
 	vmaallocInfo.usage = vmaUsage;
 	vmaallocInfo.requiredFlags = VkMemoryPropertyFlags(properties);
-	//vmaallocInfo.flags = vk::MemoryAllocateFlagBits::eDeviceAddress;
+	vmaallocInfo.flags = 0;
 	VkBuffer vkbuffer;
 	VmaAllocation allocation;
 	vk::Result result = vk::Result(vmaCreateBuffer(allocator, &vkbinfo, &vmaallocInfo, &vkbuffer, &allocation, nullptr));
@@ -2354,6 +2383,9 @@ void VulkanEngine::render_ssao_blur_compute(const vk::CommandBuffer& cmd, const 
 }
 
 #pragma intrinsic(__movsq)
+
+
+
 //std::vector<UniformBufferObject> StagingCPUUBOArray;
 void VulkanEngine::update_uniform_buffer(uint32_t currentImage)
 {
@@ -2391,18 +2423,21 @@ void VulkanEngine::update_uniform_buffer(uint32_t currentImage)
 	ubo.proj = glm::perspective(glm::radians(config_parameters.fov), render_width / render_height,  50000.0f, 0.1f);
 	glm::mat4 revproj = glm::perspective(glm::radians(config_parameters.fov), render_width / render_height, 0.1f, 50000.0f);
 	ubo.proj[1][1] *= -1;
-	if (!config_parameters.PlayerCam) {
 
-		ubo.view = glm::lookAt(eye, glm::vec3(0.0f, 400.0f, 0.0f), config_parameters.CamUp);
-		
-		ubo.eye = glm::vec4(eye, 0.0f);
-		//invert projection matrix couse glm is inverted y compared to vulkan
-		
+	playerCam.rebuild_matrix();
 
-		mainCam.eyeLoc = eye;
-		mainCam.eyeDir = glm::normalize(eye - glm::vec3(0.0f, 400.0f, 0.0f));
-	}
-	else {
+	//if (!config_parameters.PlayerCam) {
+	//
+	//	ubo.view = glm::lookAt(eye, glm::vec3(0.0f, 400.0f, 0.0f), config_parameters.CamUp);
+	//	
+	//	ubo.eye = glm::vec4(eye, 0.0f);
+	//	//invert projection matrix couse glm is inverted y compared to vulkan
+	//	
+	//
+	//	mainCam.eyeLoc = eye;
+	//	mainCam.eyeDir = glm::normalize(eye - glm::vec3(0.0f, 400.0f, 0.0f));
+	//}
+	//else {
 
 		//float rx = static_cast <float> (rand()) / static_cast <float> (RAND_MAX);
 		//float ry = static_cast <float> (rand()) / static_cast <float> (RAND_MAX);
@@ -2411,18 +2446,20 @@ void VulkanEngine::update_uniform_buffer(uint32_t currentImage)
 		//(&ubo.proj[0][0])[9] = rx * 2 / render_height;
 
 		
-
-		glm::vec3 side = glm::cross(playerCam.camera_location, playerCam.camera_up);
-
-		glm::vec3 offset = glm::vec3(0); //playerCam.camera_up * ry + side * rx;
-
-		ubo.view = glm::lookAt(playerCam.camera_location, playerCam.camera_location+ playerCam.camera_forward, playerCam.camera_up);
+		ubo.view = playerCam.view_matrix;
+		//glm::vec3 side = glm::cross(playerCam.camera_location, playerCam.camera_up);
+		//
+		//glm::vec3 offset = glm::vec3(0); //playerCam.camera_up * ry + side * rx;
+		//
+		//ubo.view = glm::lookAt(playerCam.camera_location, playerCam.camera_location+ playerCam.camera_forward, playerCam.camera_up);
 		ubo.eye = glm::vec4(playerCam.camera_location, 0.0f);
 
 
 		mainCam.eyeLoc = ubo.eye;
 		mainCam.eyeDir = playerCam.camera_forward;
-	}
+
+
+	//}
 	mainCam.camfrustum = Frustum(revproj * ubo.view);
 	
 
@@ -2816,20 +2853,6 @@ EntityID VulkanEngine::load_assimp_mesh(aiMesh* mesh)
 			mesh->mVertices[vtx].z,
 			0.0f
 		};
-		if (mesh->mTextureCoords[0])
-		{
-			vertex.texCoord = {
-			mesh->mTextureCoords[0][vtx].x,
-			mesh->mTextureCoords[0][vtx].y,
-			mesh->mTextureCoords[0][vtx].x,
-			mesh->mTextureCoords[0][vtx].y,
-			};
-		}
-		else {
-			vertex.texCoord = {
-				0.5f,0.5f,0.5f,0.5f
-			};
-		}
 
 		vertex.normal = {
 			mesh->mNormals[vtx].x,
@@ -2837,6 +2860,24 @@ EntityID VulkanEngine::load_assimp_mesh(aiMesh* mesh)
 			mesh->mNormals[vtx].z,
 			0.0f
 		};
+		if (mesh->mTextureCoords[0])
+		{
+			vertex.pos.w = mesh->mTextureCoords[0][vtx].x;
+			vertex.normal.w = mesh->mTextureCoords[0][vtx].y;
+
+			//vertex.texCoord = {
+			//mesh->mTextureCoords[0][vtx].x,
+			//mesh->mTextureCoords[0][vtx].y,
+			//mesh->mTextureCoords[0][vtx].x,
+			//mesh->mTextureCoords[0][vtx].y,
+			//};
+		}
+		else {
+			//vertex.texCoord = {
+			//	0.5f,0.5f,0.5f,0.5f
+			//};
+		}
+
 		newMesh.vertices.push_back(vertex);
 	}
 

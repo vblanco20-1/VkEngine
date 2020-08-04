@@ -223,10 +223,10 @@ void VulkanEngine::create_device()
 	presentQueueCreateInfo.pQueuePriorities = &fprio;
 
 	vk::DeviceQueueCreateInfo transferQueueCreateInfo;
-	presentQueueCreateInfo.queueFamilyIndex = families.transferFamily;
-	presentQueueCreateInfo.queueCount = 1;
+	transferQueueCreateInfo.queueFamilyIndex = families.transferFamily;
+	transferQueueCreateInfo.queueCount = 1;
 	float lowprio = 0.1f;
-	presentQueueCreateInfo.pQueuePriorities = &lowprio;
+	transferQueueCreateInfo.pQueuePriorities = &lowprio;
 
 
 	//--- DEVICE FEATURES
@@ -272,6 +272,7 @@ void VulkanEngine::create_device()
 	vk12features.runtimeDescriptorArray = true;
 	vk12features.imagelessFramebuffer = true;
 	vk12features.descriptorBindingVariableDescriptorCount = true;
+
 	vk12features.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
 	vk12features.runtimeDescriptorArray = VK_TRUE;
 	vk12features.descriptorBindingVariableDescriptorCount = VK_TRUE;
@@ -279,9 +280,8 @@ void VulkanEngine::create_device()
 	
 #ifdef RTX_ON
 	vk12features.pNext = &rayFeatures;
-#else
-	vk12features.pNext = &descriptor_indexing_features;
 #endif
+	//vk12features.pNext = &descriptor_indexing_features;
 
 	vk::PhysicalDeviceFeatures2 features2;
 	features2.features = deviceFeatures;
@@ -307,10 +307,31 @@ void VulkanEngine::create_device()
 	//}
 	//else 
 	{
-		std::array<vk::DeviceQueueCreateInfo, 3> queues{ queueCreateInfo,presentQueueCreateInfo,transferQueueCreateInfo };
-		createInfo.pQueueCreateInfos = queues.data();
-		createInfo.queueCreateInfoCount = 3;
-		createInfo.pEnabledFeatures = &deviceFeatures;
+			std::vector<vk::DeviceQueueCreateInfo> queueinfos;
+
+			auto checkfamily = [&](int fam) {
+				for (auto& q : queueinfos)
+				{
+					if (q.queueFamilyIndex == fam) return true;
+				}
+				return false;
+			};
+
+			queueinfos.push_back(queueCreateInfo);
+
+			if (!checkfamily(presentQueueCreateInfo.queueFamilyIndex))
+			{
+				queueinfos.push_back(presentQueueCreateInfo);
+			}
+
+			if (!checkfamily(transferQueueCreateInfo.queueFamilyIndex))
+			{
+				queueinfos.push_back(transferQueueCreateInfo);
+			}
+		
+		createInfo.pQueueCreateInfos = queueinfos.data();
+		createInfo.queueCreateInfoCount = queueinfos.size();
+		createInfo.pEnabledFeatures = nullptr;//if we use features2 we dont need that one  //&deviceFeatures;
 		createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
 		createInfo.ppEnabledExtensionNames = deviceExtensions.data();
 

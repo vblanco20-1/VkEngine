@@ -37,18 +37,6 @@ void inline set_pipeline_state_depth(int width, int height, const vk::CommandBuf
 
 
 
-struct DrawUnitEncoder {
-	uint32_t index_count;
-	uint32_t object_idx;
-	uint32_t index_offset;
-	float distance;
-
-	uint64_t pipeline;
-	uint64_t material_set;
-
-	uint64_t vertexBuffer;
-	uint64_t indexBuffer;
-};
 
 
 bool IsVisible(ObjectBounds& bounds, Camera& mainCam)
@@ -72,12 +60,16 @@ void VulkanEngine::RenderMainPass_Other(const vk::CommandBuffer& cmd)
 	ZoneScopedNC("Main Pass", tracy::Color::BlueViolet);
 	EntityID LastMesh = entt::null;
 
-	static std::vector<DrawUnitEncoder> drawables;
+	//static std::vector<DrawUnitEncoder> drawables;
+
+	std::vector<DrawUnitEncoder>& drawables = MeshPassState.MainPassDrawables;
 
 	if (encoder == nullptr) { encoder = new CommandEncoder(); };
 
 	int numRenderables = render_registry.view<RenderMeshComponent>().size();
 	if (numRenderables == 0) return;
+
+#if 0
 
 	drawables.clear();
 	drawables.reserve(render_registry.view<RenderMeshComponent>().size());
@@ -136,7 +128,7 @@ void VulkanEngine::RenderMainPass_Other(const vk::CommandBuffer& cmd)
 	}
 	unmapBuffer(mainpass_indirect_buffers[currentFrameIndex]);
 
-
+#endif
 	{
 		const DrawUnitEncoder& unit = drawables[0];
 
@@ -228,7 +220,238 @@ void VulkanEngine::RenderMainPass(const vk::CommandBuffer& cmd)
 	
 }
 
+void VulkanEngine::PrepareMeshPasses()
+{
+	int numRenderables = render_registry.view<RenderMeshComponent>().size();
 
+
+
+	MeshPassState.MainPassDrawables.clear();
+	MeshPassState.MainPassDrawables.reserve(render_registry.view<RenderMeshComponent>().size());
+
+	if (numRenderables == 0) return;
+	{
+		ZoneScopedNC("Gbuffer Pass", tracy::Color::Blue);
+		//GBUFFER PASS
+
+		MeshPassState.GBufferDrawables.clear();
+		MeshPassState.GBufferDrawables.reserve(numRenderables);
+
+		MeshPassState.PrepassDrawables.clear();
+		MeshPassState.PrepassDrawables.reserve(numRenderables);
+
+		render_registry.group<RenderMeshComponent, TransformComponent, ObjectBounds>().each([&](RenderMeshComponent& renderable, TransformComponent& tf, ObjectBounds& bounds) {
+			const MeshResource& mesh = render_registry.get<MeshResource>(renderable.mesh_resource_entity);
+
+			const DescriptorResource& descriptor = render_registry.get<DescriptorResource>(renderable.pass_descriptors[(size_t)MeshPasIndex::MainPass]);
+
+			bool bVisible = false;
+
+			bVisible = IsVisible(bounds, mainCam);
+
+			if (IsVisible(bounds, mainCam)) {
+				{
+					DrawUnitEncoder newDrawUnit;
+				
+					VkBuffer index = mesh.indexBuffer.buffer;
+					VkDescriptorSet matset = descriptor.materialSet;
+				
+					newDrawUnit.indexBuffer = reinterpret_cast<uint64_t>(index);
+					newDrawUnit.vertexBuffer = 0;
+					newDrawUnit.index_count = mesh.indices.size();
+					newDrawUnit.material_set = 0;
+					newDrawUnit.object_idx = renderable.object_idx;
+					glm::vec3 bounds_center = glm::vec3(bounds.center_rad);
+					newDrawUnit.distance = (mainCam.eyeLoc - bounds_center).length();
+					newDrawUnit.pipeline = 0;
+					newDrawUnit.index_offset = mesh.index_offset;
+				
+					//MeshPassState.GBufferDrawables.push_back(newDrawUnit);
+					//MeshPassState.MainPassDrawables.push_back(newDrawUnit);
+				}
+				{
+					DrawUnitEncoder newDrawUnit;
+
+					VkBuffer index = mesh.indexBuffer.buffer;
+					VkDescriptorSet matset = descriptor.materialSet;
+
+					newDrawUnit.indexBuffer = reinterpret_cast<uint64_t>(index);
+					newDrawUnit.vertexBuffer = 0;
+					newDrawUnit.index_count = mesh.indices.size();
+					newDrawUnit.material_set = reinterpret_cast<uint64_t>(matset);
+					newDrawUnit.object_idx = renderable.object_idx;
+
+					glm::vec3 bounds_center = glm::vec3(bounds.center_rad);
+					newDrawUnit.distance = (mainCam.eyeLoc - bounds_center).length();
+					EntityID pipelineID = renderable.pass_pipelines[(size_t)MeshPasIndex::MainPass];
+
+					newDrawUnit.pipeline = uint32_t(pipelineID);					
+					newDrawUnit.index_offset = mesh.index_offset;
+					MeshPassState.GBufferDrawables.push_back(newDrawUnit);
+					MeshPassState.MainPassDrawables.push_back(newDrawUnit);
+				}
+			}
+			});
+
+
+		std::sort(MeshPassState.GBufferDrawables.begin(), MeshPassState.GBufferDrawables.end(), [](const DrawUnitEncoder& a, const DrawUnitEncoder& b) {
+			return a.distance > b.distance;
+		});
+
+		//convert to indirect
+		void* indirect = mapBuffer(gbuffer_indirect_buffers[currentFrameIndex]);
+		{
+			ZoneScopedN("Indirect Upload")
+				VkDrawIndexedIndirectCommand* commands = (VkDrawIndexedIndirectCommand*)indirect;
+
+			for (int i = 0; i < MeshPassState.GBufferDrawables.size(); i++) {
+
+				auto draw = MeshPassState.GBufferDrawables[i];
+				commands[i].indexCount = draw.index_count;
+				commands[i].instanceCount = 1;
+				commands[i].firstIndex = draw.index_offset;
+				commands[i].vertexOffset = 0;
+				commands[i].firstInstance = draw.object_idx;
+			}
+		}
+		unmapBuffer(gbuffer_indirect_buffers[currentFrameIndex]);
+	}
+	// SHADOW PASS ---------------------
+
+	{
+		ZoneScopedNC("Shadow Pass", tracy::Color::BlueViolet);
+
+				int numRenderables = render_registry.view<RenderMeshComponent>().size();
+		if (numRenderables == 0) return;
+		
+		VkBuffer LastIndex{};
+		
+		std::vector<ShadowDrawUnit>& drawUnits = MeshPassState.ShadowDrawUnits;
+		std::vector<InstancedDraw>& instancedDraws = MeshPassState.ShadowInstancedDraws;
+		
+		
+		drawUnits.clear();
+		instancedDraws.clear();
+		render_registry.view<RenderMeshComponent>().each([&](RenderMeshComponent& renderable) {
+		
+			const MeshResource& mesh = render_registry.get<MeshResource>(renderable.mesh_resource_entity);
+		
+			ShadowDrawUnit unit;
+			unit.object_idx = renderable.object_idx;
+			unit.indexBuffer = &mesh.indexBuffer;
+			unit.index_count = mesh.indices.size();
+			unit.index_offset = mesh.index_offset;
+			drawUnits.push_back(unit);
+			});
+		
+		std::sort(drawUnits.begin(), drawUnits.end(), [](const ShadowDrawUnit& a, const ShadowDrawUnit& b) {
+		
+			if (a.indexBuffer->buffer == b.indexBuffer->buffer)
+			{
+				return  a.index_offset < b.index_offset;
+			}
+			else {
+		
+				return a.indexBuffer->buffer < b.indexBuffer->buffer;
+			}
+			});
+		
+		
+		
+		void* matdata = mapBuffer(shadow_instance_buffers[currentFrameIndex]);
+		{
+			ZoneScopedN("Instance Upload")
+				int32_t* data = (int32_t*)matdata;
+		
+			for (int i = 0; i < drawUnits.size(); i++) {
+				data[i] = drawUnits[i].object_idx;
+			}
+		}
+		
+		unmapBuffer(shadow_instance_buffers[currentFrameIndex]);
+
+		{
+			ZoneScopedN("Command encoding")
+
+				int idx_ofs = -1;
+			InstancedDraw pendingDraw;
+			for (int i = 0; i < drawUnits.size(); i++)
+			{
+				auto& unit = drawUnits[i];
+				if (LastIndex != unit.indexBuffer->buffer || idx_ofs != unit.index_offset) {
+					if (i != 0) {
+						instancedDraws.push_back(pendingDraw);
+					}
+
+					pendingDraw.first_index = i;
+					pendingDraw.index_buffer = unit.indexBuffer->buffer;
+					pendingDraw.index_count = unit.index_count;
+					pendingDraw.instance_count = 1;
+					pendingDraw.index_offset = unit.index_offset;
+					LastIndex = unit.indexBuffer->buffer;
+					idx_ofs = unit.index_offset;
+				}
+				else {
+					pendingDraw.instance_count++;
+				}
+			}
+
+			instancedDraws.push_back(pendingDraw);
+		}
+		int binds = 0;
+		int draw_idx = 0;
+
+
+		//convert to indirect
+		void* indirect = mapBuffer(shadow_indirect_buffers[currentFrameIndex]);
+		{
+			ZoneScopedN("Indirect Upload")
+				VkDrawIndexedIndirectCommand* commands = (VkDrawIndexedIndirectCommand*)indirect;
+
+			for (int i = 0; i < instancedDraws.size(); i++) {
+
+				auto draw = instancedDraws[i];
+
+				commands[i].indexCount = draw.index_count;
+				commands[i].instanceCount = draw.instance_count;
+				commands[i].firstIndex = draw.index_offset;
+				commands[i].vertexOffset = 0;
+				commands[i].firstInstance = draw.first_index;
+			}
+		}
+		unmapBuffer(shadow_indirect_buffers[currentFrameIndex]);
+	}
+
+	{
+
+	std::vector<DrawUnitEncoder>& drawables = MeshPassState.MainPassDrawables;
+
+	std::sort(drawables.begin(), drawables.end(), [](const DrawUnitEncoder& a, const DrawUnitEncoder& b) {
+		return a.distance < b.distance;
+		});
+
+	//convert to indirect
+	void* indirect = mapBuffer(mainpass_indirect_buffers[currentFrameIndex]);
+	{
+		ZoneScopedN("Indirect Upload")
+			VkDrawIndexedIndirectCommand* commands = (VkDrawIndexedIndirectCommand*)indirect;
+
+		for (int i = 0; i < drawables.size(); i++) {
+
+			auto draw = drawables[i];
+			commands[i].indexCount = draw.index_count;
+			commands[i].instanceCount = 1;
+			commands[i].firstIndex = draw.index_offset;
+			commands[i].vertexOffset = 0;
+			commands[i].firstInstance = draw.object_idx;
+
+			//commands[i]. = drawUnits[i].object_idx;
+		}
+	}
+	unmapBuffer(mainpass_indirect_buffers[currentFrameIndex]);
+
+	}
+}
 
 void VulkanEngine::RenderGBufferPass(const vk::CommandBuffer& cmd)
 {
@@ -241,72 +464,15 @@ void VulkanEngine::RenderGBufferPass(const vk::CommandBuffer& cmd)
 	ZoneScopedNC("GBuffer Pass", tracy::Color::BlueViolet);
 	EntityID LastMesh = entt::null;
 
-	static std::vector<DrawUnitEncoder> drawables;
+	//static std::vector<DrawUnitEncoder> drawables;
 
-	int numRenderables = render_registry.view<RenderMeshComponent>().size();
-	if (numRenderables == 0) return;
-	drawables.clear();
-	drawables.reserve(numRenderables);
-
+	
 	ShaderEffect* effect = getResource<ShaderEffectHandle>("basicgbuf").handle;
-	render_registry.group<RenderMeshComponent, TransformComponent, ObjectBounds>().each([&](RenderMeshComponent& renderable, TransformComponent& tf, ObjectBounds& bounds) {
-		const MeshResource& mesh = render_registry.get<MeshResource>(renderable.mesh_resource_entity);
-		
-		const DescriptorResource& descriptor = render_registry.get<DescriptorResource>(renderable.pass_descriptors[(size_t)MeshPasIndex::MainPass]);
-
-		bool bVisible = false;
-
-		bVisible = IsVisible(bounds, mainCam);
-
-		if (IsVisible(bounds, mainCam)) {
-			DrawUnitEncoder newDrawUnit;
-
-			VkBuffer index = mesh.indexBuffer.buffer;
-			VkDescriptorSet matset = descriptor.materialSet;
-
-			newDrawUnit.indexBuffer = reinterpret_cast<uint64_t>(index);
-			newDrawUnit.vertexBuffer = 0;
-			newDrawUnit.index_count = mesh.indices.size();
-			newDrawUnit.material_set = 0;
-			newDrawUnit.object_idx = renderable.object_idx;
-			glm::vec3 bounds_center = glm::vec3(bounds.center_rad);
-			newDrawUnit.distance = (mainCam.eyeLoc - bounds_center).length();
-			newDrawUnit.pipeline = 0;
-			newDrawUnit.index_offset = mesh.index_offset;
-			drawables.push_back(newDrawUnit);
-		}
-	});
-
-	//std::sort(drawables.begin(), drawables.end(), [](const DrawUnitEncoder& a, const DrawUnitEncoder& b) {
-	//	return a.vertexBuffer < b.vertexBuffer;
-	//});
-	std::sort(drawables.begin(), drawables.end(), [](const DrawUnitEncoder& a, const DrawUnitEncoder& b) {
-		return a.distance > b.distance;//a.vertexBuffer < b.vertexBuffer;
-		});
-
-	//convert to indirect
-	void* indirect = mapBuffer(gbuffer_indirect_buffers[currentFrameIndex]);
-	{
-		ZoneScopedN("Indirect Upload")
-			VkDrawIndexedIndirectCommand* commands = (VkDrawIndexedIndirectCommand*)indirect;
-
-		for (int i = 0; i < drawables.size(); i++) {
-
-			auto draw = drawables[i];
-			commands[i].indexCount = draw.index_count;
-			commands[i].instanceCount = 1;
-			commands[i].firstIndex = draw.index_offset;
-			commands[i].vertexOffset = 0;
-			commands[i].firstInstance = draw.object_idx;					
-		}
-	}
-	unmapBuffer(gbuffer_indirect_buffers[currentFrameIndex]);
-
 
 
 	eng_stats.gbuffer_drawcalls = 0;
 
-		const DrawUnitEncoder& unit = drawables[0];
+		const DrawUnitEncoder& unit = MeshPassState.GBufferDrawables[0];
 
 		auto pass = render_graph.get_pass("GBuffer");
 		uint64_t pipid = (uint32_t)GbufferPipelineID;
@@ -354,7 +520,7 @@ void VulkanEngine::RenderGBufferPass(const vk::CommandBuffer& cmd)
 
 	VkBuffer indirectBuffer = gbuffer_indirect_buffers[currentFrameIndex].buffer;
 
-	encoder->draw_indexed_indirect(reinterpret_cast<uint64_t>(indirectBuffer), drawables.size(), 0);
+	encoder->draw_indexed_indirect(reinterpret_cast<uint64_t>(indirectBuffer), MeshPassState.GBufferDrawables.size(), 0);
 
 	{
 		tracy::VkCtx* profilercontext = (tracy::VkCtx*)get_profiler_context(cmd);
@@ -366,29 +532,98 @@ void VulkanEngine::RenderGBufferPass(const vk::CommandBuffer& cmd)
 	}
 }
 
+void VulkanEngine::RenderDepthPrePass(RenderPassCommands* cmd, int height, int width)
+{
+	
+
+	int numRenderables = render_registry.view<RenderMeshComponent>().size();
+	if (numRenderables == 0) return;
+
+	CommandEncoder* encoder = cmd->commandEncoder;
+
+	TracySourceLocation(shadowloc, "Depth Pre Pass", tracy::Color::Grey);
+
+	encoder->begin_trace((void*)&shadowloc);
+
+
+	const PipelineResource& pipeline = render_registry.get<PipelineResource>(ShadowPipelineID);
+
+	ShaderEffect* effect = pipeline.effect;
+
+
+	uint64_t pipid = (uint32_t)ShadowPipelineID;
+
+	encoder->set_depthbias(0, 0, 0);
+	encoder->set_scissor(0, 0, width, height);
+	encoder->set_viewport(0, 0, width, height, 0, 1);
+
+	VkPipelineLayout piplayout = effect->build_pipeline_layout(device);
+
+
+	DescriptorSetBuilder setBuilder{ effect,&descriptorMegapool };
+	
+	VkDescriptorBufferInfo transformBufferInfo = make_buffer_info(object_buffers[currentFrameIndex].buffer, sizeof(GpuObjectData) * 10000);
+	
+	VkDescriptorBufferInfo camBufferInfo;
+	if (config_parameters.ShadowView)
+		//if (globalFrameNumber % 2)
+	{
+		camBufferInfo.buffer = shadowDataBuffers[currentFrameIndex].buffer;
+	}
+	else
+	{
+		camBufferInfo.buffer = cameraDataBuffers[currentFrameIndex].buffer;
+	}
+
+	camBufferInfo.offset = 0;
+	camBufferInfo.range = sizeof(UniformBufferObject);
+
+	setBuilder.bind_buffer("ubo", camBufferInfo);
+	setBuilder.bind_buffer("MainObjectBuffer", transformBufferInfo);
+
+
+
+	std::array<VkDescriptorSet, 2> descriptors;
+	descriptors[0] = setBuilder.build_descriptor(0, DescriptorLifetime::PerFrame);
+
+	encoder->bind_descriptor_set(0, reinterpret_cast<uint64_t>(descriptors[0]));
+
+	int binds = 0;
+	int draw_idx = 0;
+
+
+	eng_stats.drawcalls++;
+	
+	{
+
+		ZoneScopedN("Command encoding")
+
+		encoder->bind_pipeline(pipid);
+		const DrawUnitEncoder& unit = MeshPassState.GBufferDrawables[0];
+		encoder->bind_index_buffer(0, unit.indexBuffer);
+
+		VkBuffer indirectBuffer = gbuffer_indirect_buffers[currentFrameIndex].buffer;
+
+		encoder->draw_indexed_indirect(reinterpret_cast<uint64_t>(indirectBuffer), MeshPassState.GBufferDrawables.size(), 0);
+	}
+
+
+	return;
+}
+
 
 void VulkanEngine::render_shadow_pass(RenderPassCommands* cmd, int height, int width)
 {
-	struct ShadowDrawUnit {
-		//vk::Pipeline pipeline;
-		const AllocatedBuffer* indexBuffer;
-		uint32_t object_idx;
-		uint32_t index_count;
-		uint32_t index_offset;
-	};
-
-	struct InstancedDraw {
-		uint32_t first_index;
-		uint32_t instance_count;
-		uint32_t index_count;
-		uint32_t index_offset;
-		VkBuffer index_buffer;
-	};
+	
 	eng_stats.shadow_drawcalls = 0;
-	static std::vector<ShadowDrawUnit> drawUnits;
-	drawUnits.clear();
-	static std::vector<InstancedDraw> instancedDraws;
-	instancedDraws.clear();
+
+	std::vector<ShadowDrawUnit>& drawUnits = MeshPassState.ShadowDrawUnits;
+	std::vector<InstancedDraw>& instancedDraws = MeshPassState.ShadowInstancedDraws;
+	//static std::vector<ShadowDrawUnit> drawUnits;
+	
+	//static std::vector<InstancedDraw> instancedDraws;
+	//drawUnits.clear();
+	//instancedDraws.clear();
 
 	int numRenderables = render_registry.view<RenderMeshComponent>().size();
 	if (numRenderables == 0) return;
@@ -436,110 +671,110 @@ void VulkanEngine::render_shadow_pass(RenderPassCommands* cmd, int height, int w
 
 
 
-	ZoneScopedNC("Shadow Pass", tracy::Color::BlueViolet);
-	VkBuffer LastIndex{};
+	//ZoneScopedNC("Shadow Pass", tracy::Color::BlueViolet);
+	//VkBuffer LastIndex{};
 
 
-	render_registry.view<RenderMeshComponent>().each([&](RenderMeshComponent& renderable) {
+	//render_registry.view<RenderMeshComponent>().each([&](RenderMeshComponent& renderable) {
+	//
+	//	const MeshResource& mesh = render_registry.get<MeshResource>(renderable.mesh_resource_entity);
+	//
+	//	ShadowDrawUnit unit;
+	//	unit.object_idx = renderable.object_idx;
+	//	unit.indexBuffer = &mesh.indexBuffer;
+	//	unit.index_count = mesh.indices.size();
+	//	unit.index_offset = mesh.index_offset;
+	//	drawUnits.push_back(unit);
+	//	});
+	//
+	//std::sort(drawUnits.begin(), drawUnits.end(), [](const ShadowDrawUnit& a, const ShadowDrawUnit& b) {
+	//
+	//	if (a.indexBuffer->buffer == b.indexBuffer->buffer)
+	//	{
+	//		return  a.index_offset < b.index_offset;
+	//	}
+	//	else {
+	//
+	//		return a.indexBuffer->buffer < b.indexBuffer->buffer;
+	//	}
+	//});
 
-		const MeshResource& mesh = render_registry.get<MeshResource>(renderable.mesh_resource_entity);
-
-		ShadowDrawUnit unit;
-		unit.object_idx = renderable.object_idx;
-		unit.indexBuffer = &mesh.indexBuffer;
-		unit.index_count = mesh.indices.size();
-		unit.index_offset = mesh.index_offset;
-		drawUnits.push_back(unit);
-		});
-
-	std::sort(drawUnits.begin(), drawUnits.end(), [](const ShadowDrawUnit& a, const ShadowDrawUnit& b) {
-
-		if (a.indexBuffer->buffer == b.indexBuffer->buffer)
-		{
-			return  a.index_offset < b.index_offset;
-		}
-		else {
-
-			return a.indexBuffer->buffer < b.indexBuffer->buffer;
-		}
-	});
 
 
+	//void* matdata = mapBuffer(shadow_instance_buffers[currentFrameIndex]);
+	//{
+	//	ZoneScopedN("Instance Upload")
+	//		int32_t* data = (int32_t*)matdata;
+	//
+	//	for (int i = 0; i < drawUnits.size(); i++) {
+	//		data[i] = drawUnits[i].object_idx;
+	//	}
+	//}
+	//unmapBuffer(shadow_instance_buffers[currentFrameIndex]);
 
-	void* matdata = mapBuffer(shadow_instance_buffers[currentFrameIndex]);
-	{
-		ZoneScopedN("Instance Upload")
-			int32_t* data = (int32_t*)matdata;
-
-		for (int i = 0; i < drawUnits.size(); i++) {
-			data[i] = drawUnits[i].object_idx;
-		}
-	}
-	unmapBuffer(shadow_instance_buffers[currentFrameIndex]);
-
-	{
-		ZoneScopedN("Command encoding")
-
-		int idx_ofs = -1;
-		InstancedDraw pendingDraw;
-		for (int i = 0; i < drawUnits.size(); i++)
-		{
-			auto& unit = drawUnits[i];
-			if (LastIndex != unit.indexBuffer->buffer || idx_ofs != unit.index_offset) {
-				if (i != 0) {
-					//instancedDraws.push_back(pendingDraw);
-
-					IndexedDraw newDraw{};
-					newDraw.pipeline = pipid;
-					newDraw.descriptors[0] = reinterpret_cast<uint64_t>(descriptors[0]);
-					newDraw.indexBuffer = reinterpret_cast<uint64_t>(pendingDraw.index_buffer);
-					newDraw.indexOffset = 0;
-					newDraw.firstInstance = pendingDraw.first_index;
-					newDraw.firstIndex = pendingDraw.index_offset;
-					newDraw.indexCount = pendingDraw.index_count;
-					newDraw.instanceCount = pendingDraw.instance_count;
-					newDraw.vertexOffset = 0;
-
-					encoder->draw_indexed(newDraw);
-				}
-
-				pendingDraw.first_index = i;
-				pendingDraw.index_buffer = unit.indexBuffer->buffer;
-				pendingDraw.index_count = unit.index_count;
-				pendingDraw.instance_count = 1;
-				pendingDraw.index_offset = unit.index_offset;
-				LastIndex = unit.indexBuffer->buffer;
-				idx_ofs = unit.index_offset;
-			}
-			else {
-				pendingDraw.instance_count++;
-			}
-		}
-	
-	instancedDraws.push_back(pendingDraw);
-	}
+	//{
+	//	ZoneScopedN("Command encoding")
+	//
+	//	int idx_ofs = -1;
+	//	InstancedDraw pendingDraw;
+	//	for (int i = 0; i < drawUnits.size(); i++)
+	//	{
+	//		auto& unit = drawUnits[i];
+	//		if (LastIndex != unit.indexBuffer->buffer || idx_ofs != unit.index_offset) {
+	//			if (i != 0) {
+	//				instancedDraws.push_back(pendingDraw);
+	//
+	//				//IndexedDraw newDraw{};
+	//				//newDraw.pipeline = pipid;
+	//				//newDraw.descriptors[0] = reinterpret_cast<uint64_t>(descriptors[0]);
+	//				//newDraw.indexBuffer = reinterpret_cast<uint64_t>(pendingDraw.index_buffer);
+	//				//newDraw.indexOffset = 0;
+	//				//newDraw.firstInstance = pendingDraw.first_index;
+	//				//newDraw.firstIndex = pendingDraw.index_offset;
+	//				//newDraw.indexCount = pendingDraw.index_count;
+	//				//newDraw.instanceCount = pendingDraw.instance_count;
+	//				//newDraw.vertexOffset = 0;
+	//				//
+	//				//encoder->draw_indexed(newDraw);
+	//			}
+	//
+	//			pendingDraw.first_index = i;
+	//			pendingDraw.index_buffer = unit.indexBuffer->buffer;
+	//			pendingDraw.index_count = unit.index_count;
+	//			pendingDraw.instance_count = 1;
+	//			pendingDraw.index_offset = unit.index_offset;
+	//			LastIndex = unit.indexBuffer->buffer;
+	//			idx_ofs = unit.index_offset;
+	//		}
+	//		else {
+	//			pendingDraw.instance_count++;
+	//		}
+	//	}
+	//
+	//instancedDraws.push_back(pendingDraw);
+	//}
 	int binds = 0;
 	int draw_idx = 0;	
 	
 #if 1
 	//convert to indirect
-	void* indirect = mapBuffer(shadow_indirect_buffers[currentFrameIndex]);
-	{
-		ZoneScopedN("Indirect Upload")
-			VkDrawIndexedIndirectCommand* commands = (VkDrawIndexedIndirectCommand*)indirect;
-
-		for (int i = 0; i < instancedDraws.size(); i++) {
-
-			auto draw = instancedDraws[i];
-
-			commands[i].indexCount = draw.index_count;
-			commands[i].instanceCount = draw.instance_count;
-			commands[i].firstIndex = draw.index_offset;
-			commands[i].vertexOffset = 0;
-			commands[i].firstInstance = draw.first_index;
-		}
-	}
-	unmapBuffer(shadow_indirect_buffers[currentFrameIndex]);
+	//void* indirect = mapBuffer(shadow_indirect_buffers[currentFrameIndex]);
+	//{
+	//	ZoneScopedN("Indirect Upload")
+	//		VkDrawIndexedIndirectCommand* commands = (VkDrawIndexedIndirectCommand*)indirect;
+	//
+	//	for (int i = 0; i < instancedDraws.size(); i++) {
+	//
+	//		auto draw = instancedDraws[i];
+	//
+	//		commands[i].indexCount = draw.index_count;
+	//		commands[i].instanceCount = draw.instance_count;
+	//		commands[i].firstIndex = draw.index_offset;
+	//		commands[i].vertexOffset = 0;
+	//		commands[i].firstInstance = draw.first_index;
+	//	}
+	//}
+	//unmapBuffer(shadow_indirect_buffers[currentFrameIndex]);
 
 	eng_stats.drawcalls++;
 	eng_stats.shadow_drawcalls++;
@@ -552,11 +787,16 @@ void VulkanEngine::render_shadow_pass(RenderPassCommands* cmd, int height, int w
 
 		encoder->bind_pipeline(pipid);
 
-		for (auto& draw : instancedDraws) {
+		//for (auto& draw : instancedDraws) {
+		//
+		//	encoder->bind_index_buffer(0, reinterpret_cast<uint64_t>(draw.index_buffer));
+		//	encoder->draw_indexed(draw.index_count, draw.instance_count, draw.index_offset, 0, draw.first_index);
+		//}
 
-			encoder->bind_index_buffer(0, reinterpret_cast<uint64_t>(draw.index_buffer));
-			encoder->draw_indexed(draw.index_count, draw.instance_count, draw.index_offset, 0, draw.first_index);
-		}
+		VkBuffer indirectBuffer = shadow_indirect_buffers[currentFrameIndex].buffer;
+
+		encoder->bind_index_buffer(0, reinterpret_cast<uint64_t>(instancedDraws[0].index_buffer));
+		encoder->draw_indexed_indirect(reinterpret_cast<uint64_t>(indirectBuffer), instancedDraws.size(), 0);
 	}
 
 #endif

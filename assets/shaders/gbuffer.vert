@@ -32,16 +32,20 @@ void main() {
 	vec3 inNormal= get_normal(gl_InstanceIndex,gl_VertexIndex);
 
 	mat4 objectMatrix = MainObjectBuffer.objects[gl_InstanceIndex].model;
-	vec4 pointPos  = ubo.proj * ubo.view * objectMatrix * inPosition;
 
+	vec4 transformedPos = objectMatrix * inPosition;
+
+	vec4 pointPos  = ubo.proj * ubo.view * transformedPos;
+
+	
 	gl_Position = pointPos;
 
 	clipPos = pointPos;
-	lastclipPos = ubo.inv_model * objectMatrix * inPosition;
+	lastclipPos = ubo.inv_model * transformedPos;
    
 #if 1 // WORLD SPACE
 	fragNormal = normalize(objectMatrix * vec4(inNormal, 0.0)).xyz;
-	fragPos = (objectMatrix * inPosition).xyz;
+	fragPos = (transformedPos).xyz;
 #else
 	fragPos = pointPos.xyz;//vec3(ubo.view * objectMatrix * vec4(inPosition, 1.0));
 	fragNormal = vec3(ubo.view * objectMatrix * vec4(inNormal, 0.0));

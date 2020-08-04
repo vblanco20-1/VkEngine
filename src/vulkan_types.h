@@ -4,8 +4,8 @@
 #include "rawbuffer.h"
 struct Vertex {
 	glm::vec4 pos;
-	glm::vec4 color;
-	glm::vec4 texCoord;
+	//glm::vec4 color;
+	//glm::vec4 texCoord;
 	glm::vec4 normal;
 
 	static vk::VertexInputBindingDescription getBindingDescription() {
@@ -24,18 +24,18 @@ struct Vertex {
 		attributeDescriptions[0].format = vk::Format::eR32G32B32Sfloat;
 		attributeDescriptions[0].offset = offsetof(Vertex, pos);
 
-		attributeDescriptions[1].binding = 0;
-		attributeDescriptions[1].location = 1;
-		attributeDescriptions[1].format = vk::Format::eR32G32B32Sfloat;
-		attributeDescriptions[1].offset = offsetof(Vertex, color);
-
-		attributeDescriptions[2].binding = 0;
-		attributeDescriptions[2].location = 2;
-		attributeDescriptions[2].format = vk::Format::eR32G32Sfloat;
-		attributeDescriptions[2].offset = offsetof(Vertex, texCoord);
+		//attributeDescriptions[1].binding = 0;
+		//attributeDescriptions[1].location = 1;
+		//attributeDescriptions[1].format = vk::Format::eR32G32B32Sfloat;
+		//attributeDescriptions[1].offset = offsetof(Vertex, color);
+		//
+		//attributeDescriptions[2].binding = 0;
+		//attributeDescriptions[2].location = 2;
+		//attributeDescriptions[2].format = vk::Format::eR32G32Sfloat;
+		//attributeDescriptions[2].offset = offsetof(Vertex, texCoord);
 
 		attributeDescriptions[3].binding = 0;
-		attributeDescriptions[3].location = 3;
+		attributeDescriptions[3].location = 1;//3;
 		attributeDescriptions[3].format = vk::Format::eR32G32B32Sfloat;
 		attributeDescriptions[3].offset = offsetof(Vertex, normal);
 
@@ -48,7 +48,7 @@ struct Vertex {
 
 		vk::PipelineVertexInputStateCreateInfo vertexInputInfo;
 		vertexInputInfo.vertexBindingDescriptionCount = 1;
-		vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
+		vertexInputInfo.vertexAttributeDescriptionCount = 2;//static_cast<uint32_t>(attributeDescriptions.size());
 		vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
 		vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
 		return vertexInputInfo;

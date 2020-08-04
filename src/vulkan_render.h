@@ -17,7 +17,7 @@
 #define MAKE_ASSET_PATH(path) ASSET_PATH ## path
 
 
-//#define RTX_ON
+#define RTX_ON
 
 constexpr int MAX_FRAMES_IN_FLIGHT =2;
 constexpr int MAX_UNIFORM_BUFFER = 5000;
@@ -77,9 +77,40 @@ struct IndexBufferCache {
 	std::unordered_map<uint64_t, size_t> IndexOffsets;
 };
 
+struct DrawUnitEncoder {
+	uint32_t index_count;
+	uint32_t object_idx;
+	uint32_t index_offset;
+	float distance;
+
+	uint64_t pipeline;
+	uint64_t material_set;
+
+	uint64_t vertexBuffer;
+	uint64_t indexBuffer;
+};
+struct ShadowDrawUnit {
+	//vk::Pipeline pipeline;
+	const AllocatedBuffer* indexBuffer;
+	uint32_t object_idx;
+	uint32_t index_count;
+	uint32_t index_offset;
+};
+
+struct InstancedDraw {
+	uint32_t first_index;
+	uint32_t instance_count;
+	uint32_t index_count;
+	uint32_t index_offset;
+	VkBuffer index_buffer;
+};
+
 class TextureLoader;
 class VulkanEngine {
 public:
+
+	class CameraSaver *camSaver;
+
 	AllocatedBuffer megabuffer;
 	GpuCrashTracker gpuCrashTracker;
 	class TextureBindlessCache* texCache;
@@ -230,6 +261,18 @@ public:
 		uint64_t                  handle;
 	};
 
+	struct MeshPassesData {
+		std::vector<DrawUnitEncoder> PrepassDrawables;
+		std::vector<DrawUnitEncoder> GBufferDrawables;
+		std::vector<DrawUnitEncoder> MainPassDrawables;
+
+		std::vector<ShadowDrawUnit> ShadowDrawUnits;
+
+		std::vector<InstancedDraw> ShadowInstancedDraws;
+	};
+
+	MeshPassesData MeshPassState;
+
 	AccelerationStructure bottom_level_acceleration_structure;
 	AccelerationStructure top_level_acceleration_structure;
 
@@ -328,6 +371,9 @@ public:
 	void RenderMainPass_Other(const vk::CommandBuffer& cmd);
 	void RenderMainPass(const vk::CommandBuffer& cmd);
 	void RenderGBufferPass(const vk::CommandBuffer& cmd);
+	void RenderDepthPrePass(RenderPassCommands* cmd, int height, int width);
+	void PrepareMeshPasses();
+
 	void update_uniform_buffer(uint32_t currentImage);
 
 	void DecodeCommands(VkCommandBuffer cmd, struct CommandEncoder* encoder);

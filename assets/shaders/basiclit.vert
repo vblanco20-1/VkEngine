@@ -66,13 +66,14 @@ void main() {
 
 	mat4 objectMatrix = MainObjectBuffer.objects[gl_InstanceIndex].model;
 
-	gl_Position = ubo.proj * ubo.view * objectMatrix * inPosition;
+	vec4 transformedPos = objectMatrix * inPosition;
+	gl_Position = ubo.proj * ubo.view * transformedPos;
     fragColor = vec3(inColor);
 	vec2 texcoord = inTexCoord;
 	texcoord.y = 1-texcoord.y;
     fragTexCoord = texcoord;
 	fragNormal = normalize(objectMatrix * vec4(inNormal, 0.0)).xyz;
-	fragPos = (objectMatrix * inPosition).xyz;
+	fragPos = (transformedPos).xyz;
 
-	ShadowCoord = biasMat *shadowUbo.proj * shadowUbo.view * objectMatrix * inPosition;
+	ShadowCoord = biasMat *shadowUbo.proj * shadowUbo.view * transformedPos;
 }
