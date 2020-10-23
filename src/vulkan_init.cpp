@@ -277,9 +277,21 @@ void VulkanEngine::create_device()
 	vk12features.runtimeDescriptorArray = VK_TRUE;
 	vk12features.descriptorBindingVariableDescriptorCount = VK_TRUE;
 	vk12features.descriptorBindingPartiallyBound = VK_TRUE;
+
+	vk12features.storageBuffer8BitAccess = true;
 	
 #ifdef RTX_ON
+
+	
+	vk::PhysicalDeviceMeshShaderFeaturesNV meshfeatures;
+	meshfeatures.meshShader = true;
+	meshfeatures.taskShader = true;
+
+	rayFeatures.pNext = &meshfeatures;
+	
 	vk12features.pNext = &rayFeatures;
+
+
 #endif
 	//vk12features.pNext = &descriptor_indexing_features;
 

@@ -15,6 +15,8 @@ struct Vertex{
 };
 #endif
 
+
+
 layout(buffer_reference, std430) readonly buffer VertexBuffer {
            Vertex vertices[];
 };

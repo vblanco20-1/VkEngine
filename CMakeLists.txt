@@ -12,6 +12,7 @@ add_compile_options("/await")
 
 file(GLOB_RECURSE GLSL_SOURCE_FILES
     "${PROJECT_SOURCE_DIR}/assets/shaders/*.frag"
+     "${PROJECT_SOURCE_DIR}/assets/shaders/*.comp"
     "${PROJECT_SOURCE_DIR}/assets/shaders/*.vert"
 	"${PROJECT_SOURCE_DIR}/assets/shaders/*.inl"
     )

@@ -9,6 +9,7 @@ enum class CommandType : uint8_t {
 	DrawIndexedIndirect,
 	DrawIndexed,
 	DrawIndexedCompound,
+	DrawTask,
 	SetViewport,
 	SetScissor,
 	SetDepthBias,
@@ -97,6 +98,12 @@ struct alignas(8) CMD_DrawIndexedIndirect : public Command< CommandType::DrawInd
 	//constexpr static CommandType cmd_type = CommandType::DrawIndexedIndirect;
 };
 
+struct alignas(8) CMD_DrawMeshTask : public Command< CommandType::DrawTask> {
+	
+	uint32_t count;
+	uint32_t first;
+	//constexpr static CommandType cmd_type = CommandType::DrawIndexedIndirect;
+};
 
 struct alignas(8) CMD_DrawIndexed : public Command< CommandType::DrawIndexed> {
 
@@ -147,6 +154,8 @@ struct CommandEncoder {
 	void draw_indexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance);
 
 	void draw_indexed(const IndexedDraw& draw);
+
+	void draw_meshtask(uint32_t count, uint32_t first);
 
 	void set_viewport(float x, float y, float w, float h, float depthMin, float depthMax);
 	void set_scissor(float x, float y, float w, float h);

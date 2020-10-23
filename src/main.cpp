@@ -53,7 +53,7 @@ int main(int argc, char *argv[])
 	//}
 	
 	auto player_entity = main_registry.create();
-	main_registry.assign<InputComponent>(player_entity);
+	main_registry.emplace<InputComponent>(player_entity);
 	//While application is running
 	bool bDontRender = false;
 

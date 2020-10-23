@@ -47,6 +47,8 @@ const std::vector<const char*> deviceExtensions = {
 
 	VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME,
 	VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
+
+	VK_NV_MESH_SHADER_EXTENSION_NAME
 	#endif
 	//VK_NV_DEVICE_DIAGNOSTIC_CHECKPOINTS_EXTENSION_NAME,
 	//VK_NV_DEVICE_DIAGNOSTICS_CONFIG_EXTENSION_NAME
@@ -61,6 +63,13 @@ struct Camera {
 
 struct ExtensionFeatures {
 	bool bDebugNames = 0;
+};
+
+
+struct GpuObjectMeshletData {
+	uint32_t meshletCount;
+	uint32_t i1;
+	VkDeviceAddress meshlet_buffer;
 };
 
 struct GpuObjectData {
@@ -171,6 +180,7 @@ public:
 	std::vector < AllocatedBuffer> shadowDataBuffers;
 	std::vector < AllocatedBuffer> cameraDataBuffers;
 	std::vector < AllocatedBuffer> object_buffers;
+	std::vector < AllocatedBuffer> object_buffers_meshlets;
 
 	std::vector < AllocatedBuffer>  shadow_instance_buffers;
 	std::vector < AllocatedBuffer>  shadow_indirect_buffers;
@@ -467,7 +477,7 @@ inline EntityID VulkanEngine::createResource(const char* resource_name, C& resou
 	resource.name = std::string(resource_name);
 	EntityID resource_id = render_registry.create();
 
-	render_registry.assign<C>(resource_id, resource);
+	render_registry.emplace<C>(resource_id, resource);
 
 	resourceMap[resource_name] = resource_id;
 

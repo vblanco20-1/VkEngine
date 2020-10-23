@@ -657,12 +657,15 @@ void VulkanEngine::render_shadow_pass(RenderPassCommands* cmd, int height, int w
 
 	VkDescriptorBufferInfo shadowBufferInfo = make_buffer_info<UniformBufferObject>(shadowDataBuffers[currentFrameIndex]);
 
+	VkDescriptorBufferInfo meshletBufferInfo = make_buffer_info(object_buffers_meshlets[currentFrameIndex].buffer, sizeof(GpuObjectMeshletData) * 10000);
 	VkDescriptorBufferInfo transformBufferInfo = make_buffer_info(object_buffers[currentFrameIndex].buffer, sizeof(GpuObjectData) * 10000);
 	VkDescriptorBufferInfo instanceBufferInfo = make_buffer_info(shadow_instance_buffers[currentFrameIndex].buffer, sizeof(uint32_t) * 10000);
 
 	setBuilder.bind_buffer("ubo", shadowBufferInfo);
 	setBuilder.bind_buffer("MainObjectBuffer", transformBufferInfo);
+	setBuilder.bind_buffer("MeshletObjects", meshletBufferInfo);
 	setBuilder.bind_buffer("InstanceIDBuffer", instanceBufferInfo);
+
 
 	std::array<VkDescriptorSet, 2> descriptors;
 	descriptors[0] = setBuilder.build_descriptor(0, DescriptorLifetime::PerFrame);
@@ -796,7 +799,7 @@ void VulkanEngine::render_shadow_pass(RenderPassCommands* cmd, int height, int w
 		VkBuffer indirectBuffer = shadow_indirect_buffers[currentFrameIndex].buffer;
 
 		encoder->bind_index_buffer(0, reinterpret_cast<uint64_t>(instancedDraws[0].index_buffer));
-		encoder->draw_indexed_indirect(reinterpret_cast<uint64_t>(indirectBuffer), instancedDraws.size(), 0);
+		//encoder->draw_indexed_indirect(reinterpret_cast<uint64_t>(indirectBuffer), instancedDraws.size(), 0);
 	}
 
 #endif

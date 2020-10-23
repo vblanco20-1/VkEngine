@@ -18,7 +18,7 @@ add_executable(vkEngine ${SOURCE_FILES})
  
 target_precompile_headers(vkEngine PUBLIC pcheader.h)
 target_link_libraries(vkEngine  imgui entt glm gli assimp sdl2 vma tracy nv_aftermath::nv_aftermath vulkan_api)
-target_link_libraries(vkEngine shader_processor scene_processor)
+target_link_libraries(vkEngine shader_processor scene_processor meshoptimizer)
 set_target_properties(vkEngine PROPERTIES
             CXX_STANDARD 20
             ) 

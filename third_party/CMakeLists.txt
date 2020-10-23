@@ -20,6 +20,7 @@ add_library(microguid INTERFACE)
 
 find_package(Vulkan REQUIRED) 
 
+add_subdirectory(meshoptimizer)
 add_subdirectory(nv_aftermath)
 add_subdirectory(json)
 add_subdirectory(sqlite)

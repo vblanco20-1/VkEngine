@@ -197,6 +197,35 @@ void Decode_DrawIndexedCompound(CommandDecodeState* state, ICommand* command)
 	vkCmdDrawIndexed(vkCmd, cmd->draw.indexCount, cmd->draw.instanceCount, cmd->draw.firstIndex, cmd->draw.vertexOffset, cmd->draw.firstInstance);
 	eng->eng_stats.drawcalls++;
 }
+PFN_vkCmdDrawMeshTasksNV vkCmdDrawMeshTasksNVFN = nullptr;
+void Decode_DrawMeshTasks(CommandDecodeState* state, ICommand* command) {
+
+	CMD_DrawMeshTask* cmd = static_cast<CMD_DrawMeshTask*>(command);
+
+	VulkanEngine* eng = state->engine;
+	VkCommandBuffer vkCmd = state->cmd;
+	if (state->wantsPipeline != state->boundPipeline) {
+		RefreshPipeline(state);
+	}
+
+	//check descriptor sets
+	RefreshDescriptors(state);
+
+	//check index buffer
+	if (state->boundIndex != state->wantsIndex) {
+
+		RefreshIndexBuffer(state);
+	}
+
+	if (vkCmdDrawMeshTasksNVFN == nullptr)
+	{
+		vkCmdDrawMeshTasksNVFN = (PFN_vkCmdDrawMeshTasksNV)vkGetInstanceProcAddr(state->engine->instance, "vkCmdDrawMeshTasksNV");
+	}
+
+	vkCmdDrawMeshTasksNVFN(vkCmd, cmd->count, cmd->first);
+	//vkCmdDrawIndexed(vkCmd, cmd->indexCount, cmd->instanceCount, cmd->firstIndex, cmd->vertexOffset, cmd->firstInstance);
+	eng->eng_stats.drawcalls++;
+}
 
 void Decode_SetViewport(CommandDecodeState* state, ICommand* command) {
 

@@ -77,6 +77,14 @@ void CommandEncoder::draw_indexed(const IndexedDraw& draw)
 	cmd->draw = draw;
 }
 
+void CommandEncoder::draw_meshtask(uint32_t count, uint32_t first)
+{
+	CMD_DrawMeshTask* cmd = encode<CMD_DrawMeshTask>(encode_buffer);
+
+	cmd->count = count;
+	cmd->first = first;
+}
+
 void CommandEncoder::set_viewport(float x,
 float y,
 float w,

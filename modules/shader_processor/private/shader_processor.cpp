@@ -58,6 +58,12 @@ EShLanguage get_shader_stage(const std::string& stage)
     else if (stage == "comp") {
         return EShLangCompute;
     }
+	else if (stage == "mesh") {
+		return EShLangMeshNV;
+	}
+	else if (stage == "task") {
+		return EShLangTaskNV;
+	}
     else {
         //assert(0 && "Unknown shader stage");
         return EShLangCount;
@@ -527,6 +533,10 @@ VkShaderStageFlagBits ShaderTypeToVulkanFlag(ShaderType type) {
         return VK_SHADER_STAGE_FRAGMENT_BIT;
     case ShaderType::Compute:
         return VK_SHADER_STAGE_COMPUTE_BIT;
+	case ShaderType::MeshNV:
+		return VK_SHADER_STAGE_MESH_BIT_NV;
+	case ShaderType::TaskNV:
+		return VK_SHADER_STAGE_TASK_BIT_NV;
     default:
         return VK_SHADER_STAGE_ALL;
     }

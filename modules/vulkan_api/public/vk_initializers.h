@@ -21,7 +21,7 @@ namespace vke {
 		Span(T* _first, size_t _count) :first(_first) {
 			last = first + _count;
 		}
-		Span(T* first, T* last) :first(_first) , last(_last) {};
+		Span(T* _first, T* _last) :first(_first) , last(_last) {};
 		Span() : first(nullptr), last(nullptr){			
 		}
 	};

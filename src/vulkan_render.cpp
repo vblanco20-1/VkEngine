@@ -29,6 +29,8 @@
 #include <murmurhash.h>
 #include <intrin.h>
 #include "camera_saver.h"
+
+#include <meshoptimizer.h>
 static glm::mat4 mat_identity = glm::mat4( 1.0f,0.0f,0.0f,0.0f,
 0.0f,1.0f,0.0f,0.0f,
 0.0f,0.0f,1.0f,0.0f,
@@ -136,8 +138,10 @@ void VulkanEngine::create_engine_graph()
 	auto gbuffer_pass = graph.add_pass("GBuffer", [&](RenderPassCommands* commands) {
 		tracy::VkCtx* pctx = (tracy::VkCtx*)commands->profilerContext;
 		TracyVkZone(pctx, commands->commandBuffer, "GBuffer");
+
 		RenderGBufferPass(commands->commandBuffer);
 		}, PassType::Graphics, true);
+
 
 	//order is very important
 	auto shadow_pass = graph.add_pass("ShadowPass", [&](RenderPassCommands* commands) {
@@ -249,24 +253,6 @@ void VulkanEngine::create_engine_graph()
 	gbuffer_pass->add_color_attachment("gbuf_normal", gbuffer_normal);
 	gbuffer_pass->add_color_attachment("motion_vectors", gbuffer_motion);
 	gbuffer_pass->set_depth_attachment("depth_prepass", gbuffer_depth);
-
-	//ssao0_pass->add_image_dependency("gbuf_pos");
-	//ssao0_pass->add_image_dependency("gbuf_normal");
-	//ssao0_pass->add_color_attachment("ssao_pre", ssao_pre);
-
-	
-
-	//blurx_pass->add_image_dependency("ssao_pre");
-	//blurx_pass->add_color_attachment("ssao_mid", ssao_midblur);
-	//
-	//blury_pass->add_image_dependency("ssao_mid");
-	//blury_pass->add_color_attachment("ssao_post", ssao_post);
-
-	
-
-
-	//blury_pass->add_image_dependency("ssao_mid");
-	//blury_pass->add_color_attachment("ssao_post", ssao_post);
 
 	forward_pass->add_image_dependency("gbuf_pos");
 	forward_pass->add_image_dependency("gbuf_normal");
@@ -635,7 +621,7 @@ void VulkanEngine::init_vulkan()
 	renderable.mesh_resource_entity = mesh_id;
 	renderable.pipeline_entity = pipeline_id;
 
-	render_registry.assign<RenderMeshComponent>(id, renderable);
+	render_registry.emplace<RenderMeshComponent>(id, renderable);
 
 	auto model_mat = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -1.0f));
 	TransformComponent transform;
@@ -643,7 +629,7 @@ void VulkanEngine::init_vulkan()
 	transform.scale = glm::vec3(0.5f);
 	transform.location = glm::vec3(0.0f);
 
-	render_registry.assign<TransformComponent>(id, transform);
+	render_registry.emplace<TransformComponent>(id, transform);
 
 	for (int x = -30; x <= 30; x++) {
 		for (int y = -30; y <= 30; y++) {
@@ -660,8 +646,8 @@ void VulkanEngine::init_vulkan()
 			transform.scale = glm::vec3(0.2f);
 			transform.location = glm::vec3(float(x), float(y), 0.0f);
 
-			render_registry.assign<TransformComponent>(new_mesh, transform);
-			render_registry.assign<RenderMeshComponent>(new_mesh, renderable);
+			render_registry.emplace<TransformComponent>(new_mesh, transform);
+			render_registry.emplace<RenderMeshComponent>(new_mesh, renderable);
 		}
 	}
 #endif
@@ -935,7 +921,7 @@ void VulkanEngine::create_shadow_pipeline()
 {
 	ShaderEffect* pipelineEffect;
 	if (!doesResourceExist<ShaderEffectHandle>("shadowpipeline")) {
-
+		{
 		ShaderEffectHandle newShader;
 		newShader.handle = new ShaderEffect();
 
@@ -947,11 +933,26 @@ void VulkanEngine::create_shadow_pipeline()
 		pipelineEffect = newShader.handle;
 
 		createResource<ShaderEffectHandle>("shadowpipeline", newShader);
+
+		}
+		{
+			ShaderEffectHandle newShader;
+			newShader.handle = new ShaderEffect();
+
+			newShader.handle->add_shader_from_file(MAKE_ASSET_PATH("shaders/taskshader_pass.task"));
+			newShader.handle->add_shader_from_file(MAKE_ASSET_PATH("shaders/basicshadow.mesh"));
+			//newShader.handle->add_shader_from_file(MAKE_ASSET_PATH("shaders/basicshadow.frag"));
+
+			newShader.handle->build_effect(device);
+
+			pipelineEffect = newShader.handle;
+
+			createResource<ShaderEffectHandle>("shadowpipeline_mesh", newShader);
+		}
 	}
 	else
 	{
 		pipelineEffect = getResource<ShaderEffectHandle>("shadowpipeline").handle;
-
 	}
 
 	GraphicsPipelineBuilder shadowPipelineBuilder;
@@ -1759,6 +1760,8 @@ void VulkanEngine::create_uniform_buffers()
 	
 		createBuffer(sizeof(GpuObjectData) * 10000, vk::BufferUsageFlagBits::eStorageBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_CPU_ONLY, object_buffers[i]);
 
+		createBuffer(sizeof(GpuObjectMeshletData) * 10000, vk::BufferUsageFlagBits::eStorageBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_CPU_ONLY, object_buffers_meshlets[i]);
+
 
 		createBuffer(sizeof(int32_t) * 10000, vk::BufferUsageFlagBits::eStorageBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_CPU_ONLY, shadow_instance_buffers[i]);
 
@@ -1962,7 +1965,7 @@ void VulkanEngine::draw_frame()
 			cmd.draw(3, 1, 0, 0);
 		}
 		{
-
+			
 			ZoneScopedNC("Imgui Update", tracy::Color::Grey);
 			TracyVkZone(profilercontext, commandbuffer, "Imgui pass");
 			ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
@@ -2521,6 +2524,7 @@ void VulkanEngine::update_uniform_buffer(uint32_t currentImage)
 	}
 	int copyidx = 0;
 	std::vector<GpuObjectData> object_matrices;
+	std::vector<GpuObjectMeshletData> object_meshlets;
 	{
 		ZoneScopedN("Object Gather");
 		
@@ -2538,9 +2542,12 @@ void VulkanEngine::update_uniform_buffer(uint32_t currentImage)
 			
 			memcpy(&object_matrices[copyidx].tex1, &renderable.texture_handles, sizeof(renderable.texture_handles));
 
+			object_meshlets[copyidx].meshlet_buffer = mesh.meshletBuffer.address;
+			object_meshlets[copyidx].meshletCount = mesh.meshlet_count;
 			renderable.object_idx = copyidx;
 			copyidx++;
-			});
+
+		});
 	}
 
 	if (copyidx > 0) {
@@ -2918,18 +2925,49 @@ EntityID VulkanEngine::load_assimp_mesh(aiMesh* mesh)
 
 
 		//copy vertex data
+		{
 		void* data;
 		vmaMapMemory(allocator, vertex_staging_allocation.allocation, &data);
 
 		memcpy(data, newMesh.vertices.data(), (size_t)vertexBufferSize);
 
 		vmaUnmapMemory(allocator, vertex_staging_allocation.allocation);
-
+		}
 		createBuffer(vertexBufferSize, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress, vk::MemoryPropertyFlagBits::eDeviceLocal, VMA_MEMORY_USAGE_UNKNOWN, newMesh.vertexBuffer);//vertexBuffer, vertexBufferMemory);
 
 		copyBuffer(vertex_staging_allocation.buffer, newMesh.vertexBuffer.buffer, vertexBufferSize);
 
 		vmaDestroyBuffer(allocator, vertex_staging_allocation.buffer, vertex_staging_allocation.allocation);
+
+		std::vector<meshopt_Meshlet> meshlets;
+		{
+			ZoneScopedNC("Meshlet build", tracy::Color::Blue);
+
+			meshlets.resize(meshopt_buildMeshletsBound(newMesh.indices.size(), 64, 126));
+			
+			//build meshlets
+			newMesh.meshlet_count = meshopt_buildMeshlets(meshlets.data(), newMesh.indices.data(), newMesh.indices.size(), newMesh.vertices.size(), 64, 126);
+		}
+
+		vk::DeviceSize meshletsize = sizeof(meshlets[0]) * newMesh.meshlet_count;
+
+		AllocatedBuffer meshlet_staging;
+		createBuffer(meshletsize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_MEMORY_USAGE_UNKNOWN, meshlet_staging);
+
+
+		//copy vertex data
+		void* data;
+		vmaMapMemory(allocator, meshlet_staging.allocation, &data);
+
+		memcpy(data, meshlets.data(), (size_t)meshletsize);
+
+		vmaUnmapMemory(allocator, meshlet_staging.allocation);
+
+		createBuffer(meshletsize, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress, vk::MemoryPropertyFlagBits::eDeviceLocal, VMA_MEMORY_USAGE_UNKNOWN, newMesh.meshletBuffer);//vertexBuffer, vertexBufferMemory);
+
+		copyBuffer(meshlet_staging.buffer, newMesh.meshletBuffer.buffer, meshletsize);
+
+		vmaDestroyBuffer(allocator, meshlet_staging.buffer, meshlet_staging.allocation);
 	}
 
 	if(bUploadIndices)
@@ -3319,7 +3357,7 @@ bool VulkanEngine::load_scene(const char* db_path, const char* scene_path, glm::
 			//renderable.pass_pipelines[MeshPasIndex::ShadowPass] = shadowPipeline;
 
 			EntityID id = registry.create();
-			registry.assign<RenderMeshComponent>(id, renderable);
+			registry.emplace<RenderMeshComponent>(id, renderable);
 			
 			glm::mat4 modelmat;
 			for (int y = 0; y < 4; y++)
@@ -3330,7 +3368,7 @@ bool VulkanEngine::load_scene(const char* db_path, const char* scene_path, glm::
 				}
 			}
 
-			registry.assign<TransformComponent>(id);
+			registry.emplace<TransformComponent>(id);
 			//auto model_mat = glm::mat//glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 0.0f));
 		
 			registry.get<TransformComponent>(id).model = modelmat;
@@ -3348,7 +3386,7 @@ bool VulkanEngine::load_scene(const char* db_path, const char* scene_path, glm::
 			meshBounds.center_rad.y = center.y;
 			meshBounds.center_rad.z = center.z;
 
-			registry.assign<ObjectBounds>(id, meshBounds);
+			registry.emplace<ObjectBounds>(id, meshBounds);
 		}
 		
 		for (int ch = 0; ch < node->mNumChildren; ch++)

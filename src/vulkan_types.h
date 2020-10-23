@@ -124,6 +124,7 @@ struct ObjectBounds {
 struct MeshResource : public ResourceComponent {
 	AllocatedBuffer vertexBuffer;
 	AllocatedBuffer indexBuffer;
+	AllocatedBuffer meshletBuffer;
 	
 	ObjectBounds bounds;
 	
@@ -134,6 +135,7 @@ struct MeshResource : public ResourceComponent {
 	size_t index_offset = 0;
 	size_t vertex_offset = 0;
 	size_t index_hash;
+	size_t meshlet_count;
 
 	AccelerationStructure accelStructure;
 };

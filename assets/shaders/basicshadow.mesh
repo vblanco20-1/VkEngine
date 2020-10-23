@@ -1,0 +1,113 @@
+#version 450
+#extension GL_ARB_separate_shader_objects : enable
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_buffer_reference : enable
+
+#extension GL_NV_mesh_shader : require
+#extension GL_EXT_shader_8bit_storage  : require 
+
+layout(local_size_x = 32) in;
+layout(triangles, max_vertices = 64, max_primitives = 126) out;
+
+struct meshlet
+{
+	uint vertices[64];
+	uint8_t indices[126][3];
+   // uint packed_indices[126 * 3 /4];
+	uint8_t triangle_count;
+	uint8_t vertex_count;
+};
+
+
+layout(buffer_reference, std430) readonly buffer MeshletBuffer {
+           meshlet meshlets[];
+};
+
+struct ObjectModels{
+	int meshletCount;
+    int pad;
+    MeshletBuffer meshlet_buffer;   
+};
+
+layout(std430,set = 0, binding =4 ) readonly buffer meshletObjects 
+{
+   ObjectModels objects[ ];
+} MeshletObjects;
+
+
+#include "object_buffer.inl"
+
+
+layout(set = 0, binding = 0) uniform UniformBufferObject {
+    mat4 model;
+    mat4 view;
+    mat4 proj;
+	mat4 inv_model;
+    mat4 inv_view;
+    mat4 inv_proj;
+	vec4 eye;
+} ubo;
+
+layout(std430,set = 0, binding = 3) readonly buffer Instances 
+{
+   int indices[ ];
+} InstanceIDBuffer;
+
+layout(location = 0) in uint objectIndex;
+
+vec4 get_vert_index(uint oidx,uint midx ,uint vidx){
+
+    uint vertexIndex =  MeshletObjects.objects[oidx]
+    .meshlet_buffer.meshlets[midx]
+    .vertices[vidx];
+
+
+    return get_position(int(oidx),int(vertexIndex) );
+}
+
+void main() {
+
+    uint localIndex = gl_LocalInvocationID.x;
+    uint meshletIndex = gl_WorkGroupID.x;
+
+    uint object_idx = objectIndex;
+
+    //meshlet currentMeshlet = MeshletObjects.objects[object_index].meshlet_buffer.meshlets[meshletIndex];
+    
+    
+    mat4 objectMatrix = MainObjectBuffer.objects[object_idx].model;
+    mat4 vertMatrix = ubo.proj * ubo.view * objectMatrix;
+
+    uint primcount = uint(MeshletObjects.objects[object_idx].meshlet_buffer.meshlets[meshletIndex].triangle_count);
+    uint vertcount = uint(MeshletObjects.objects[object_idx].meshlet_buffer.meshlets[meshletIndex].vertex_count);
+
+    gl_PrimitiveCountNV = primcount;
+    //vertices
+     for(uint i = 0; i < 2; i++){
+        uint vindex = i * 32 + localIndex;
+        if(vindex < vertcount)
+        {   
+            vec4 inPosition = get_vert_index(object_idx,meshletIndex,vindex);
+
+            //vec4 inPosition = get_position(object_idx,currentMeshlet.vertices[vindex]);
+
+	        vec4 v_Position = vertMatrix * inPosition;
+
+            gl_MeshVerticesNV[vindex].gl_Position = v_Position;
+         }
+     }
+
+    //indices, 4 loops to copy things
+    for(uint i = 0; i < 4; i++){
+        uint index = i * 32 + localIndex;
+        if(index < primcount * 3)
+        {
+            index *= 3;
+           gl_PrimitiveIndicesNV[index] = uint(MeshletObjects.objects[object_idx].meshlet_buffer.meshlets[meshletIndex].indices[index][0]);
+           gl_PrimitiveIndicesNV[index+1] = uint(MeshletObjects.objects[object_idx].meshlet_buffer.meshlets[meshletIndex].indices[index][1]);
+           gl_PrimitiveIndicesNV[index+2] = uint(MeshletObjects.objects[object_idx].meshlet_buffer.meshlets[meshletIndex].indices[index][2]);
+          
+
+        }
+    }
+}

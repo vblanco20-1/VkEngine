@@ -159,11 +159,23 @@ vk::Pipeline GraphicsPipelineBuilder::build_pipeline(vk::Device device, vk::Rend
 	dynamicState.dynamicStateCount = data.dynamicStates.size();
 	dynamicState.pDynamicStates = data.dynamicStates.data();
 
+	bool bIsTaskShader = false;
+	for (auto s : shaderStages) {
+		if (s.stage == VK_SHADER_STAGE_TASK_BIT_NV || s.stage == VK_SHADER_STAGE_MESH_BIT_NV)
+		{
+			bIsTaskShader = true;
+		}
+	}
+
 	vk::GraphicsPipelineCreateInfo pipelineInfo;
 	pipelineInfo.stageCount = shaderStages.size();
 	pipelineInfo.pStages = reinterpret_cast<vk::PipelineShaderStageCreateInfo*>(shaderStages.data());
-	pipelineInfo.pVertexInputState = &vertexInputInfo;
-	pipelineInfo.pInputAssemblyState = &inputAssembly;
+	if (!bIsTaskShader) {
+		pipelineInfo.pVertexInputState = &vertexInputInfo;
+	}
+
+	pipelineInfo.pInputAssemblyState = &inputAssembly;	
+
 	pipelineInfo.pViewportState = &viewportState;
 	pipelineInfo.pRasterizationState = &rasterizer;
 	pipelineInfo.pMultisampleState = &multisampling;

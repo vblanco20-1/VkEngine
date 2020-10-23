@@ -131,7 +131,7 @@ EntityID VulkanEngine::load_texture(const char* image_path, std::string textureN
 
 	auto res = createResource(textureName.c_str(), texture.first);
 
-	render_registry.assign<TextureResourceMetadata>(res, texture.second);
+	render_registry.emplace<TextureResourceMetadata>(res, texture.second);
 
 	return res;
 }
@@ -316,7 +316,7 @@ void VulkanEngine::load_textures_bulk(TextureLoadRequest* requests, size_t count
 						AllData[index].texture.textureSampler = device.createSampler(samplerInfo);
 
 						requests[index].loadedTexture = createResource(requests[index].textureName.c_str(), AllData[index].texture);
-						render_registry.assign<TextureResourceMetadata>(requests[index].loadedTexture, AllData[index].metadata);
+						render_registry.emplace<TextureResourceMetadata>(requests[index].loadedTexture, AllData[index].metadata);
 						requests[index].bLoaded = true;
 					}
 					else {
@@ -798,13 +798,13 @@ void RealTextureLoader::add_request_from_assimp(const aiScene* scene, aiMaterial
 
 				if (load.pixel_data) {
 					load.channels = STBI_rgb_alpha;
-					load_registry.assign_or_replace<StbInlineLoad>(load_id,load);
+					load_registry.emplace_or_replace<StbInlineLoad>(load_id,load);
 
 					BaseTextureLoad bload;
 					bload.path = tx_path;
 					bload.name = txpath;
 
-					load_registry.assign_or_replace<BaseTextureLoad>(load_id, bload);
+					load_registry.emplace_or_replace<BaseTextureLoad>(load_id, bload);
 
 					path_references[tx_path] = load_id;
 				}
@@ -814,7 +814,7 @@ void RealTextureLoader::add_request_from_assimp(const aiScene* scene, aiMaterial
 				load.path = tx_path;
 				load.name = txpath;
 
-				//load_registry.assign_or_replace<BaseTextureLoad>(load_id, load);
+				//load_registry.emplace_or_replace<BaseTextureLoad>(load_id, load);
 				//path_references[tx_path] = load_id;
 			}
 		}
@@ -860,8 +860,8 @@ void RealTextureLoader::flush_requests()
 			ZoneScopedNC("Texture upload", tracy::Color::Orange);
 
 			const StbInlineLoad& load = stb_view.get(e);
-			LoadStagingBuffer& staging = load_registry.assign<LoadStagingBuffer>(e);
-			LoadImageAlloc& texresource = load_registry.assign<LoadImageAlloc>(e);
+			LoadStagingBuffer& staging = load_registry.emplace<LoadStagingBuffer>(e);
+			LoadImageAlloc& texresource = load_registry.emplace<LoadImageAlloc>(e);
 			const BaseTextureLoad& texload = load_registry.get<BaseTextureLoad>(e);
 			size_t image_size = load.x * load.y * load.channels;
 
@@ -894,8 +894,8 @@ void RealTextureLoader::flush_requests()
 				ZoneScopedNC("Texture upload-direct", tracy::Color::Orange);
 
 				const DirectInlineLoad& load = direct_view.get(e);
-				LoadStagingBuffer& staging = load_registry.assign<LoadStagingBuffer>(e);
-				LoadImageAlloc& texresource = load_registry.assign<LoadImageAlloc>(e);
+				LoadStagingBuffer& staging = load_registry.emplace<LoadStagingBuffer>(e);
+				LoadImageAlloc& texresource = load_registry.emplace<LoadImageAlloc>(e);
 				const BaseTextureLoad& texload = load_registry.get<BaseTextureLoad>(e);
 				size_t image_size = load.data_size;//load.x * load.y * load.channels;
 
@@ -1001,8 +1001,8 @@ void RealTextureLoader::add_load_from_db_coro(EntityID e, SceneLoader* loader, D
 	ZoneScopedNC("Texture upload-direct", tracy::Color::Orange);
 
 
-	LoadStagingBuffer& staging = load_registry.assign<LoadStagingBuffer>(e);
-	LoadImageAlloc& texresource = load_registry.assign<LoadImageAlloc>(e);
+	LoadStagingBuffer& staging = load_registry.emplace<LoadStagingBuffer>(e);
+	LoadImageAlloc& texresource = load_registry.emplace<LoadImageAlloc>(e);
 	const BaseTextureLoad& texload = load_registry.get<BaseTextureLoad>(e);
 	size_t image_size = texture.byte_size;
 
@@ -1031,8 +1031,8 @@ void RealTextureLoader::add_load_from_db(EntityID e ,SceneLoader* loader,DbTextu
 	ZoneScopedNC("Texture upload-direct", tracy::Color::Orange);
 
 
-	LoadStagingBuffer& staging = load_registry.assign<LoadStagingBuffer>(e);
-	LoadImageAlloc& texresource = load_registry.assign<LoadImageAlloc>(e);
+	LoadStagingBuffer& staging = load_registry.emplace<LoadStagingBuffer>(e);
+	LoadImageAlloc& texresource = load_registry.emplace<LoadImageAlloc>(e);
 	const BaseTextureLoad& texload = load_registry.get<BaseTextureLoad>(e);
 	size_t image_size = texture.byte_size;
 
@@ -1127,7 +1127,7 @@ void RealTextureLoader::finish_image_batch()
 
 			auto new_entity = owner->createResource(texload.name.c_str(), newResource);
 
-			owner->render_registry.assign<TextureResourceMetadata>(new_entity, metadata);
+			owner->render_registry.emplace<TextureResourceMetadata>(new_entity, metadata);
 
 			owner->loadedTextures[texload.guid] = new_entity;
 		}
@@ -1174,7 +1174,7 @@ void RealTextureLoader::add_request_from_assimp_db(SceneLoader* loader, aiMateri
 				bload.path = tx_path;
 				bload.name = txpath;
 				bload.guid = pending_load->second.guid;
-				load_registry.assign_or_replace<BaseTextureLoad>(load_id, bload);
+				load_registry.emplace_or_replace<BaseTextureLoad>(load_id, bload);
 
 				this->add_load_from_db(load_id, loader, pending_load->second);
 
@@ -1204,14 +1204,14 @@ void RealTextureLoader::add_request_from_assimp_db(SceneLoader* loader, aiMateri
 
 					if (load.pixel_data) {
 						load.channels = texture.channels;
-						load_registry.assign_or_replace<DirectInlineLoad>(load_id, load);
+						load_registry.emplace_or_replace<DirectInlineLoad>(load_id, load);
 
 						BaseTextureLoad bload;
 						bload.path = tx_path;
 						bload.name = txpath;
 						bload.guid = texture.guid;
 
-						load_registry.assign_or_replace<BaseTextureLoad>(load_id, bload);
+						load_registry.emplace_or_replace<BaseTextureLoad>(load_id, bload);
 
 						path_references[tx_path] = load_id;
 					}
@@ -1255,7 +1255,7 @@ void RealTextureLoader::load_all_textures(SceneLoader* loader, const std::string
 			bload.path = tx_path;
 			bload.name = t.name;
 			bload.guid = t.guid;
-			load_registry.assign_or_replace<BaseTextureLoad>(load_id, bload);
+			load_registry.emplace_or_replace<BaseTextureLoad>(load_id, bload);
 	
 			add_load_from_db(load_id, loader, t);
 	
@@ -1337,14 +1337,14 @@ void RealTextureLoader::load_all_textures_coroutines(SceneLoader* loader, const 
 					bload.path = tx_path;
 					bload.name = t.name;
 
-					load_registry.assign_or_replace<BaseTextureLoad>(load_id, bload);
+					load_registry.emplace_or_replace<BaseTextureLoad>(load_id, bload);
 
 					{
 						ZoneScopedNC("Texture upload-direct", tracy::Color::Orange);
 
 
-						LoadStagingBuffer& staging = load_registry.assign<LoadStagingBuffer>(load_id);
-						LoadImageAlloc& texresource = load_registry.assign<LoadImageAlloc>(load_id);
+						LoadStagingBuffer& staging = load_registry.emplace<LoadStagingBuffer>(load_id);
+						LoadImageAlloc& texresource = load_registry.emplace<LoadImageAlloc>(load_id);
 						const BaseTextureLoad& texload = load_registry.get<BaseTextureLoad>(load_id);
 						size_t image_size = t.byte_size;
 
@@ -1540,8 +1540,8 @@ void RealTextureLoader::update_background_loads()
 				ZoneScopedNC("Texture upload-direct", tracy::Color::Orange);
 
 				DbTexture& texture = t;
-				LoadStagingBuffer& staging = load_registry.assign<LoadStagingBuffer>(e);
-				LoadImageAlloc& texresource = load_registry.assign<LoadImageAlloc>(e);
+				LoadStagingBuffer& staging = load_registry.emplace<LoadStagingBuffer>(e);
+				LoadImageAlloc& texresource = load_registry.emplace<LoadImageAlloc>(e);
 				const BaseTextureLoad& texload = load_registry.get<BaseTextureLoad>(e);
 				size_t image_size = t.byte_size;
 
@@ -1591,8 +1591,8 @@ void RealTextureLoader::preload_textures(sp::SceneLoader* loader)
 		bload.path = "nopath";
 		bload.name = tx.name;
 		bload.guid = tx.guid;
-		load_registry.assign_or_replace<BaseTextureLoad>(load_id, bload);
-		load_registry.assign_or_replace<DbTexture>(load_id, tx);
+		load_registry.emplace_or_replace<BaseTextureLoad>(load_id, bload);
+		load_registry.emplace_or_replace<DbTexture>(load_id, tx);
 
 		pending_loads[tx.guid] = load_id;
 
@@ -1608,7 +1608,7 @@ void RealTextureLoader::preload_textures(sp::SceneLoader* loader)
 		metadata.texture_size.x = tx.size_x;
 		metadata.texture_size.y = tx.size_y;
 
-		owner->render_registry.assign<TextureResourceMetadata>(new_entity, metadata);
+		owner->render_registry.emplace<TextureResourceMetadata>(new_entity, metadata);
 
 		owner->loadedTextures[tx.guid] = new_entity;
 	}
